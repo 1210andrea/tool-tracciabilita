@@ -1,0 +1,72 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.authRoutes = void 0;
+const express_1 = require("express");
+const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
+const bcryptjs_1 = __importDefault(require("bcryptjs"));
+const env_1 = require("../config/env");
+const dbService_1 = require("../services/dbService");
+const ldapService_1 = require("../services/ldapService");
+const auth_1 = require("../middleware/auth");
+exports.authRoutes = (0, express_1.Router)();
+exports.authRoutes.post('/auth/register', async (req, res, next) => {
+    try {
+        const { username, password, role } = req.body;
+        if (!username || !password)
+            return res.status(400).json({ error: 'username/password required' });
+        const password_hash = await bcryptjs_1.default.hash(password, 10);
+        await dbService_1.pool.query('INSERT INTO users(username,password_hash,role,ldap_managed) VALUES($1,$2,$3,false) ON CONFLICT(username) DO NOTHING', [username, password_hash, role ?? 'user']);
+        return res.json({ ok: true });
+    }
+    catch (e) {
+        next(e);
+    }
+});
+exports.authRoutes.post('/auth/login', async (req, res, next) => {
+    try {
+        const { username, password } = req.body;
+        if (!username || !password)
+            return res.status(400).json({ error: 'username/password required' });
+        if (env_1.env.LDAP_ENABLED) {
+            const ldap = new ldapService_1.LDAPService();
+            try {
+                await ldap.authenticate(username, password);
+                // get or create user
+                const r = await dbService_1.pool.query('SELECT id, role FROM users WHERE username=$1', [username]);
+                let userId;
+                let role;
+                if (r.rows.length) {
+                    userId = r.rows[0].id;
+                    role = r.rows[0].role;
+                }
+                else {
+                    const inserted = await dbService_1.pool.query('INSERT INTO users(username,password_hash,role,ldap_managed) VALUES($1,$2,$3,true) RETURNING id, role', [username, await bcryptjs_1.default.hash('ldap-placeholder', 10), 'user']);
+                    userId = inserted.rows[0].id;
+                    role = inserted.rows[0].role;
+                }
+                const token = jsonwebtoken_1.default.sign({ id: userId, role }, env_1.env.JWT_SECRET, { expiresIn: env_1.env.JWT_EXPIRY });
+                return res.json({ token, role });
+            }
+            catch {
+                // fallback to local
+            }
+        }
+        const r = await dbService_1.pool.query('SELECT id, role, password_hash FROM users WHERE username=$1', [username]);
+        if (!r.rows.length)
+            return res.status(401).json({ error: 'Invalid credentials' });
+        const ok = await bcryptjs_1.default.compare(password, r.rows[0].password_hash);
+        if (!ok)
+            return res.status(401).json({ error: 'Invalid credentials' });
+        const token = jsonwebtoken_1.default.sign({ id: r.rows[0].id, role: r.rows[0].role }, env_1.env.JWT_SECRET, { expiresIn: env_1.env.JWT_EXPIRY });
+        return res.json({ token, role: r.rows[0].role });
+    }
+    catch (e) {
+        next(e);
+    }
+});
+exports.authRoutes.get('/auth/me', auth_1.authMiddleware, (req, res) => {
+    res.json({ user: req.user });
+});

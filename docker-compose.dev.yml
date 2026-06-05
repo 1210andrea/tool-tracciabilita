@@ -1,0 +1,101 @@
+version: '3.9'
+
+services:
+  nginx:
+    build: ./nginx
+    container_name: machines_nginx_dev
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - frontend
+      - backend
+    restart: always
+    networks:
+      - machines_network
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: machines_frontend_dev
+    environment:
+      - NODE_ENV=development
+      - VITE_API_URL=http://localhost:3001/api
+      - VITE_WS_URL=ws://localhost:3001
+    volumes:
+      - ./frontend:/app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    restart: always
+    networks:
+      - machines_network
+
+  backend:
+    build:
+      context: ./backend
+    container_name: machines_backend_dev
+    environment:
+      - NODE_ENV=development
+      - PORT=3001
+      - DATABASE_URL=postgres://$DB_USER:$DB_PASSWORD@postgres:5432/machines_db
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=$JWT_SECRET
+      - JWT_REFRESH_SECRET=$JWT_REFRESH_SECRET
+      - JWT_EXPIRY=$JWT_EXPIRY
+      - JWT_REFRESH_EXPIRY=$JWT_REFRESH_EXPIRY
+      - AI_PROVIDER=ollama
+      - AI_API_URL=$AI_API_URL
+      - AI_TIMEOUT=$AI_TIMEOUT
+      - LOG_LEVEL=debug
+      - CORS_ORIGIN=http://localhost
+      - LDAP_ENABLED=$LDAP_ENABLED
+      - LDAP_SERVER=$LDAP_SERVER
+      - LDAP_BASE_DN=$LDAP_BASE_DN
+    volumes:
+      - ./backend:/app
+    command: sh -c "npm install && npm run dev"
+    restart: always
+    networks:
+      - machines_network
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: machines_postgres_dev
+    environment:
+      POSTGRES_DB: machines_db
+      POSTGRES_USER: $DB_USER
+      POSTGRES_PASSWORD: $DB_PASSWORD
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./backups:/backups
+    restart: always
+    networks:
+      - machines_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: machines_redis_dev
+    restart: always
+    networks:
+      - machines_network
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: machines_ollama_dev
+    volumes:
+      - ollama_data_dev:/root/.ollama
+    restart: always
+    networks:
+      - machines_network
+
+volumes:
+  postgres_data_dev:
+  ollama_data_dev:
+
+networks:
+  machines_network:
+    driver: bridge
+
