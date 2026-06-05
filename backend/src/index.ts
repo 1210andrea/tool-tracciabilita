@@ -14,6 +14,9 @@ import { errorHandler } from './middleware/errorHandler';
 import { authMiddleware } from './middleware/auth';
 
 const app = express();
+// Behind a reverse proxy (nginx) - trust first proxy so express-rate-limit
+// can correctly use X-Forwarded-For headers.
+app.set('trust proxy', 1);
 app.use(helmet());
 app.use(express.json({ limit: '1mb' }));
 

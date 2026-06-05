@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { useMemo } from 'react';
 
-const API_URL = import.meta.env.VITE_API_URL as string;
+const API_URL = (import.meta.env.VITE_API_URL as string) || '/api';
 
 export function useApi() {
   const client = useMemo(() => {
