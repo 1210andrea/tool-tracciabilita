@@ -49,7 +49,11 @@ const logger_1 = require("./config/logger");
 const routes_1 = require("./routes");
 const errorHandler_1 = require("./middleware/errorHandler");
 const auth_1 = require("./middleware/auth");
+const socketService_1 = require("./services/socketService");
 const app = (0, express_1.default)();
+// Behind a reverse proxy (nginx) - trust first proxy so express-rate-limit
+// can correctly use X-Forwarded-For headers.
+app.set('trust proxy', 1);
 app.use((0, helmet_1.default)());
 app.use(express_1.default.json({ limit: '1mb' }));
 app.use((0, cors_1.default)({
@@ -121,6 +125,7 @@ io.on('connection', (socket) => {
             socket.join(room);
     });
 });
+(0, socketService_1.setSocketServer)(io);
 app.set('io', io);
 server.listen(env_1.env.PORT, () => {
     logger_1.logger.info({ server: `listening:${env_1.env.PORT}` });

@@ -12,6 +12,7 @@ import { logger } from './config/logger';
 import { registerRoutes } from './routes';
 import { errorHandler } from './middleware/errorHandler';
 import { authMiddleware } from './middleware/auth';
+import { setSocketServer } from './services/socketService';
 
 const app = express();
 // Behind a reverse proxy (nginx) - trust first proxy so express-rate-limit
@@ -103,6 +104,7 @@ io.on('connection', (socket) => {
   });
 });
 
+setSocketServer(io);
 app.set('io', io);
 
 server.listen(env.PORT, () => {

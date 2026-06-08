@@ -15,6 +15,7 @@ const schema = zod_1.z.object({
     CORS_ORIGIN: zod_1.z.string().min(1),
     AI_PROVIDER: zod_1.z.string().default('ollama'),
     AI_API_URL: zod_1.z.string().min(1),
+    AI_MODEL: zod_1.z.string().default('llama2'),
     AI_TIMEOUT: zod_1.z.coerce.number().default(30000),
     LDAP_ENABLED: zod_1.z.coerce.boolean().default(false),
     LDAP_SERVER: zod_1.z.string().optional(),
