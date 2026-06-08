@@ -97,11 +97,12 @@ INSERT INTO machines(code,name,line,location) VALUES
 ('SIMM91','Linea 3 - Imballaggio','Linea 3','Reparto C')
 ON CONFLICT(code) DO NOTHING;
 
+-- bcrypt hashes: admin/password, user/user
 INSERT INTO users(username,email,password_hash,role) VALUES
-('admin','admin@machines.local','$2a$10$eyZjZ8svjh7f.rDsk/HtnuRrKBhYUERhXk.R5biaE5Vyl74qSkyrK','admin')
+('admin','admin@machines.local','$2a$10$2EleFFb3GfSA7BOnb1Sj4OR.Rp8E3l0HOI0kjmIZdbtU0f9elVfwe','admin')
 ON CONFLICT(username) DO NOTHING;
 
 INSERT INTO users(username,email,password_hash,role) VALUES
-('user','user@machines.local','$2a$10$eyZjZ8svjh7f.rDsk/HtnuRrKBhYUERhXk.R5biaE5Vyl74qSkyrK','user')
+('user','user@machines.local','$2a$10$c2iqxNmnCJcg0YQVu.wFAuMRIk.wl008naVCAboQt3790bjEWQ8Gu','user')
 ON CONFLICT(username) DO NOTHING;
 
