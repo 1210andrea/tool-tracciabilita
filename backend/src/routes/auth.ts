@@ -50,8 +50,7 @@ authRoutes.post('/auth/login', async (req, res, next) => {
           userId = inserted.rows[0].id;
           role = inserted.rows[0].role;
         }
-
-const token = jwt.sign({ id: userId, role }, env.JWT_SECRET as any, { expiresIn: env.JWT_EXPIRY as any });
+        const token = jwt.sign({ id: userId, role }, env.JWT_SECRET as any, { expiresIn: env.JWT_EXPIRY as any });
         return res.json({ token, role });
       } catch {
         // fallback to local
@@ -64,7 +63,7 @@ const token = jwt.sign({ id: userId, role }, env.JWT_SECRET as any, { expiresIn:
     const ok = await bcrypt.compare(password, r.rows[0].password_hash);
     if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
 
-const token = jwt.sign({ id: r.rows[0].id, role: r.rows[0].role }, env.JWT_SECRET as any, { expiresIn: env.JWT_EXPIRY as any });
+    const token = jwt.sign({ id: r.rows[0].id, role: r.rows[0].role }, env.JWT_SECRET as any, { expiresIn: env.JWT_EXPIRY as any });
     return res.json({ token, role: r.rows[0].role });
   } catch (e) {
     next(e);
