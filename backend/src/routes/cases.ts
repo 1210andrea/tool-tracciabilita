@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { authMiddleware } from '../middleware/auth';
 import { pool } from '../db';
 import { emitEvent } from '../services/socketService';
-import { generateAiSolution } from '../services/aiService';
+import { generateAiSolution, generateCaseInsights } from '../services/aiService';
 
 export const casesRoutes = Router();
 
@@ -37,14 +37,20 @@ casesRoutes.get('/', authMiddleware, async (req, res, next) => {
     const limitNumber = Math.min(100, Math.max(1, Number(limit) || 25));
     const offset = (pageNumber - 1) * limitNumber;
     const conditions: string[] = [];
-    const values: Array<string | number> = [];
+    const values: Array<string | number | string[]> = [];
 
     if (req.user!.role !== 'admin') {
       values.push(req.user!.id);
       conditions.push(`c.created_by = $${values.length}`);
     }
 
-    if (status) {
+    if (req.query.statuses) {
+      const statuses = (req.query.statuses as string).split(',').map((s) => s.trim()).filter(Boolean);
+      if (statuses.length) {
+        values.push(statuses);
+        conditions.push(`c.status = ANY($${values.length})`);
+      }
+    } else if (status) {
       values.push(status);
       conditions.push(`c.status = $${values.length}`);
     }
@@ -117,6 +123,124 @@ casesRoutes.get('/', authMiddleware, async (req, res, next) => {
 
     const total = r.rows[0]?.total_count ?? 0;
     res.json({ items: r.rows, total });
+  } catch (e) {
+    next(e);
+  }
+});
+
+casesRoutes.get('/:id/ai-insights', authMiddleware, async (req, res, next) => {
+  try {
+    const caseRow = await getCaseRow(req.params.id);
+    if (!caseRow) return res.status(404).json({ error: 'Case not found' });
+    if (!canAccessCase(caseRow, req.user!.id, req.user!.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const detail = await pool.query(
+      `SELECT c.*, m.code as machine_code, m.name as machine_name, m.line,
+              op.name as operator_name, prob.name as problem_name, cause.name as cause_name
+       FROM cases c
+       JOIN machines m ON m.id = c.machine_id
+       LEFT JOIN categories op ON op.id = c.operator_id
+       LEFT JOIN categories prob ON prob.id = c.problem_id
+       LEFT JOIN categories cause ON cause.id = c.cause_id
+       WHERE c.id = $1`,
+      [req.params.id]
+    );
+    const current = detail.rows[0];
+
+    const similarR = await pool.query(
+      `SELECT c.title, c.solution, c.status, c.created_at,
+              m.code as machine_code, m.line, prob.name as problem_name, cause.name as cause_name
+       FROM cases c
+       JOIN machines m ON m.id = c.machine_id
+       LEFT JOIN categories prob ON prob.id = c.problem_id
+       LEFT JOIN categories cause ON cause.id = c.cause_id
+       WHERE c.id != $1
+         AND (
+           (c.machine_id = $2 AND c.problem_id = $3)
+           OR (c.problem_id = $3 AND m.line IS NOT DISTINCT FROM $4)
+           OR (c.machine_id = $2 AND c.cause_id = $5)
+         )
+       ORDER BY c.created_at DESC
+       LIMIT 15`,
+      [req.params.id, current.machine_id, current.problem_id, current.line, current.cause_id]
+    );
+
+    const countR = await pool.query(
+      `SELECT
+         COUNT(*) FILTER (WHERE c.machine_id = $2 AND c.problem_id = $3)::int AS same_machine_problem,
+         COUNT(*) FILTER (WHERE c.problem_id = $3 AND m.line IS NOT DISTINCT FROM $4)::int AS same_problem_line,
+         COUNT(*)::int AS total_similar
+       FROM cases c
+       JOIN machines m ON m.id = c.machine_id
+       WHERE c.id != $1
+         AND (
+           (c.machine_id = $2 AND c.problem_id = $3)
+           OR (c.problem_id = $3 AND m.line IS NOT DISTINCT FROM $4)
+           OR (c.machine_id = $2 AND c.cause_id = $5)
+         )`,
+      [req.params.id, current.machine_id, current.problem_id, current.line, current.cause_id]
+    );
+
+    const counts = countR.rows[0];
+    const similarCases = similarR.rows;
+
+    if (!similarCases.length) {
+      return res.json({
+        insufficient: true,
+        message: `Non ho abbastanza dati storici per la macchina ${current.machine_code} e il problema "${current.problem_name ?? 'N/D'}". Non ci sono casi simili nel database.`
+      });
+    }
+
+    const withSolution = similarCases.filter((r: { solution?: string | null }) => r.solution?.trim());
+    if (withSolution.length === 0 && similarCases.length < 2) {
+      return res.json({
+        insufficient: true,
+        message: `Non ho abbastanza dati per spiegare come è stato risolto questo problema in passato. Ci sono ${similarCases.length} caso/i simile/i ma senza soluzioni documentate.`,
+        stats: {
+          same_machine_problem: counts.same_machine_problem,
+          same_problem_line: counts.same_problem_line,
+          total_similar: counts.total_similar
+        }
+      });
+    }
+
+    const analysis = await generateCaseInsights({
+      machine: `${current.machine_code} - ${current.machine_name}`,
+      line: current.line ?? 'N/D',
+      operator: current.operator_name ?? 'N/D',
+      problem: current.problem_name ?? 'N/D',
+      cause: current.cause_name ?? 'N/D',
+      counts: {
+        same_machine_problem: counts.same_machine_problem,
+        same_problem_line: counts.same_problem_line,
+        total_similar: counts.total_similar
+      },
+      similarCases
+    });
+
+    if (!analysis) {
+      return res.json({
+        insufficient: true,
+        message: 'Il servizio IA (Ollama) non è al momento disponibile. Riprova più tardi.',
+        stats: {
+          same_machine_problem: counts.same_machine_problem,
+          same_problem_line: counts.same_problem_line,
+          total_similar: counts.total_similar
+        }
+      });
+    }
+
+    res.json({
+      insufficient: false,
+      stats: {
+        same_machine_problem: counts.same_machine_problem,
+        same_problem_line: counts.same_problem_line,
+        total_similar: counts.total_similar
+      },
+      analysis
+    });
   } catch (e) {
     next(e);
   }

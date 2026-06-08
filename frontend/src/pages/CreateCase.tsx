@@ -99,7 +99,7 @@ export default function CreateCase() {
       setTitle('');
       setDescription('');
 
-      setTimeout(() => navigate('/'), 1200);
+      setTimeout(() => navigate(user?.role === 'admin' ? '/dashboard' : '/'), 1200);
     } catch (err: any) {
       setError(err?.response?.data?.error ?? 'Errore durante la creazione del caso.');
     } finally {
@@ -220,7 +220,7 @@ export default function CreateCase() {
         <button
           type="button"
           className="rounded-2xl border border-slate-700 bg-slate-900/90 px-6 py-3 text-sm text-slate-100 transition hover:bg-slate-800"
-          onClick={() => navigate('/')}
+          onClick={() => navigate(user?.role === 'admin' ? '/dashboard' : '/')}
         >
           Torna alla dashboard
         </button>

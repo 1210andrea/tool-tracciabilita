@@ -15,7 +15,7 @@ import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import { useSocket } from '../hooks/useSocket';
 import { CategoriesSelect } from '../components/CategoriesSelect';
-import { CaseEditModal, type EditableCase } from '../components/CaseEditModal';
+import { CaseDetailModal, type CaseDetail } from '../components/CaseDetailModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 
 const API_URL = '/api';
@@ -66,7 +66,7 @@ export default function Dashboard() {
   const [limit] = useState(10);
   const [loading, setLoading] = useState(true);
   const [eventMessage, setEventMessage] = useState('');
-  const [editingCase, setEditingCase] = useState<EditableCase | null>(null);
+  const [editingCase, setEditingCase] = useState<CaseDetail | null>(null);
   const [deletingCase, setDeletingCase] = useState<CaseItem | null>(null);
 
   const appliedParams = useMemo(
@@ -140,6 +140,10 @@ export default function Dashboard() {
   useEffect(() => {
     loadData();
   }, [token, appliedParams]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [dateFrom, dateTo, timeFrom, timeTo, lineFilter, operatorIdFilter, problemIdFilter, causeIdFilter]);
 
   useSocket((_event, payload) => {
     setEventMessage(`Nuovo aggiornamento caso: ${payload && (payload as any).caseId ? (payload as any).caseId : 'aggiornamento disponibile'}`);
@@ -262,11 +266,8 @@ export default function Dashboard() {
         </div>
 
         <div className="mt-4 flex flex-wrap gap-3">
-          <button type="button" onClick={() => setPage(1)} className="rounded-2xl bg-sky-500 px-5 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-sky-400">
-            Applica filtri
-          </button>
           <button type="button" onClick={resetFilters} className="rounded-2xl border border-slate-700 bg-slate-900/90 px-5 py-2.5 text-sm text-slate-100 transition hover:bg-slate-800">
-            Reset
+            Reset filtri
           </button>
         </div>
 
@@ -356,7 +357,7 @@ export default function Dashboard() {
                             className="rounded-xl border border-slate-600 px-2.5 py-1 text-xs text-slate-100 hover:bg-slate-800"
                             onClick={() => setEditingCase(item)}
                           >
-                            Modifica
+                            Apri
                           </button>
                         )}
                         {canDeleteCase && (
@@ -391,12 +392,13 @@ export default function Dashboard() {
       </div>
 
       {token && (
-        <CaseEditModal
+        <CaseDetailModal
           open={!!editingCase}
           token={token}
           caseItem={editingCase}
           machines={machines}
           categories={categories}
+          canEdit={!!editingCase && canEditCase(editingCase as CaseItem)}
           onClose={() => setEditingCase(null)}
           onSaved={loadData}
         />

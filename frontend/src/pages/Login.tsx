@@ -11,7 +11,8 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (user) nav('/');
+    if (!user) return;
+    nav('/');
   }, [user, nav]);
 
   return (
