@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-MODEL="${AI_MODEL:-llama3.2}"
+MODEL="${AI_MODEL:-llama3.1:8b}"
 
 echo "⏳ Attendo Ollama..."
 for i in {1..30}; do

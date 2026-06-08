@@ -46,9 +46,9 @@ services:
       - JWT_EXPIRY=$JWT_EXPIRY
       - JWT_REFRESH_EXPIRY=$JWT_REFRESH_EXPIRY
       - AI_PROVIDER=ollama
-      - AI_API_URL=$AI_API_URL
-      - AI_MODEL=$AI_MODEL
-      - AI_TIMEOUT=$AI_TIMEOUT
+      - AI_API_URL=${AI_API_URL:-http://ollama:11434}
+      - AI_MODEL=${AI_MODEL:-llama3.1:8b}
+      - AI_TIMEOUT=${AI_TIMEOUT:-120000}
       - LOG_LEVEL=$LOG_LEVEL
       - CORS_ORIGIN=$CORS_ORIGIN
       - LDAP_ENABLED=$LDAP_ENABLED

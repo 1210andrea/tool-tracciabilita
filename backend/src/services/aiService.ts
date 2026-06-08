@@ -1,6 +1,15 @@
 import { env } from '../config/env';
+import { logger } from '../config/logger';
 
 type ChatMessage = { role: string; content: string };
+
+export type OllamaFailureReason = 'timeout' | 'http_error' | 'empty_response' | 'network_error' | 'model_missing';
+
+let lastOllamaError: { reason: OllamaFailureReason; detail: string } | null = null;
+
+export function getLastOllamaError() {
+  return lastOllamaError;
+}
 
 function extractOllamaContent(payload: unknown): string | null {
   const p = payload as Record<string, unknown>;
@@ -13,7 +22,49 @@ function extractOllamaContent(payload: unknown): string | null {
   return null;
 }
 
+function modelMatches(available: string, configured: string): boolean {
+  if (available === configured) return true;
+  const base = configured.split(':')[0];
+  return available === base || available.startsWith(`${base}:`);
+}
+
+export async function listOllamaModels(): Promise<string[]> {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), env.AI_TIMEOUT);
+  try {
+    const resp = await fetch(`${env.AI_API_URL}/api/tags`, { signal: controller.signal });
+    if (!resp.ok) return [];
+    const payload = (await resp.json()) as { models?: Array<{ name?: string }> };
+    return (payload.models ?? []).map((m) => m.name).filter((n): n is string => Boolean(n));
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+export async function verifyOllamaModel(): Promise<{ ok: true } | { ok: false; reason: OllamaFailureReason; detail: string }> {
+  const models = await listOllamaModels();
+  if (!models.length) {
+    return {
+      ok: false,
+      reason: 'network_error',
+      detail: `Impossibile contattare Ollama su ${env.AI_API_URL} o nessun modello installato`
+    };
+  }
+  const found = models.some((name) => modelMatches(name, env.AI_MODEL));
+  if (!found) {
+    return {
+      ok: false,
+      reason: 'model_missing',
+      detail: `Modello "${env.AI_MODEL}" non trovato. Modelli disponibili: ${models.join(', ')}`
+    };
+  }
+  return { ok: true };
+}
+
 async function callOllama(messages: ChatMessage[]): Promise<string | null> {
+  lastOllamaError = null;
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), env.AI_TIMEOUT);
   try {
@@ -23,10 +74,34 @@ async function callOllama(messages: ChatMessage[]): Promise<string | null> {
       body: JSON.stringify({ model: env.AI_MODEL, messages, stream: false }),
       signal: controller.signal
     });
-    if (!resp.ok) return null;
+    if (!resp.ok) {
+      const errBody = await resp.text().catch(() => '');
+      lastOllamaError = {
+        reason: 'http_error',
+        detail: `HTTP ${resp.status}${errBody ? `: ${errBody.slice(0, 300)}` : ''}`
+      };
+      logger.error({ ollama: { status: resp.status, model: env.AI_MODEL, body: errBody.slice(0, 500) } });
+      return null;
+    }
     const payload = await resp.json();
-    return extractOllamaContent(payload);
-  } catch {
+    const content = extractOllamaContent(payload);
+    if (!content) {
+      lastOllamaError = { reason: 'empty_response', detail: 'Risposta Ollama senza contenuto testuale' };
+      logger.error({ ollama: { model: env.AI_MODEL, payload } });
+      return null;
+    }
+    return content;
+  } catch (err) {
+    const isAbort = err instanceof Error && err.name === 'AbortError';
+    lastOllamaError = {
+      reason: isAbort ? 'timeout' : 'network_error',
+      detail: isAbort
+        ? `Timeout dopo ${env.AI_TIMEOUT}ms (aumenta AI_TIMEOUT per modelli grandi)`
+        : err instanceof Error
+          ? err.message
+          : 'Errore di rete verso Ollama'
+    };
+    logger.error({ ollama: { model: env.AI_MODEL, error: lastOllamaError } });
     return null;
   } finally {
     clearTimeout(t);
@@ -46,15 +121,9 @@ Descrizione utente: ${description}
 Fornisci una soluzione chiara e pratica, con passaggi operativi e consigli.`;
 
 export async function pingOllama() {
-  const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), env.AI_TIMEOUT);
-  try {
-    const resp = await fetch(`${env.AI_API_URL}/api/tags`, { signal: controller.signal });
-    if (!resp.ok) throw new Error('AI ping failed');
-    return true;
-  } finally {
-    clearTimeout(t);
-  }
+  const check = await verifyOllamaModel();
+  if (!check.ok) throw new Error(check.detail);
+  return true;
 }
 
 export async function generateAiSolution(data: { machine: string; line: string; operator: string; problem: string; cause: string; description: string }) {
@@ -131,4 +200,18 @@ Rispondi in modo strutturato con titoli brevi.`;
     { role: 'system', content: 'Sei un analista di manutenzione industriale. Usi solo i dati forniti, senza inventare statistiche.' },
     { role: 'user', content: prompt }
   ]);
+}
+
+export function formatOllamaUnavailableMessage(): string {
+  const err = getLastOllamaError();
+  if (!err) {
+    return 'Il servizio IA (Ollama) non è al momento disponibile. Verifica che Ollama sia avviato e che il modello sia scaricato.';
+  }
+  if (err.reason === 'model_missing') {
+    return `Il modello IA "${env.AI_MODEL}" non è installato in Ollama. ${err.detail}`;
+  }
+  if (err.reason === 'timeout') {
+    return `L'analisi IA ha superato il timeout (${env.AI_TIMEOUT}ms). ${err.detail}`;
+  }
+  return `Il servizio IA (Ollama) non è disponibile: ${err.detail}. Modello configurato: ${env.AI_MODEL}, URL: ${env.AI_API_URL}`;
 }

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware } from '../middleware/auth';
 import { pool } from '../db';
-import { generateCaseInsights } from '../services/aiService';
+import { formatOllamaUnavailableMessage, generateCaseInsights } from '../services/aiService';
 
 export const aiRoutes = Router();
 
@@ -106,7 +106,7 @@ aiRoutes.post('/analyze', authMiddleware, async (req, res, next) => {
     if (!analysis) {
       return res.json({
         insufficient: true,
-        message: 'Il servizio IA (Ollama) non è al momento disponibile. Verifica che Ollama sia avviato e che il modello sia scaricato.',
+        message: formatOllamaUnavailableMessage(),
         stats: {
           same_machine_problem: counts.same_machine_problem,
           same_problem_line: counts.same_problem_line,
