@@ -46,7 +46,7 @@ app.use((req, _res, next) => {
 app.get('/health', async (_req, res) => {
   const health = { status: 'OK', timestamp: new Date().toISOString(), database: 'checking...', redis: 'checking...', ai: 'checking...' };
   try {
-    const { pool } = await import('./services/dbService');
+    const { pool } = await import('./db');
     await pool.query('SELECT 1');
     health.database = 'OK';
   } catch {

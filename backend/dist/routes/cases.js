@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.casesRoutes = void 0;
 const express_1 = require("express");
 const auth_1 = require("../middleware/auth");
-const dbService_1 = require("../services/dbService");
+const db_1 = require("../db");
 const socketService_1 = require("../services/socketService");
 const aiService_1 = require("../services/aiService");
 exports.casesRoutes = (0, express_1.Router)();
@@ -68,7 +68,7 @@ exports.casesRoutes.get('/', auth_1.authMiddleware, async (req, res, next) => {
             conditions.push(`m.line = $${values.length}`);
         }
         const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-        const r = await dbService_1.pool.query(`SELECT c.*, m.code as machine_code, m.name as machine_name, u.username as created_by_username,
+        const r = await db_1.pool.query(`SELECT c.*, m.code as machine_code, m.name as machine_name, u.username as created_by_username,
               op.name as operator_name, prob.name as problem_name, cause.name as cause_name,
               COUNT(*) OVER() AS total_count
        FROM cases c
@@ -110,7 +110,7 @@ exports.casesRoutes.post('/', auth_1.authMiddleware, async (req, res, next) => {
         if (solution.trim().length < 10) {
             return res.status(400).json({ error: 'solution deve contenere almeno 10 caratteri.' });
         }
-        const machineQuery = await dbService_1.pool.query('SELECT code, name, line FROM machines WHERE id = $1', [body.machine_id]);
+        const machineQuery = await db_1.pool.query('SELECT code, name, line FROM machines WHERE id = $1', [body.machine_id]);
         const machineRecord = machineQuery.rows[0];
         const machineName = machineRecord?.name ?? body.machine_id;
         const machineLine = machineRecord?.line ?? 'N/A';
@@ -118,7 +118,7 @@ exports.casesRoutes.post('/', auth_1.authMiddleware, async (req, res, next) => {
             const id = body[key];
             if (!id)
                 return 'N/A';
-            const cat = await dbService_1.pool.query('SELECT name FROM categories WHERE id = $1', [id]);
+            const cat = await db_1.pool.query('SELECT name FROM categories WHERE id = $1', [id]);
             return cat.rows[0]?.name ?? 'N/A';
         }));
         const ai_solution = await (0, aiService_1.generateAiSolution)({
@@ -129,7 +129,7 @@ exports.casesRoutes.post('/', auth_1.authMiddleware, async (req, res, next) => {
             cause: categoryNames[2],
             description: solution
         });
-        const r = await dbService_1.pool.query(`INSERT INTO cases(machine_id, operator_id, problem_id, cause_id, title, description, solution, ai_solution,
+        const r = await db_1.pool.query(`INSERT INTO cases(machine_id, operator_id, problem_id, cause_id, title, description, solution, ai_solution,
                         priority, status, created_by, assigned_to)
        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        RETURNING *`, [
@@ -146,7 +146,7 @@ exports.casesRoutes.post('/', auth_1.authMiddleware, async (req, res, next) => {
             req.user.id,
             body.assigned_to ?? null
         ]);
-        await dbService_1.pool.query(`INSERT INTO case_events(case_id,event_type,message,actor_id)
+        await db_1.pool.query(`INSERT INTO case_events(case_id,event_type,message,actor_id)
        VALUES($1,'system','case created',$2)`, [r.rows[0].id, req.user.id]);
         (0, socketService_1.emitEvent)('case_created', { caseId: r.rows[0].id, title: r.rows[0].title });
         (0, socketService_1.emitEvent)('case-updated', { caseId: r.rows[0].id, title: r.rows[0].title });

@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 
 import { env } from '../config/env';
-import { pool } from '../services/dbService';
+import { pool } from '../db';
 import { LDAPService } from '../services/ldapService';
 import { authMiddleware } from '../middleware/auth';
 
