@@ -2,8 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
+import { AdminCategoriesTabs } from '../components/AdminCategoriesTabs';
+import { ConfirmModal } from '../components/ConfirmModal';
 
 type Category = { id: string; type: string; name: string; description?: string };
+
 type Machine = { id: string; code: string; name: string; line?: string; location?: string };
 type User = { id: string; username: string; email?: string; role: string };
 
@@ -12,6 +15,11 @@ const API_URL = '/api';
 export default function AdminPanel() {
   const { token } = useAuth();
   const [activeTab, setActiveTab] = useState<'categories' | 'machines' | 'users'>('categories');
+  const [activeCategoryType, setActiveCategoryType] = useState<'operator' | 'problem' | 'cause'>('operator');
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [pendingDeleteType, setPendingDeleteType] = useState<'categories' | 'machines' | 'users' | null>(null);
+
   const [categories, setCategories] = useState<Category[]>([]);
   const [machines, setMachines] = useState<Machine[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -92,6 +100,23 @@ export default function AdminPanel() {
     }
   };
 
+  const requestDelete = (type: 'categories' | 'machines' | 'users', id: string) => {
+    setPendingDeleteType(type);
+    setPendingDeleteId(id);
+    setConfirmOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!pendingDeleteType || !pendingDeleteId) return;
+    setConfirmOpen(false);
+    const type = pendingDeleteType;
+    const id = pendingDeleteId;
+    setPendingDeleteType(null);
+    setPendingDeleteId(null);
+    await deleteItem(type, id);
+  };
+
+
   return (
     <div className="space-y-6 p-6">
       <div>
@@ -121,22 +146,19 @@ export default function AdminPanel() {
           {activeTab === 'categories' && (
             <>
               <div>
-                <h2 className="text-xl font-semibold text-slate-100">Nuova categoria</h2>
-                <p className="text-sm text-slate-400">Aggiungi operatori, problemi o cause.</p>
+                <h2 className="text-xl font-semibold text-slate-100">Categorie</h2>
+                <p className="text-sm text-slate-400">Gestisci operatori, problemi e cause.</p>
               </div>
+
+              <AdminCategoriesTabs
+                activeType={activeCategoryType}
+                onChange={(t) => {
+                  setActiveCategoryType(t);
+                  setCategoryForm({ type: t, name: '', description: '' });
+                }}
+              />
+
               <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="text-sm text-slate-300">Tipo</label>
-                  <select
-                    value={categoryForm.type}
-                    onChange={(e) => setCategoryForm((current) => ({ ...current, type: e.target.value }))}
-                    className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
-                  >
-                    <option value="operator">Operatore</option>
-                    <option value="problem">Problema</option>
-                    <option value="cause">Causa</option>
-                  </select>
-                </div>
                 <div>
                   <label className="text-sm text-slate-300">Nome</label>
                   <input
@@ -145,7 +167,9 @@ export default function AdminPanel() {
                     className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
                   />
                 </div>
+                <div />
               </div>
+
               <div>
                 <label className="text-sm text-slate-300">Descrizione</label>
                 <textarea
@@ -155,11 +179,13 @@ export default function AdminPanel() {
                   className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
                 />
               </div>
+
               <button type="button" className="rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950" onClick={submitCategory}>
-                Crea categoria
+                Aggiungi {activeCategoryType === 'operator' ? 'operatore' : activeCategoryType === 'problem' ? 'problema' : 'causa'}
               </button>
             </>
           )}
+
 
           {activeTab === 'machines' && (
             <>
@@ -253,19 +279,26 @@ export default function AdminPanel() {
 
           {activeTab === 'categories' && (
             <div className="space-y-4">
-              {categories.map((category) => (
-                <div key={category.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <div className="font-semibold text-slate-100">[{category.type}] {category.name}</div>
-                    <div className="text-sm text-slate-500">{category.description || 'Nessuna descrizione'}</div>
+              {categories
+                .filter((c) => c.type === activeCategoryType)
+                .map((category) => (
+                  <div key={category.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <div className="font-semibold text-slate-100">{category.name}</div>
+                      <div className="text-sm text-slate-500">{category.description || 'Nessuna descrizione'}</div>
+                    </div>
+                    <button
+                      type="button"
+                      className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950"
+                      onClick={() => requestDelete('categories', category.id)}
+                    >
+                      Elimina
+                    </button>
                   </div>
-                  <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950" onClick={() => deleteItem('categories', category.id)}>
-                    Elimina
-                  </button>
-                </div>
-              ))}
+                ))}
             </div>
           )}
+
 
           {activeTab === 'machines' && (
             <div className="space-y-4">
@@ -301,10 +334,26 @@ export default function AdminPanel() {
         </div>
       </div>
 
+      <ConfirmModal
+        open={confirmOpen}
+        title="Conferma eliminazione"
+        message="Sei sicuro di cancellare?"
+        confirmText="Elimina"
+        cancelText="Annulla"
+        danger
+        onCancel={() => {
+          setConfirmOpen(false);
+          setPendingDeleteId(null);
+          setPendingDeleteType(null);
+        }}
+        onConfirm={confirmDelete}
+      />
+
       <Link to="/" className="inline-flex rounded-2xl bg-slate-800 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-700">
         Torna alla dashboard
       </Link>
     </div>
   );
 }
+
 

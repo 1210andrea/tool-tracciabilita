@@ -14,8 +14,10 @@ import {
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import { useSocket } from '../hooks/useSocket';
+import { CategoriesSelect } from '../components/CategoriesSelect';
 
 const API_URL = '/api';
+
 
 type CaseItem = {
   id: string;
@@ -33,9 +35,13 @@ type CaseItem = {
   ai_solution?: string;
 };
 
-type MachineItem = { id: string; code: string; name: string };
+type MachineItem = { id: string; code: string; name: string; line?: string };
+
+type Category = { id: string; type: 'operator' | 'problem' | 'cause'; name: string };
+
 type BreakdownItem = { status: string; count: number };
 type TopMachine = { machine: string; problem_count: number };
+
 
 export default function Dashboard() {
   const { token, user } = useAuth();
@@ -43,18 +49,40 @@ export default function Dashboard() {
   const [machines, setMachines] = useState<MachineItem[]>([]);
   const [breakdown, setBreakdown] = useState<BreakdownItem[]>([]);
   const [topMachines, setTopMachines] = useState<TopMachine[]>([]);
-  const [statusFilter, setStatusFilter] = useState('');
-  const [machineFilter, setMachineFilter] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [timeFrom, setTimeFrom] = useState('');
+  const [timeTo, setTimeTo] = useState('');
+  const [lineFilter, setLineFilter] = useState('');
+  const [operatorIdFilter, setOperatorIdFilter] = useState('');
+  const [problemIdFilter, setProblemIdFilter] = useState('');
+  const [causeIdFilter, setCauseIdFilter] = useState('');
+
+  const [categories, setCategories] = useState<Category[]>([]);
+
+
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [limit] = useState(10);
   const [loading, setLoading] = useState(true);
   const [eventMessage, setEventMessage] = useState('');
 
-  const params = useMemo(
-    () => ({ status: statusFilter || undefined, machine_id: machineFilter || undefined, page, limit }),
-    [statusFilter, machineFilter, page, limit]
+  const appliedParams = useMemo(
+    () => ({
+      date_from: dateFrom || undefined,
+      date_to: dateTo || undefined,
+      time_from: timeFrom || undefined,
+      time_to: timeTo || undefined,
+      line: lineFilter || undefined,
+      operator_id: operatorIdFilter || undefined,
+      problem_id: problemIdFilter || undefined,
+      cause_id: causeIdFilter || undefined,
+      page,
+      limit
+    }),
+    [dateFrom, dateTo, timeFrom, timeTo, lineFilter, operatorIdFilter, problemIdFilter, causeIdFilter, page, limit]
   );
+
 
   const loadData = async () => {
     if (!token) return;
@@ -63,8 +91,9 @@ export default function Dashboard() {
       const [casesResp, dashboardResp, topResp] = await Promise.all([
         axios.get(`${API_URL}/cases`, {
           headers: { Authorization: `Bearer ${token}` },
-          params
+          params: appliedParams
         }),
+
         axios.get(`${API_URL}/dashboard`, { headers: { Authorization: `Bearer ${token}` } }),
         axios.get(`${API_URL}/stats/top-machines`, { headers: { Authorization: `Bearer ${token}` } })
       ]);
@@ -93,13 +122,26 @@ export default function Dashboard() {
     }
   };
 
+  const loadCategories = async () => {
+    if (!token) return;
+    try {
+      const resp = await axios.get(`${API_URL}/categories`, { headers: { Authorization: `Bearer ${token}` } });
+      setCategories(resp.data.items || []);
+    } catch {
+      setCategories([]);
+    }
+  };
+
   useEffect(() => {
     loadMachines();
+    loadCategories();
   }, [token]);
+
 
   useEffect(() => {
     loadData();
-  }, [token, params]);
+  }, [token, appliedParams]);
+
 
   useSocket((_event, payload) => {
     setEventMessage(`Nuovo aggiornamento caso: ${payload && (payload as any).caseId ? (payload as any).caseId : 'aggiornamento disponibile'}`);
@@ -134,7 +176,19 @@ export default function Dashboard() {
         <div className="rounded-3xl bg-slate-900/80 p-6 shadow-lg shadow-slate-950/20 text-white">
           <div className="text-sm uppercase tracking-[0.22em] text-slate-400">Pagina</div>
           <div className="mt-4 text-4xl font-semibold">{page} / {pageCount}</div>
-          <div className="mt-3 text-sm text-slate-500">Filtri attivi: {statusFilter || 'tutti'} / {machineFilter ? 'macchina selezionata' : 'tutte'}</div>
+          <div className="mt-3 text-sm text-slate-500">
+            Filtri attivi: {[
+              dateFrom ? 'data da' : null,
+              dateTo ? 'data a' : null,
+              timeFrom ? 'ora da' : null,
+              timeTo ? 'ora a' : null,
+              lineFilter ? 'linea' : null,
+              operatorIdFilter ? 'operatore' : null,
+              problemIdFilter ? 'problema' : null,
+              causeIdFilter ? 'causa' : null
+            ].filter(Boolean).join(', ') || 'nessuno'}
+          </div>
+
         </div>
         <div className="rounded-3xl bg-slate-900/80 p-6 shadow-lg shadow-slate-950/20 text-white">
           <div className="text-sm uppercase tracking-[0.22em] text-slate-400">Ruolo utente</div>
@@ -147,38 +201,96 @@ export default function Dashboard() {
         <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="text-xl font-semibold">Filtri visualizzazione</h2>
-            <p className="text-sm text-slate-400">Cerca casi per stato o macchina.</p>
+            <p className="text-sm text-slate-400">Filtra i casi con criteri avanzati.</p>
+
           </div>
-          <div className="grid w-full gap-3 sm:grid-cols-2 md:w-auto md:grid-cols-3">
-            <select
-              value={statusFilter}
-              onChange={(e) => {
-                setPage(1);
-                setStatusFilter(e.target.value);
-              }}
-              className="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none"
-            >
-              <option value="">Tutti gli status</option>
-              <option value="open">Open</option>
-              <option value="in_progress">In Progress</option>
-              <option value="closed">Closed</option>
-            </select>
-            <select
-              value={machineFilter}
-              onChange={(e) => {
-                setPage(1);
-                setMachineFilter(e.target.value);
-              }}
-              className="rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none"
-            >
-              <option value="">Tutte le macchine</option>
-              {machines.map((machine) => (
-                <option key={machine.id} value={machine.id}>
-                  {machine.code} - {machine.name}
-                </option>
-              ))}
-            </select>
+          <div className="grid w-full gap-3 sm:grid-cols-2 md:w-auto md:grid-cols-4">
+            <div>
+              <label className="block text-xs text-slate-400">Data da</label>
+              <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="mt-1 w-full rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none" />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400">Data a</label>
+              <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="mt-1 w-full rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none" />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400">Ora da</label>
+              <input type="time" value={timeFrom} onChange={(e) => setTimeFrom(e.target.value)} className="mt-1 w-full rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none" />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400">Ora a</label>
+              <input type="time" value={timeTo} onChange={(e) => setTimeTo(e.target.value)} className="mt-1 w-full rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none" />
+            </div>
           </div>
+
+          <div className="mt-4 grid w-full gap-3 sm:grid-cols-2 md:w-auto md:grid-cols-3">
+            <div>
+              <label className="block text-xs text-slate-400">Linea</label>
+              <select value={lineFilter} onChange={(e) => setLineFilter(e.target.value)} className="mt-1 w-full rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none">
+                <option value="">Tutte</option>
+                {[...new Set(machines.map((m) => m.line).filter(Boolean))].map((ln) => (
+                  <option key={ln as string} value={ln as string}>{ln as string}</option>
+                ))}
+              </select>
+            </div>
+            <CategoriesSelect
+              label="Operatore"
+              value={operatorIdFilter}
+              onChange={setOperatorIdFilter}
+              categories={categories}
+              type="operator"
+              placeholder="Tutti"
+              disabled={categories.length === 0}
+            />
+            <CategoriesSelect
+              label="Problema"
+              value={problemIdFilter}
+              onChange={setProblemIdFilter}
+              categories={categories}
+              type="problem"
+              placeholder="Tutti"
+              disabled={categories.length === 0}
+            />
+            <CategoriesSelect
+              label="Causa"
+              value={causeIdFilter}
+              onChange={setCauseIdFilter}
+              categories={categories}
+              type="cause"
+              placeholder="Tutti"
+              disabled={categories.length === 0}
+            />
+
+          </div>
+
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <button
+              type="button"
+              onClick={() => { setPage(1); loadData(); }}
+              className="rounded-2xl bg-sky-500 px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-sky-400"
+            >
+              APPLICA FILTRI
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPage(1);
+                setDateFrom('');
+                setDateTo('');
+                setTimeFrom('');
+                setTimeTo('');
+                setLineFilter('');
+                setOperatorIdFilter('');
+                setProblemIdFilter('');
+                setCauseIdFilter('');
+                loadData();
+              }}
+              className="rounded-2xl border border-slate-700 bg-slate-900/90 px-6 py-3 text-sm text-slate-100 transition hover:bg-slate-800"
+            >
+              RESET
+            </button>
+          </div>
+
         </div>
 
         <div className="grid gap-6 lg:grid-cols-2">

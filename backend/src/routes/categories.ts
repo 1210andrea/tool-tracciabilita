@@ -65,6 +65,22 @@ categoriesRoutes.delete('/:id', authMiddleware, async (req, res, next) => {
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
 
     const { id } = req.params;
+
+    // 1) Verifica referenzialità in cases
+    const opCountR = await pool.query('SELECT COUNT(*)::int as count FROM cases WHERE operator_id = $1', [id]);
+    const probCountR = await pool.query('SELECT COUNT(*)::int as count FROM cases WHERE problem_id = $1', [id]);
+    const causeCountR = await pool.query('SELECT COUNT(*)::int as count FROM cases WHERE cause_id = $1', [id]);
+
+    const operatorCount = opCountR.rows[0]?.count ?? 0;
+    const problemCount = probCountR.rows[0]?.count ?? 0;
+    const causeCount = causeCountR.rows[0]?.count ?? 0;
+    const totalUsed = operatorCount + problemCount + causeCount;
+
+    if (totalUsed > 0) {
+      return res.status(400).json({ error: `In uso da ${totalUsed} casi` });
+    }
+
+    // 2) Delete
     const r = await pool.query('DELETE FROM categories WHERE id = $1 RETURNING type', [id]);
     emitEvent('categories_updated', { type: r.rows[0]?.type ?? 'all' });
     res.json({ ok: true });
@@ -72,4 +88,5 @@ categoriesRoutes.delete('/:id', authMiddleware, async (req, res, next) => {
     next(e);
   }
 });
+
 

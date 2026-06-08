@@ -1,53 +1,47 @@
-# TODO - machines-app
+# TODO - Prompt FIX Tool-Tracciabilità
 
-## Step 1 — Scaffold progetto
-- [x] Crea cartelle: `backend/`, `frontend/`, `nginx/`, `scripts/`
-- [x] Aggiungi file root: `docker-compose.prod.yml`, `docker-compose.dev.yml`, `.env.example`, `.env.production`, `init.sql`, `README.md`
+## Passo 1 - Analisi (già raccolto)
+- Dashboard.tsx: filtri attuali (status + macchina) e tabella.
+- CreateCase.tsx: priorità + assegnato a + payload (description/priority/assigned_to).
+- AdminPanel.tsx: tab categorie unica e delete senza conferma.
+- Backend: cases POST valida `body.solution` e inserisce `solution`/`ai_solution`.
+- Backend: categories DELETE senza check referenziale.
 
-## Step 2 — Nginx
-- [x] Crea `nginx/Dockerfile`
-- [x] Crea `nginx/nginx.conf` con rate limiting, gzip, security headers, websocket, health proxy
+## Stato
+- [x] Step avviati: TODO creato
 
-## Step 3 — Backend (Express + TS)
-- [x] `backend/package.json`, `tsconfig.json`, `Dockerfile`
-- [x] Config env validation (`src/config/env.ts`)
-- [x] Winston logger (`src/config/logger.ts`)
-- [x] Middleware: rate limiter, request logger, error handler
-- [x] Auth JWT (LDAP opzionale via `ldapService.ts`) 
-- [x] Routes: auth, machines, categories, cases, dashboard, stats, health(/health e /metrics)
-- [x] Services: dbService, redisService, aiService (Ollama), ldapService (opzionale)
-- [x] Socket.io: setup server (evento placeholder)
 
-## Step 4 — Database schema
-- [x] Scrivere `init.sql` con schema completo (users, machines, categories, cases, events)
+## Passo 2 - Dashboard
+- [x] Rimuovere filtro “Tutti gli status”.
+- [x] Aggiungere UI filtri: DATA (da/a), ORA (da/a), LINEA, OPERATORE, PROBLEMA, CAUSA.
+- [x] Pulsanti APPLICA FILTRI e RESET.
+- [ ] Dashboard: filtri Operatore/Problema/Causa come select (non input id) popolati da `/api/categories?type=...`.
 
-## Step 5 — Frontend (React + TS + Tailwind + Recharts)
-- [x] `frontend/package.json`, `vite.config.ts`, `Dockerfile`
-- [x] AuthContext + hooks + protected routing
-- [x] UI pagine: Login, Dashboard, CreateCase, AdminPanel
-- [ ] Componenti: CaseForm, CaseList, charts avanzati, filterbar
+- [x] Collegare i filtri ai nuovi parametri della GET /api/cases.
 
-## Step 6 — AI (Ollama)
-- [x] Implementare ping in `aiService.ts`
-- [ ] Endpoint API backend per generazione testo (integrazione reale)
+## Passo 3 - CreateCase
+- [x] Rimuovere campo Priorità.
+- [x] Rimuovere campo “Assegna a”.
+- [x] Allineare payload con backend: invio `solution` = `description`.
+- [x] Debug/validazione: errore chiaro su campo mancante.
+- [ ] Verificare che il flusso AI Solution (manuale + AI) sia effettivamente mostrato in UI.
 
-## Step 7 — Scripts
-- [x] `scripts/backup.sh`
-- [x] `scripts/restore.sh`
-- [x] `scripts/deploy.sh`
-- [x] `scripts/init-ssl.sh`
+## Passo 4 - AdminPanel
+- [ ] Rivisitare tab categorie in: OPERATORI | PROBLEMI | CAUSE (tab interne).
+- [ ] Modal conferma prima di eliminare con testo “Sei sicuro di cancellare?”.
+- [ ] Lista filtrata per type.
 
-## Step 8 — Docker Compose
-- [x] `docker-compose.prod.yml` (nginx+frontend+backend+postgres+redis+ollama)
-- [x] `docker-compose.dev.yml` (volumi + dev mode)
-- [ ] Verifiche healthcheck e reti/volumi + fix compose env substitution
+## Passo 5 - Backend categories delete referenziale
+- [x] DELETE /api/categories/:id: check uso in cases su operator_id/problem_id/cause_id.
+- [x] Se usato: 400 { error: "In uso da X casi" }
+- [x] Se non usato: delete.
 
-## Step 9 — Test rapido
-- [ ] `docker compose -f docker-compose.prod.yml up -d --build`
-- [ ] Verificare /health, /metrics, login, CRUD case
-- [ ] Verificare websocket (socket.io) e charts
+## Passo 6 - Backend cases validazione + filtri
+- [x] POST /api/cases: validare campi obbligatori e messaggio chiaro.
+- [x] GET /api/cases: filtri date_from/date_to, time_from/time_to, line, operator_id/problem_id/cause_id.
 
-## Step 10 — Finishing
-- [ ] Aggiornare `README.md` con istruzioni complete e note SSL/cert paths
-
+## Passo 7 - Test rapidi
+- [x] Verificare creazione caso dall’UI.
+- [x] Verificare filtri dashboard (almeno parzialmente).
+- [ ] Verificare eliminazione categorie con errori corretti.
 

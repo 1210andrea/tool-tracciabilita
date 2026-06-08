@@ -8,7 +8,22 @@ export const casesRoutes = Router();
 
 casesRoutes.get('/', authMiddleware, async (req, res, next) => {
   try {
-    const { status, machine_id, assigned_to, page = '1', limit = '25' } = req.query as Record<string, string>;
+    const {
+      status,
+      machine_id,
+      assigned_to,
+      operator_id,
+      problem_id,
+      cause_id,
+      date_from,
+      date_to,
+      time_from,
+      time_to,
+      line,
+      page = '1',
+      limit = '25'
+    } = req.query as Record<string, string>;
+
     const pageNumber = Math.max(1, Number(page) || 1);
     const limitNumber = Math.min(100, Math.max(1, Number(limit) || 25));
     const offset = (pageNumber - 1) * limitNumber;
@@ -35,18 +50,39 @@ casesRoutes.get('/', authMiddleware, async (req, res, next) => {
       values.push(Number(req.query.year));
       conditions.push(`EXTRACT(YEAR FROM c.created_at)::int = $${values.length}`);
     }
-    if (req.query.operator_id) {
-      values.push(req.query.operator_id as string);
+    if (operator_id) {
+      values.push(operator_id as string);
       conditions.push(`c.operator_id = $${values.length}`);
     }
-    if (req.query.problem_id) {
-      values.push(req.query.problem_id as string);
+    if (problem_id) {
+      values.push(problem_id as string);
       conditions.push(`c.problem_id = $${values.length}`);
     }
-    if (req.query.cause_id) {
-      values.push(req.query.cause_id as string);
+    if (cause_id) {
+      values.push(cause_id as string);
       conditions.push(`c.cause_id = $${values.length}`);
     }
+    if (date_from) {
+      values.push(date_from as string);
+      conditions.push(`c.created_at::date >= $${values.length}`);
+    }
+    if (date_to) {
+      values.push(date_to as string);
+      conditions.push(`c.created_at::date <= $${values.length}`);
+    }
+    if (time_from) {
+      values.push(time_from as string);
+      conditions.push(`TO_CHAR(c.created_at, 'HH24:MI') >= $${values.length}`);
+    }
+    if (time_to) {
+      values.push(time_to as string);
+      conditions.push(`TO_CHAR(c.created_at, 'HH24:MI') <= $${values.length}`);
+    }
+    if (line) {
+      values.push(line as string);
+      conditions.push(`m.line = $${values.length}`);
+    }
+
 
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
@@ -66,6 +102,7 @@ casesRoutes.get('/', authMiddleware, async (req, res, next) => {
       [...values, limitNumber, offset]
     );
 
+
     const total = r.rows[0]?.total_count ?? 0;
     res.json({ items: r.rows, total });
   } catch (e) {
@@ -76,24 +113,37 @@ casesRoutes.get('/', authMiddleware, async (req, res, next) => {
 casesRoutes.post('/', authMiddleware, async (req, res, next) => {
   try {
     const body = req.body as {
-      machine_id: string;
+      machine_id?: string;
       operator_id?: string;
       problem_id?: string;
       cause_id?: string;
-      title: string;
+      title?: string;
+      // UI storicamente inviava `description`, ma backend usa `solution`
       description?: string;
-      solution: string;
+      solution?: string;
       priority?: string;
       status?: string;
       assigned_to?: string | null;
     };
 
-    if (!body.machine_id || !body.operator_id || !body.problem_id || !body.cause_id || !body.title || !body.solution) {
-      return res.status(400).json({ error: 'Tutti i campi obbligatori devono essere compilati.' });
+    const solution = (body.solution ?? body.description ?? '').toString();
+
+    const missing: string[] = [];
+    if (!body.machine_id) missing.push('machine_id');
+    if (!body.operator_id) missing.push('operator_id');
+    if (!body.problem_id) missing.push('problem_id');
+    if (!body.cause_id) missing.push('cause_id');
+    if (!body.title) missing.push('title');
+    if (!solution.trim()) missing.push('solution (o description)');
+
+    if (missing.length) {
+      return res.status(400).json({ error: `Campo obbligatorio mancante: ${missing[0]}` });
     }
-    if (body.solution.trim().length < 10) {
-      return res.status(400).json({ error: 'La soluzione deve contenere almeno 10 caratteri.' });
+
+    if (solution.trim().length < 10) {
+      return res.status(400).json({ error: 'solution deve contenere almeno 10 caratteri.' });
     }
+
 
     const machineQuery = await pool.query('SELECT code, name, line FROM machines WHERE id = $1', [body.machine_id]);
     const machineRecord = machineQuery.rows[0];
@@ -102,7 +152,7 @@ casesRoutes.post('/', authMiddleware, async (req, res, next) => {
 
     const categoryNames = await Promise.all(
       ['operator_id', 'problem_id', 'cause_id'].map(async (key) => {
-        const id = body[key as 'operator_id' | 'problem_id' | 'cause_id'];
+        const id = body[key as 'operator_id' | 'problem_id' | 'cause_id'] as string | undefined;
         if (!id) return 'N/A';
         const cat = await pool.query('SELECT name FROM categories WHERE id = $1', [id]);
         return cat.rows[0]?.name ?? 'N/A';
@@ -115,8 +165,9 @@ casesRoutes.post('/', authMiddleware, async (req, res, next) => {
       operator: categoryNames[0],
       problem: categoryNames[1],
       cause: categoryNames[2],
-      description: body.solution
+      description: solution
     });
+
 
     const r = await pool.query(
       `INSERT INTO cases(machine_id, operator_id, problem_id, cause_id, title, description, solution, ai_solution,
@@ -130,7 +181,8 @@ casesRoutes.post('/', authMiddleware, async (req, res, next) => {
         body.cause_id ?? null,
         body.title,
         body.description ?? null,
-        body.solution,
+        solution,
+
         ai_solution,
         body.priority ?? 'medium',
         body.status ?? 'open',

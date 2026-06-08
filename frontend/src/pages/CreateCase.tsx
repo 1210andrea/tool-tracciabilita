@@ -24,10 +24,9 @@ export default function CreateCase() {
   const [operatorId, setOperatorId] = useState('');
   const [problemId, setProblemId] = useState('');
   const [causeId, setCauseId] = useState('');
-  const [assignedTo, setAssignedTo] = useState('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [priority, setPriority] = useState('medium');
+
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -48,6 +47,7 @@ export default function CreateCase() {
         setMachines(machinesResp.data.items || []);
         const items = categoriesResp.data.items || [];
         setOperators(items.filter((item: CategoryItem) => item.type === 'operator'));
+
         setProblems(items.filter((item: CategoryItem) => item.type === 'problem'));
         setCauses(items.filter((item: CategoryItem) => item.type === 'cause'));
         setUsers(usersResp.data.items || []);
@@ -65,10 +65,11 @@ export default function CreateCase() {
 
   const handleCreate = async () => {
     if (!token) return;
-    if (!machineId || !title) {
-      setError('Seleziona la macchina e inserisci un titolo.');
+    if (!machineId || !operatorId || !problemId || !causeId || !title || !description) {
+      setError('Compila tutti i campi obbligatori (macchina, operatore, problema, causa, titolo e descrizione).');
       return;
     }
+
 
     setError(null);
     setSuccess(null);
@@ -79,13 +80,13 @@ export default function CreateCase() {
         `${API_URL}/cases`,
         {
           machine_id: machineId,
-          operator_id: operatorId || null,
-          problem_id: problemId || null,
-          cause_id: causeId || null,
+          operator_id: operatorId,
+          problem_id: problemId,
+          cause_id: causeId,
           title,
-          description,
-          priority,
-          assigned_to: assignedTo || null
+          // backend si aspetta `solution`
+          solution: description
+
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -95,10 +96,9 @@ export default function CreateCase() {
       setOperatorId('');
       setProblemId('');
       setCauseId('');
-      setAssignedTo('');
       setTitle('');
       setDescription('');
-      setPriority('medium');
+
       setTimeout(() => navigate('/'), 1200);
     } catch (err: any) {
       setError(err?.response?.data?.error ?? 'Errore durante la creazione del caso.');
@@ -134,20 +134,7 @@ export default function CreateCase() {
           </select>
         </div>
 
-        <div className="rounded-3xl bg-slate-950/80 p-6 shadow-xl shadow-slate-950/10">
-          <label className="text-sm font-medium text-slate-200">Priorità</label>
-          <select
-            value={priority}
-            onChange={(e) => setPriority(e.target.value)}
-            className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
-          >
-            {['low', 'medium', 'high', 'critical'].map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
-        </div>
+
 
         <div className="rounded-3xl bg-slate-950/80 p-6 shadow-xl shadow-slate-950/10">
           <label className="text-sm font-medium text-slate-200">Operatore</label>
@@ -197,23 +184,7 @@ export default function CreateCase() {
           </select>
         </div>
 
-        {user?.role === 'admin' && (
-          <div className="rounded-3xl bg-slate-950/80 p-6 shadow-xl shadow-slate-950/10">
-            <label className="text-sm font-medium text-slate-200">Assegna a</label>
-            <select
-              value={assignedTo}
-              onChange={(e) => setAssignedTo(e.target.value)}
-              className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
-            >
-              <option value="">Non assegnato</option>
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.username}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
+
       </div>
 
       <div className="rounded-3xl bg-slate-950/80 p-6 shadow-xl shadow-slate-950/10">
