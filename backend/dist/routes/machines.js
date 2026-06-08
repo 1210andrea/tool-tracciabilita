@@ -52,6 +52,10 @@ exports.machinesRoutes.delete('/:id', auth_1.authMiddleware, async (req, res, ne
         if (req.user?.role !== 'admin')
             return res.status(403).json({ error: 'Forbidden' });
         const { id } = req.params;
+        const usedR = await db_1.pool.query('SELECT COUNT(*)::int AS count FROM cases WHERE machine_id = $1', [id]);
+        if ((usedR.rows[0]?.count ?? 0) > 0) {
+            return res.status(400).json({ error: `Non eliminabile: macchina usata in ${usedR.rows[0].count} casi` });
+        }
         await db_1.pool.query('DELETE FROM machines WHERE id = $1', [id]);
         (0, socketService_1.emitEvent)('machine_updated', { machineId: id, action: 'deleted' });
         res.json({ ok: true });

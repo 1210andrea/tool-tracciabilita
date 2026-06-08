@@ -23,7 +23,6 @@ const API_URL = '/api';
 type CaseItem = {
   id: string;
   title: string;
-  status: string;
   machine_id: string;
   machine_code: string;
   machine_name: string;
@@ -36,6 +35,7 @@ type CaseItem = {
   operator_name: string;
   problem_name: string;
   cause_name: string;
+  spare_part_name?: string;
   solution?: string;
   description?: string;
   ai_solution?: string;
@@ -43,15 +43,17 @@ type CaseItem = {
 
 type MachineItem = { id: string; code: string; name: string; line?: string };
 type Category = { id: string; type: 'operator' | 'problem' | 'cause'; name: string };
-type BreakdownItem = { status: string; count: number };
+type TrendItem = { date: string; count: number };
 type TopMachine = { machine: string; problem_count: number };
 
 export default function Dashboard() {
   const { token, user } = useAuth();
   const [cases, setCases] = useState<CaseItem[]>([]);
   const [machines, setMachines] = useState<MachineItem[]>([]);
-  const [breakdown, setBreakdown] = useState<BreakdownItem[]>([]);
+  const [trend, setTrend] = useState<TrendItem[]>([]);
+  const [summary, setSummary] = useState({ total: 0, this_month: 0 });
   const [topMachines, setTopMachines] = useState<TopMachine[]>([]);
+  const [topSpareParts, setTopSpareParts] = useState<{ spare_part: string; usage_count: number }[]>([]);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [timeFrom, setTimeFrom] = useState('');
@@ -89,23 +91,29 @@ export default function Dashboard() {
     if (!token) return;
     setLoading(true);
     try {
-      const [casesResp, dashboardResp, topResp] = await Promise.all([
+      const [casesResp, dashboardResp, topResp, trendResp, spareResp] = await Promise.all([
         axios.get(`${API_URL}/cases`, {
           headers: { Authorization: `Bearer ${token}` },
           params: appliedParams
         }),
         axios.get(`${API_URL}/dashboard`, { headers: { Authorization: `Bearer ${token}` } }),
-        axios.get(`${API_URL}/stats/top-machines`, { headers: { Authorization: `Bearer ${token}` } })
+        axios.get(`${API_URL}/stats/top-machines`, { headers: { Authorization: `Bearer ${token}` } }),
+        axios.get(`${API_URL}/stats/trend-cases`, { headers: { Authorization: `Bearer ${token}` }, params: { days: 30 } }),
+        axios.get(`${API_URL}/stats/top-spare-parts`, { headers: { Authorization: `Bearer ${token}` } })
       ]);
 
       setCases(casesResp.data.items || []);
       setTotal(casesResp.data.total || 0);
-      setBreakdown(dashboardResp.data.breakdown || []);
+      setSummary({ total: dashboardResp.data.total ?? 0, this_month: dashboardResp.data.this_month ?? 0 });
+      setTrend(trendResp.data.items || []);
       setTopMachines(topResp.data.items || []);
+      setTopSpareParts(spareResp.data.items || []);
     } catch {
       setCases([]);
-      setBreakdown([]);
+      setTrend([]);
+      setSummary({ total: 0, this_month: 0 });
       setTopMachines([]);
+      setTopSpareParts([]);
       setTotal(0);
     } finally {
       setLoading(false);
@@ -179,7 +187,6 @@ export default function Dashboard() {
     }
   };
 
-  const totalCases = useMemo(() => breakdown.reduce((sum, item) => sum + item.count, 0), [breakdown]);
   const pageCount = Math.max(1, Math.ceil(total / limit));
 
   const topMachinesChart = useMemo(() => {
@@ -193,14 +200,22 @@ export default function Dashboard() {
     if (fromApi.length) return fromApi;
 
     const counts = new Map<string, number>();
-    cases
-      .filter((c) => c.status === 'open' || c.status === 'in_progress')
-      .forEach((c) => counts.set(c.machine_code, (counts.get(c.machine_code) ?? 0) + 1));
+    cases.forEach((c) => counts.set(c.machine_code, (counts.get(c.machine_code) ?? 0) + 1));
 
     return Array.from(counts.entries())
       .map(([machine, problem_count]) => ({ machine, problem_count }))
       .sort((a, b) => b.problem_count - a.problem_count);
   }, [topMachines, cases]);
+
+  const trendChart = useMemo(
+    () => trend.map((item) => ({ date: item.date.slice(5), count: Number(item.count) })),
+    [trend]
+  );
+
+  const sparePartsChart = useMemo(
+    () => topSpareParts.map((item) => ({ name: item.spare_part, count: Number(item.usage_count) })),
+    [topSpareParts]
+  );
   const activeFilters = [
     dateFrom ? 'data da' : null,
     dateTo ? 'data a' : null,
@@ -231,7 +246,7 @@ export default function Dashboard() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <div className="rounded-3xl bg-slate-900/80 p-5 shadow-lg shadow-slate-950/20 sm:p-6">
           <div className="text-xs uppercase tracking-[0.22em] text-slate-400 sm:text-sm">Totale casi</div>
-          <div className="mt-3 text-3xl font-semibold sm:mt-4 sm:text-4xl">{totalCases}</div>
+          <div className="mt-3 text-3xl font-semibold sm:mt-4 sm:text-4xl">{summary.total}</div>
           <div className="mt-2 text-sm text-slate-500">Dati aggiornati in tempo reale.</div>
         </div>
         <div className="rounded-3xl bg-slate-900/80 p-5 shadow-lg shadow-slate-950/20 sm:p-6">
@@ -242,9 +257,9 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="rounded-3xl bg-slate-900/80 p-5 shadow-lg shadow-slate-950/20 sm:col-span-2 sm:p-6 xl:col-span-1">
-          <div className="text-xs uppercase tracking-[0.22em] text-slate-400 sm:text-sm">Ruolo utente</div>
-          <div className="mt-3 text-3xl font-semibold sm:mt-4 sm:text-4xl">{user?.role ?? 'n/d'}</div>
-          <div className="mt-2 text-sm text-slate-500">{user?.role === 'admin' ? 'Vedi tutti i casi' : 'Vedi solo i tuoi casi'}.</div>
+          <div className="text-xs uppercase tracking-[0.22em] text-slate-400 sm:text-sm">Questo mese</div>
+          <div className="mt-3 text-3xl font-semibold sm:mt-4 sm:text-4xl">{summary.this_month}</div>
+          <div className="mt-2 text-sm text-slate-500">Casi registrati nel mese corrente.</div>
         </div>
       </div>
 
@@ -302,27 +317,27 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         <div className="rounded-3xl bg-slate-900/80 p-4 shadow-lg shadow-slate-950/20 sm:p-6">
-          <h3 className="mb-4 text-lg font-semibold text-slate-100">Trend casi</h3>
+          <h3 className="mb-4 text-lg font-semibold text-slate-100">Trend casi (30 giorni)</h3>
           <div className="w-full" style={{ height: 280 }}>
             <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={breakdown.map((item) => ({ name: item.status, value: Number(item.count) }))} margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
+              <LineChart data={trendChart} margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
                 <CartesianGrid stroke="#1e293b" strokeDasharray="4 4" />
-                <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} />
+                <XAxis dataKey="date" stroke="#94a3b8" fontSize={11} interval="preserveStartEnd" />
                 <YAxis stroke="#94a3b8" fontSize={12} allowDecimals={false} width={32} />
                 <Tooltip wrapperStyle={{ backgroundColor: '#0f172a', borderRadius: 12, border: '1px solid #334155' }} />
-                <Line type="monotone" dataKey="value" stroke="#38bdf8" strokeWidth={3} dot={{ r: 4 }} />
+                <Line type="monotone" dataKey="count" stroke="#38bdf8" strokeWidth={3} dot={{ r: 3 }} />
               </LineChart>
             </ResponsiveContainer>
           </div>
         </div>
 
         <div className="rounded-3xl bg-slate-900/80 p-4 shadow-lg shadow-slate-950/20 sm:p-6">
-          <h3 className="mb-4 text-lg font-semibold text-slate-100">Top macchine aperte</h3>
+          <h3 className="mb-4 text-lg font-semibold text-slate-100">Top macchine per casi</h3>
           <div className="w-full" style={{ height: 280 }}>
             {topMachinesChart.length === 0 ? (
-              <div className="flex h-full items-center justify-center text-sm text-slate-500">Nessun caso aperto da visualizzare.</div>
+                <div className="flex h-full items-center justify-center text-sm text-slate-500">Nessun caso da visualizzare.</div>
             ) : (
               <ResponsiveContainer width="100%" height={280}>
                 <BarChart data={topMachinesChart} margin={{ top: 8, right: 12, left: 0, bottom: 24 }}>
@@ -331,6 +346,25 @@ export default function Dashboard() {
                   <YAxis stroke="#94a3b8" fontSize={12} allowDecimals={false} width={32} />
                   <Tooltip wrapperStyle={{ backgroundColor: '#0f172a', borderRadius: 12, border: '1px solid #334155' }} />
                   <Bar dataKey="problem_count" fill="#38bdf8" radius={[6, 6, 0, 0]} maxBarSize={48} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-3xl bg-slate-900/80 p-4 shadow-lg shadow-slate-950/20 sm:p-6 lg:col-span-2 xl:col-span-1">
+          <h3 className="mb-4 text-lg font-semibold text-slate-100">Top ricambi usati</h3>
+          <div className="w-full" style={{ height: 280 }}>
+            {sparePartsChart.length === 0 ? (
+              <div className="flex h-full items-center justify-center text-sm text-slate-500">Nessun ricambio registrato.</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={sparePartsChart} margin={{ top: 8, right: 12, left: 0, bottom: 40 }}>
+                  <CartesianGrid stroke="#1e293b" strokeDasharray="4 4" />
+                  <XAxis dataKey="name" stroke="#94a3b8" fontSize={10} interval={0} angle={-25} textAnchor="end" height={55} />
+                  <YAxis stroke="#94a3b8" fontSize={12} allowDecimals={false} width={32} />
+                  <Tooltip wrapperStyle={{ backgroundColor: '#0f172a', borderRadius: 12, border: '1px solid #334155' }} />
+                  <Bar dataKey="count" fill="#a78bfa" radius={[6, 6, 0, 0]} maxBarSize={48} />
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -355,14 +389,15 @@ export default function Dashboard() {
                 <th className="px-3 py-3 sm:px-4">Macchina</th>
                 <th className="hidden px-3 py-3 sm:table-cell sm:px-4">Operatore</th>
                 <th className="hidden px-3 py-3 md:table-cell md:px-4">Problema</th>
-                <th className="px-3 py-3 sm:px-4">Stato</th>
+                <th className="hidden px-3 py-3 lg:table-cell lg:px-4">Ricambio</th>
+                <th className="hidden px-3 py-3 md:table-cell md:px-4">Data</th>
                 <th className="px-3 py-3 sm:px-4">Azioni</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800 bg-slate-950/70">
               {cases.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-slate-500">
+                  <td colSpan={7} className="px-4 py-10 text-center text-slate-500">
                     {loading ? 'Caricamento casi...' : 'Nessun caso corrispondente ai filtri.'}
                   </td>
                 </tr>
@@ -373,12 +408,9 @@ export default function Dashboard() {
                     <td className="px-3 py-3 text-slate-300 sm:px-4 sm:py-4">{item.machine_code}</td>
                     <td className="hidden px-3 py-3 text-slate-300 sm:table-cell sm:px-4 sm:py-4">{item.operator_name || 'N.D.'}</td>
                     <td className="hidden px-3 py-3 text-slate-300 md:table-cell md:px-4 md:py-4">{item.problem_name || 'N.D.'}</td>
-                    <td className="px-3 py-3 sm:px-4 sm:py-4">
-                      <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
-                        item.status === 'open' ? 'bg-emerald-500/15 text-emerald-300' : item.status === 'in_progress' ? 'bg-sky-500/15 text-sky-300' : 'bg-slate-500/15 text-slate-200'
-                      }`}>
-                        {item.status}
-                      </span>
+                    <td className="hidden px-3 py-3 text-slate-300 lg:table-cell lg:px-4 lg:py-4">{item.spare_part_name || 'N.D.'}</td>
+                    <td className="hidden px-3 py-3 text-slate-400 md:table-cell md:px-4 md:py-4">
+                      {item.created_at ? new Date(item.created_at).toLocaleDateString('it-IT') : '—'}
                     </td>
                     <td className="px-3 py-3 sm:px-4 sm:py-4">
                       <div className="flex flex-wrap gap-2">
@@ -430,6 +462,7 @@ export default function Dashboard() {
           machines={machines}
           categories={categories}
           canEdit={!!editingCase && canEditCase(editingCase as CaseItem)}
+          isAdmin={user?.role === 'admin'}
           onClose={() => setEditingCase(null)}
           onSaved={loadData}
         />

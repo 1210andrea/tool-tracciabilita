@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 
-type CategoryType = 'operator' | 'problem' | 'cause';
+type CategoryType = 'operator' | 'problem' | 'cause' | 'spare_part';
 
 type Category = { id: string; type: string; name: string };
 

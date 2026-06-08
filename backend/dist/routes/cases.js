@@ -6,8 +6,9 @@ const auth_1 = require("../middleware/auth");
 const db_1 = require("../db");
 const socketService_1 = require("../services/socketService");
 const aiService_1 = require("../services/aiService");
+const operatorService_1 = require("../services/operatorService");
 exports.casesRoutes = (0, express_1.Router)();
-const CASE_FIELDS = `c.id, c.machine_id, c.operator_id, c.problem_id, c.cause_id, c.category_id,
+const CASE_FIELDS = `c.id, c.machine_id, c.operator_id, c.problem_id, c.cause_id, c.spare_part_id, c.category_id,
   c.title, c.description, c.solution, c.ai_solution, c.status, c.created_by, c.assigned_to,
   c.created_at, c.updated_at`;
 async function getCaseRow(caseId) {
@@ -91,6 +92,7 @@ exports.casesRoutes.get('/', auth_1.authMiddleware, async (req, res, next) => {
         const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
         const r = await db_1.pool.query(`SELECT ${CASE_FIELDS}, m.code as machine_code, m.name as machine_name, u.username as created_by_username,
               op.name as operator_name, prob.name as problem_name, cause.name as cause_name,
+              sp.name as spare_part_name,
               COUNT(*) OVER() AS total_count
        FROM cases c
        JOIN machines m ON m.id = c.machine_id
@@ -98,112 +100,12 @@ exports.casesRoutes.get('/', auth_1.authMiddleware, async (req, res, next) => {
        LEFT JOIN categories op ON op.id = c.operator_id
        LEFT JOIN categories prob ON prob.id = c.problem_id
        LEFT JOIN categories cause ON cause.id = c.cause_id
+       LEFT JOIN categories sp ON sp.id = c.spare_part_id
        ${whereClause}
        ORDER BY c.created_at DESC
        LIMIT $${values.length + 1} OFFSET $${values.length + 2}`, [...values, limitNumber, offset]);
         const total = r.rows[0]?.total_count ?? 0;
         res.json({ items: r.rows, total });
-    }
-    catch (e) {
-        next(e);
-    }
-});
-exports.casesRoutes.get('/:id/ai-insights', auth_1.authMiddleware, async (req, res, next) => {
-    try {
-        const caseRow = await getCaseRow(req.params.id);
-        if (!caseRow)
-            return res.status(404).json({ error: 'Case not found' });
-        if (!canAccessCase(caseRow, req.user.id, req.user.role)) {
-            return res.status(403).json({ error: 'Forbidden' });
-        }
-        const detail = await db_1.pool.query(`SELECT ${CASE_FIELDS}, m.code as machine_code, m.name as machine_name, m.line,
-              op.name as operator_name, prob.name as problem_name, cause.name as cause_name
-       FROM cases c
-       JOIN machines m ON m.id = c.machine_id
-       LEFT JOIN categories op ON op.id = c.operator_id
-       LEFT JOIN categories prob ON prob.id = c.problem_id
-       LEFT JOIN categories cause ON cause.id = c.cause_id
-       WHERE c.id = $1`, [req.params.id]);
-        const current = detail.rows[0];
-        const similarR = await db_1.pool.query(`SELECT c.title, c.solution, c.status, c.created_at,
-              m.code as machine_code, m.line, prob.name as problem_name, cause.name as cause_name
-       FROM cases c
-       JOIN machines m ON m.id = c.machine_id
-       LEFT JOIN categories prob ON prob.id = c.problem_id
-       LEFT JOIN categories cause ON cause.id = c.cause_id
-       WHERE c.id != $1
-         AND (
-           (c.machine_id = $2 AND c.problem_id = $3)
-           OR (c.problem_id = $3 AND m.line IS NOT DISTINCT FROM $4)
-           OR (c.machine_id = $2 AND c.cause_id = $5)
-         )
-       ORDER BY c.created_at DESC
-       LIMIT 15`, [req.params.id, current.machine_id, current.problem_id, current.line, current.cause_id]);
-        const countR = await db_1.pool.query(`SELECT
-         COUNT(*) FILTER (WHERE c.machine_id = $2 AND c.problem_id = $3)::int AS same_machine_problem,
-         COUNT(*) FILTER (WHERE c.problem_id = $3 AND m.line IS NOT DISTINCT FROM $4)::int AS same_problem_line,
-         COUNT(*)::int AS total_similar
-       FROM cases c
-       JOIN machines m ON m.id = c.machine_id
-       WHERE c.id != $1
-         AND (
-           (c.machine_id = $2 AND c.problem_id = $3)
-           OR (c.problem_id = $3 AND m.line IS NOT DISTINCT FROM $4)
-           OR (c.machine_id = $2 AND c.cause_id = $5)
-         )`, [req.params.id, current.machine_id, current.problem_id, current.line, current.cause_id]);
-        const counts = countR.rows[0];
-        const similarCases = similarR.rows;
-        if (!similarCases.length) {
-            return res.json({
-                insufficient: true,
-                message: `Non ho abbastanza dati storici per la macchina ${current.machine_code} e il problema "${current.problem_name ?? 'N/D'}". Non ci sono casi simili nel database.`
-            });
-        }
-        const withSolution = similarCases.filter((r) => r.solution?.trim());
-        if (withSolution.length === 0 && similarCases.length < 2) {
-            return res.json({
-                insufficient: true,
-                message: `Non ho abbastanza dati per spiegare come è stato risolto questo problema in passato. Ci sono ${similarCases.length} caso/i simile/i ma senza soluzioni documentate.`,
-                stats: {
-                    same_machine_problem: counts.same_machine_problem,
-                    same_problem_line: counts.same_problem_line,
-                    total_similar: counts.total_similar
-                }
-            });
-        }
-        const analysis = await (0, aiService_1.generateCaseInsights)({
-            machine: `${current.machine_code} - ${current.machine_name}`,
-            line: current.line ?? 'N/D',
-            operator: current.operator_name ?? 'N/D',
-            problem: current.problem_name ?? 'N/D',
-            cause: current.cause_name ?? 'N/D',
-            counts: {
-                same_machine_problem: counts.same_machine_problem,
-                same_problem_line: counts.same_problem_line,
-                total_similar: counts.total_similar
-            },
-            similarCases
-        });
-        if (!analysis) {
-            return res.json({
-                insufficient: true,
-                message: 'Il servizio IA (Ollama) non è al momento disponibile. Riprova più tardi.',
-                stats: {
-                    same_machine_problem: counts.same_machine_problem,
-                    same_problem_line: counts.same_problem_line,
-                    total_similar: counts.total_similar
-                }
-            });
-        }
-        res.json({
-            insufficient: false,
-            stats: {
-                same_machine_problem: counts.same_machine_problem,
-                same_problem_line: counts.same_problem_line,
-                total_similar: counts.total_similar
-            },
-            analysis
-        });
     }
     catch (e) {
         next(e);
@@ -218,13 +120,15 @@ exports.casesRoutes.get('/:id', auth_1.authMiddleware, async (req, res, next) =>
             return res.status(403).json({ error: 'Forbidden' });
         }
         const r = await db_1.pool.query(`SELECT ${CASE_FIELDS}, m.code as machine_code, m.name as machine_name, u.username as created_by_username,
-              op.name as operator_name, prob.name as problem_name, cause.name as cause_name
+              op.name as operator_name, prob.name as problem_name, cause.name as cause_name,
+              sp.name as spare_part_name
        FROM cases c
        JOIN machines m ON m.id = c.machine_id
        LEFT JOIN users u ON u.id = c.created_by
        LEFT JOIN categories op ON op.id = c.operator_id
        LEFT JOIN categories prob ON prob.id = c.problem_id
        LEFT JOIN categories cause ON cause.id = c.cause_id
+       LEFT JOIN categories sp ON sp.id = c.spare_part_id
        WHERE c.id = $1`, [req.params.id]);
         res.json({ item: r.rows[0] });
     }
@@ -236,15 +140,18 @@ exports.casesRoutes.post('/', auth_1.authMiddleware, async (req, res, next) => {
     try {
         const body = req.body;
         const solution = (body.solution ?? body.description ?? '').toString();
+        const operatorId = await (0, operatorService_1.resolveOperatorIdForUser)(req.user.id, body.operator_id);
         const missing = [];
         if (!body.machine_id)
             missing.push('machine_id');
-        if (!body.operator_id)
-            missing.push('operator_id');
+        if (!operatorId)
+            missing.push('operatore (collega l\'utente a un operatore in admin)');
         if (!body.problem_id)
             missing.push('problem_id');
         if (!body.cause_id)
             missing.push('cause_id');
+        if (!body.spare_part_id)
+            missing.push('spare_part_id');
         if (!body.title)
             missing.push('title');
         if (!solution.trim())
@@ -274,19 +181,20 @@ exports.casesRoutes.post('/', auth_1.authMiddleware, async (req, res, next) => {
             cause: categoryNames[2],
             description: solution
         });
-        const r = await db_1.pool.query(`INSERT INTO cases(machine_id, operator_id, problem_id, cause_id, title, description, solution, ai_solution,
+        const r = await db_1.pool.query(`INSERT INTO cases(machine_id, operator_id, problem_id, cause_id, spare_part_id, title, description, solution, ai_solution,
                         status, created_by, assigned_to)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        RETURNING *`, [
             body.machine_id,
-            body.operator_id ?? null,
+            operatorId,
             body.problem_id ?? null,
             body.cause_id ?? null,
+            body.spare_part_id ?? null,
             body.title,
             body.description ?? null,
             solution,
             ai_solution,
-            body.status ?? 'open',
+            'closed',
             req.user.id,
             body.assigned_to ?? null
         ]);
@@ -310,15 +218,20 @@ exports.casesRoutes.put('/:id', auth_1.authMiddleware, async (req, res, next) =>
         }
         const body = req.body;
         const solution = (body.solution ?? body.description ?? caseRow.solution ?? '').toString();
+        const operatorId = req.user.role === 'admin'
+            ? await (0, operatorService_1.resolveOperatorIdForUser)(req.user.id, body.operator_id ?? caseRow.operator_id)
+            : caseRow.operator_id;
         const missing = [];
         if (!body.machine_id)
             missing.push('machine_id');
-        if (!body.operator_id)
+        if (!operatorId)
             missing.push('operator_id');
         if (!body.problem_id)
             missing.push('problem_id');
         if (!body.cause_id)
             missing.push('cause_id');
+        if (!body.spare_part_id)
+            missing.push('spare_part_id');
         if (!body.title)
             missing.push('title');
         if (!solution.trim())
@@ -330,18 +243,18 @@ exports.casesRoutes.put('/:id', auth_1.authMiddleware, async (req, res, next) =>
             return res.status(400).json({ error: 'solution deve contenere almeno 10 caratteri.' });
         }
         const r = await db_1.pool.query(`UPDATE cases
-       SET machine_id = $1, operator_id = $2, problem_id = $3, cause_id = $4,
-           title = $5, description = $6, solution = $7, status = $8, updated_at = now()
+       SET machine_id = $1, operator_id = $2, problem_id = $3, cause_id = $4, spare_part_id = $5,
+           title = $6, description = $7, solution = $8, updated_at = now()
        WHERE id = $9
        RETURNING *`, [
             body.machine_id,
-            body.operator_id,
+            operatorId,
             body.problem_id,
             body.cause_id,
+            body.spare_part_id ?? null,
             body.title,
             body.description ?? null,
             solution,
-            body.status ?? caseRow.status,
             req.params.id
         ]);
         await db_1.pool.query(`INSERT INTO case_events(case_id,event_type,message,actor_id)

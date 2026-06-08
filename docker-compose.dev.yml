@@ -45,6 +45,7 @@ services:
       - JWT_REFRESH_EXPIRY=$JWT_REFRESH_EXPIRY
       - AI_PROVIDER=ollama
       - AI_API_URL=$AI_API_URL
+      - AI_MODEL=$AI_MODEL
       - AI_TIMEOUT=$AI_TIMEOUT
       - LOG_LEVEL=debug
       - CORS_ORIGIN=http://localhost

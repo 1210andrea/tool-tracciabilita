@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS categories (
   UNIQUE(type, name)
 );
 ALTER TABLE IF EXISTS categories ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'general';
+ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS operator_category_id uuid REFERENCES categories(id) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS cases (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -37,12 +38,13 @@ CREATE TABLE IF NOT EXISTS cases (
   operator_id uuid REFERENCES categories(id) ON DELETE SET NULL,
   problem_id uuid REFERENCES categories(id) ON DELETE SET NULL,
   cause_id uuid REFERENCES categories(id) ON DELETE SET NULL,
+  spare_part_id uuid REFERENCES categories(id) ON DELETE SET NULL,
   category_id uuid REFERENCES categories(id) ON DELETE SET NULL,
   title TEXT NOT NULL,
   description TEXT,
   solution TEXT,
   ai_solution TEXT,
-  status TEXT NOT NULL DEFAULT 'open',
+  status TEXT NOT NULL DEFAULT 'closed',
   created_by uuid REFERENCES users(id) ON DELETE SET NULL,
   assigned_to uuid REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -52,6 +54,7 @@ ALTER TABLE IF EXISTS cases ADD COLUMN IF NOT EXISTS operator_id uuid REFERENCES
 ALTER TABLE IF EXISTS cases ADD COLUMN IF NOT EXISTS problem_id uuid REFERENCES categories(id) ON DELETE SET NULL;
 ALTER TABLE IF EXISTS cases ADD COLUMN IF NOT EXISTS cause_id uuid REFERENCES categories(id) ON DELETE SET NULL;
 ALTER TABLE IF EXISTS cases ADD COLUMN IF NOT EXISTS ai_solution TEXT;
+ALTER TABLE IF EXISTS cases ADD COLUMN IF NOT EXISTS spare_part_id uuid REFERENCES categories(id) ON DELETE SET NULL;
 ALTER TABLE IF EXISTS cases DROP COLUMN IF EXISTS priority;
 
 CREATE TABLE IF NOT EXISTS case_events (
@@ -89,6 +92,14 @@ INSERT INTO categories(type,name,description) VALUES
 ('cause','Connettore allentato','Connessione elettrica difettosa')
 ON CONFLICT(type,name) DO NOTHING;
 
+INSERT INTO categories(type,name,description) VALUES
+('spare_part','Cinghia di trazione','Cinghia principale nastro'),
+('spare_part','Sensore ottico','Sensore rilevamento prodotto'),
+('spare_part','Valvola pneumatica','Valvola linea aria'),
+('spare_part','Motore riduttore','Motore con riduttore integrato'),
+('spare_part','Connettore M12','Connettore sensore industriale')
+ON CONFLICT(type,name) DO NOTHING;
+
 INSERT INTO machines(code,name,line,location) VALUES
 ('SIMM45','Linea 1 - Taglio','Linea 1','Reparto A'),
 ('SIMM47','Linea 1 - Saldo','Linea 1','Reparto A'),
@@ -105,4 +116,8 @@ ON CONFLICT(username) DO NOTHING;
 INSERT INTO users(username,email,password_hash,role) VALUES
 ('user','user@machines.local','$2a$10$c2iqxNmnCJcg0YQVu.wFAuMRIk.wl008naVCAboQt3790bjEWQ8Gu','user')
 ON CONFLICT(username) DO NOTHING;
+
+UPDATE users u SET operator_category_id = c.id
+FROM categories c
+WHERE c.type = 'operator' AND LOWER(c.name) = LOWER(u.username) AND u.operator_category_id IS NULL;
 

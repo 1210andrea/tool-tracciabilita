@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
@@ -12,6 +12,7 @@ type CaseItem = CaseDetail & {
   machine_code: string;
   problem_name: string;
   cause_name: string;
+  spare_part_name?: string;
 };
 
 export default function UserHome() {
@@ -28,7 +29,7 @@ export default function UserHome() {
     try {
       const resp = await axios.get(`${API_URL}/cases`, {
         headers: { Authorization: `Bearer ${token}` },
-        params: { statuses: 'open,in_progress', limit: 50 }
+        params: { limit: 50 }
       });
       setCases(resp.data.items || []);
     } catch {
@@ -53,24 +54,16 @@ export default function UserHome() {
   }, [token]);
 
   useEffect(() => { loadData(); }, [token]);
-
   useSocket(() => { loadData(); });
-
-  const openCount = useMemo(() => cases.filter((c) => c.status === 'open').length, [cases]);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold sm:text-3xl">I miei casi</h1>
-          <p className="text-sm text-slate-400">
-            Hai {openCount} casi aperti su {cases.length} attivi.
-          </p>
+          <p className="text-sm text-slate-400">Registro dei casi che hai creato.</p>
         </div>
-        <Link
-          to="/cases/new"
-          className="inline-flex justify-center rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-sky-400"
-        >
+        <Link to="/cases/new" className="inline-flex justify-center rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-sky-400">
           Apri nuovo caso
         </Link>
       </div>
@@ -79,10 +72,8 @@ export default function UserHome() {
         <div className="rounded-3xl bg-slate-900/80 p-10 text-center text-slate-400">Caricamento...</div>
       ) : cases.length === 0 ? (
         <div className="rounded-3xl border border-dashed border-slate-700 bg-slate-900/50 p-10 text-center">
-          <p className="text-slate-300">Non hai casi aperti al momento.</p>
-          <Link to="/cases/new" className="mt-4 inline-block text-sky-400 hover:text-sky-300">
-            Crea il tuo primo caso →
-          </Link>
+          <p className="text-slate-300">Non hai ancora registrato casi.</p>
+          <Link to="/cases/new" className="mt-4 inline-block text-sky-400 hover:text-sky-300">Crea il tuo primo caso →</Link>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
@@ -93,20 +84,17 @@ export default function UserHome() {
               onClick={() => setSelectedCase(item)}
               className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5 text-left transition hover:border-sky-500/40 hover:bg-slate-900"
             >
-              <div className="flex items-start justify-between gap-3">
-                <h2 className="font-semibold text-slate-100">{item.title}</h2>
-                <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${
-                  item.status === 'open' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-sky-500/15 text-sky-300'
-                }`}>
-                  {item.status === 'open' ? 'Aperto' : 'In corso'}
-                </span>
-              </div>
+              <h2 className="font-semibold text-slate-100">{item.title}</h2>
               <div className="mt-3 space-y-1 text-sm text-slate-400">
                 <div>Macchina: <span className="text-slate-200">{item.machine_code}</span></div>
                 <div>Problema: <span className="text-slate-200">{item.problem_name || 'N.D.'}</span></div>
                 <div>Causa: <span className="text-slate-200">{item.cause_name || 'N.D.'}</span></div>
+                <div>Ricambio: <span className="text-slate-200">{item.spare_part_name || 'N.D.'}</span></div>
+                {item.created_at && (
+                  <div className="text-xs text-slate-500">{new Date(item.created_at).toLocaleString('it-IT')}</div>
+                )}
               </div>
-              <div className="mt-4 text-xs text-sky-400">Apri per dettagli e analisi IA →</div>
+              <div className="mt-4 text-xs text-sky-400">Apri per modificare →</div>
             </button>
           ))}
         </div>
@@ -120,6 +108,7 @@ export default function UserHome() {
           machines={machines}
           categories={categories}
           canEdit
+          isAdmin={false}
           onClose={() => setSelectedCase(null)}
           onSaved={loadData}
         />

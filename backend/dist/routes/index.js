@@ -9,8 +9,10 @@ const categories_1 = require("./categories");
 const users_1 = require("./users");
 const dashboard_1 = require("./dashboard");
 const stats_1 = require("./stats");
+const ai_1 = require("./ai");
 function registerRoutes(app) {
     app.use('/api', auth_1.authRoutes);
+    app.use('/api/ai', ai_1.aiRoutes);
     app.use('/api/cases', cases_1.casesRoutes);
     app.use('/api/machines', machines_1.machinesRoutes);
     app.use('/api/categories', categories_1.categoriesRoutes);

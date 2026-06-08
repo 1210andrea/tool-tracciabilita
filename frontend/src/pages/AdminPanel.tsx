@@ -15,7 +15,7 @@ const API_URL = '/api';
 export default function AdminPanel() {
   const { token } = useAuth();
   const [activeTab, setActiveTab] = useState<'categories' | 'machines' | 'users'>('categories');
-  const [activeCategoryType, setActiveCategoryType] = useState<'operator' | 'problem' | 'cause'>('operator');
+  const [activeCategoryType, setActiveCategoryType] = useState<'operator' | 'problem' | 'cause' | 'spare_part'>('operator');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [pendingDeleteType, setPendingDeleteType] = useState<'categories' | 'machines' | 'users' | null>(null);
@@ -28,7 +28,7 @@ export default function AdminPanel() {
 
   const [categoryForm, setCategoryForm] = useState({ type: 'operator', name: '', description: '' });
   const [machineForm, setMachineForm] = useState({ code: '', name: '', line: '', location: '' });
-  const [userForm, setUserForm] = useState({ username: '', email: '', password: '', role: 'user' });
+  const [userForm, setUserForm] = useState({ username: '', email: '', password: '', role: 'user', operator_category_id: '' });
 
   const headers = useMemo(() => ({ headers: { Authorization: `Bearer ${token}` } }), [token]);
 
@@ -81,9 +81,12 @@ export default function AdminPanel() {
 
   const submitUser = async () => {
     try {
-      await axios.post(`${API_URL}/users`, userForm, headers);
+      await axios.post(`${API_URL}/users`, {
+        ...userForm,
+        operator_category_id: userForm.operator_category_id || null
+      }, headers);
       setMessage('Utente creato.');
-      setUserForm({ username: '', email: '', password: '', role: 'user' });
+      setUserForm({ username: '', email: '', password: '', role: 'user', operator_category_id: '' });
       loadAll();
     } catch (err: any) {
       setMessage(err?.response?.data?.error ?? 'Errore salvataggio utente.');
@@ -96,7 +99,7 @@ export default function AdminPanel() {
       setMessage('Elemento eliminato.');
       loadAll();
     } catch (err: any) {
-      setMessage(err?.response?.data?.error ?? 'Errore eliminazione.');
+      setMessage(err?.response?.data?.error ?? 'Eliminazione non consentita: elemento in uso.');
     }
   };
 
@@ -181,7 +184,7 @@ export default function AdminPanel() {
               </div>
 
               <button type="button" className="rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950" onClick={submitCategory}>
-                Aggiungi {activeCategoryType === 'operator' ? 'operatore' : activeCategoryType === 'problem' ? 'problema' : 'causa'}
+                Aggiungi {activeCategoryType === 'operator' ? 'operatore' : activeCategoryType === 'problem' ? 'problema' : activeCategoryType === 'cause' ? 'causa' : 'ricambio'}
               </button>
             </>
           )}
@@ -264,6 +267,19 @@ export default function AdminPanel() {
                   <option value="admin">Admin</option>
                 </select>
               </div>
+              <div>
+                <label className="text-sm text-slate-300">Operatore collegato</label>
+                <select
+                  value={userForm.operator_category_id}
+                  onChange={(e) => setUserForm((current) => ({ ...current, operator_category_id: e.target.value }))}
+                  className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
+                >
+                  <option value="">Nessuno / auto da username</option>
+                  {categories.filter((c) => c.type === 'operator').map((op) => (
+                    <option key={op.id} value={op.id}>{op.name}</option>
+                  ))}
+                </select>
+              </div>
               <button type="button" className="rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950" onClick={submitUser}>
                 Crea utente
               </button>
@@ -308,7 +324,7 @@ export default function AdminPanel() {
                     <div className="font-semibold text-slate-100">{machine.code} - {machine.name}</div>
                     <div className="text-sm text-slate-500">{machine.line || 'Linea non impostata'} · {machine.location || 'Posizione non impostata'}</div>
                   </div>
-                  <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950" onClick={() => deleteItem('machines', machine.id)}>
+                  <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950" onClick={() => requestDelete('machines', machine.id)}>
                     Elimina
                   </button>
                 </div>
@@ -324,7 +340,7 @@ export default function AdminPanel() {
                     <div className="font-semibold text-slate-100">{userItem.username}</div>
                     <div className="text-sm text-slate-500">{userItem.email || 'Email non fornita'} · ruolo: {userItem.role}</div>
                   </div>
-                  <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950" onClick={() => deleteItem('users', userItem.id)}>
+                  <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950" onClick={() => requestDelete('users', userItem.id)}>
                     Elimina
                   </button>
                 </div>

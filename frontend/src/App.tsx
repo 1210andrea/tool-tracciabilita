@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import UserHome from './pages/UserHome';
 import CreateCase from './pages/CreateCase';
 import AdminPanel from './pages/AdminPanel';
+import AiAnalysis from './pages/AiAnalysis';
 
 function Protected({ children, role }: { children: ReactNode; role?: string }) {
   const { user } = useAuth();
@@ -54,6 +55,12 @@ function Layout({ children }: { children: ReactNode }) {
                 I miei casi
               </Link>
             )}
+            <Link
+              className={`rounded border px-3 py-2 text-sm hover:bg-slate-700 ${location.pathname === '/ai' ? 'border-violet-500 bg-slate-800' : 'border-slate-700 bg-slate-800'}`}
+              to="/ai"
+            >
+              Analisi IA
+            </Link>
             <Link className="rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm hover:bg-slate-700" to="/cases/new">
               Nuovo caso
             </Link>
@@ -93,6 +100,16 @@ export default function App() {
             <Protected role="admin">
               <Layout>
                 <Dashboard />
+              </Layout>
+            </Protected>
+          }
+        />
+        <Route
+          path="/ai"
+          element={
+            <Protected>
+              <Layout>
+                <AiAnalysis />
               </Layout>
             </Protected>
           }

@@ -78,7 +78,7 @@ async function generateCaseInsights(data) {
     const historyText = data.similarCases
         .map((c, i) => {
         const date = new Date(c.created_at).toLocaleDateString('it-IT');
-        return `${i + 1}. [${date}] Macchina ${c.machine_code} (${c.line ?? 'N/D'}) - Problema: ${c.problem_name ?? 'N/D'} - Causa: ${c.cause_name ?? 'N/D'} - Stato: ${c.status}
+        return `${i + 1}. [${date}] Macchina ${c.machine_code} (${c.line ?? 'N/D'}) - Problema: ${c.problem_name ?? 'N/D'} - Causa: ${c.cause_name ?? 'N/D'}
    Titolo: ${c.title}
    Soluzione: ${c.solution?.trim() || 'non documentata'}`;
     })

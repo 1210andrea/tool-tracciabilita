@@ -12,13 +12,32 @@ exports.statsRoutes.get('/top-machines', auth_1.authMiddleware, async (req, res,
         const r = await db_1.pool.query(`SELECT m.code AS machine, m.code AS code, COUNT(*)::int AS problem_count, COUNT(*)::int AS open_cases
        FROM cases c
        JOIN machines m ON m.id = c.machine_id
-       WHERE c.status IN ('open', 'in_progress')
+       WHERE 1=1
        ${isAdmin ? '' : 'AND c.created_by = $2'}
        GROUP BY m.code
        HAVING COUNT(*) > 0
        ORDER BY problem_count DESC
        LIMIT $1`, isAdmin ? [limit] : [limit, req.user.id]);
         res.json({ items: r.rows.map((row) => ({ ...row, problem_count: Number(row.problem_count) })) });
+    }
+    catch (e) {
+        next(e);
+    }
+});
+exports.statsRoutes.get('/top-spare-parts', auth_1.authMiddleware, async (req, res, next) => {
+    try {
+        const limit = Math.min(50, Math.max(5, Number(req.query.limit) || 5));
+        const isAdmin = req.user.role === 'admin';
+        const r = await db_1.pool.query(`SELECT sp.name AS spare_part, COUNT(*)::int AS usage_count
+       FROM cases c
+       JOIN categories sp ON sp.id = c.spare_part_id
+       WHERE c.spare_part_id IS NOT NULL
+       ${isAdmin ? '' : 'AND c.created_by = $2'}
+       GROUP BY sp.name
+       HAVING COUNT(*) > 0
+       ORDER BY usage_count DESC
+       LIMIT $1`, isAdmin ? [limit] : [limit, req.user.id]);
+        res.json({ items: r.rows.map((row) => ({ ...row, usage_count: Number(row.usage_count) })) });
     }
     catch (e) {
         next(e);
