@@ -18,7 +18,7 @@ export function useApi() {
 
   return {
     login: async (username: string, password: string) => {
-      const resp = await axios.post(`${API_URL}/auth/login`, { username, password });
+      const resp = await client.post('/auth/login', { username, password });
       return resp.data.token as string;
     },
     me: async () => {
