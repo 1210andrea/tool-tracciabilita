@@ -8,13 +8,15 @@ exports.statsRoutes = (0, express_1.Router)();
 exports.statsRoutes.get('/top-machines', auth_1.authMiddleware, async (req, res, next) => {
     try {
         const limit = Math.min(50, Math.max(5, Number(req.query.limit) || 5));
+        const isAdmin = req.user.role === 'admin';
         const r = await db_1.pool.query(`SELECT m.code AS machine, COUNT(*)::int AS problem_count
        FROM cases c
-       JOIN machines m ON m.id=c.machine_id
-       WHERE c.status IN ('open','in_progress')
+       JOIN machines m ON m.id = c.machine_id
+       WHERE c.status IN ('open', 'in_progress')
+       ${isAdmin ? '' : 'AND c.created_by = $2'}
        GROUP BY m.code
        ORDER BY problem_count DESC
-       LIMIT $1`, [limit]);
+       LIMIT $1`, isAdmin ? [limit] : [limit, req.user.id]);
         res.json({ items: r.rows });
     }
     catch (e) {

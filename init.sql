@@ -42,7 +42,6 @@ CREATE TABLE IF NOT EXISTS cases (
   description TEXT,
   solution TEXT,
   ai_solution TEXT,
-  priority TEXT NOT NULL DEFAULT 'medium',
   status TEXT NOT NULL DEFAULT 'open',
   created_by uuid REFERENCES users(id) ON DELETE SET NULL,
   assigned_to uuid REFERENCES users(id) ON DELETE SET NULL,
@@ -53,6 +52,7 @@ ALTER TABLE IF EXISTS cases ADD COLUMN IF NOT EXISTS operator_id uuid REFERENCES
 ALTER TABLE IF EXISTS cases ADD COLUMN IF NOT EXISTS problem_id uuid REFERENCES categories(id) ON DELETE SET NULL;
 ALTER TABLE IF EXISTS cases ADD COLUMN IF NOT EXISTS cause_id uuid REFERENCES categories(id) ON DELETE SET NULL;
 ALTER TABLE IF EXISTS cases ADD COLUMN IF NOT EXISTS ai_solution TEXT;
+ALTER TABLE IF EXISTS cases DROP COLUMN IF EXISTS priority;
 
 CREATE TABLE IF NOT EXISTS case_events (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),

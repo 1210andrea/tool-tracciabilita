@@ -5,12 +5,14 @@ const express_1 = require("express");
 const auth_1 = require("../middleware/auth");
 const db_1 = require("../db");
 exports.dashboardRoutes = (0, express_1.Router)();
-exports.dashboardRoutes.get('/', auth_1.authMiddleware, async (_req, res, next) => {
+exports.dashboardRoutes.get('/', auth_1.authMiddleware, async (req, res, next) => {
     try {
+        const isAdmin = req.user.role === 'admin';
         const r = await db_1.pool.query(`SELECT status, COUNT(*)::int as count
        FROM cases
+       ${isAdmin ? '' : 'WHERE created_by = $1'}
        GROUP BY status
-       ORDER BY count DESC`);
+       ORDER BY count DESC`, isAdmin ? [] : [req.user.id]);
         res.json({ breakdown: r.rows });
     }
     catch (e) {

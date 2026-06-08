@@ -7,6 +7,13 @@ const db_1 = require("../db");
 const socketService_1 = require("../services/socketService");
 const aiService_1 = require("../services/aiService");
 exports.casesRoutes = (0, express_1.Router)();
+async function getCaseRow(caseId) {
+    const r = await db_1.pool.query('SELECT * FROM cases WHERE id = $1', [caseId]);
+    return r.rows[0] ?? null;
+}
+function canAccessCase(caseRow, userId, role) {
+    return role === 'admin' || caseRow.created_by === userId;
+}
 exports.casesRoutes.get('/', auth_1.authMiddleware, async (req, res, next) => {
     try {
         const { status, machine_id, assigned_to, operator_id, problem_id, cause_id, date_from, date_to, time_from, time_to, line, page = '1', limit = '25' } = req.query;
@@ -15,6 +22,10 @@ exports.casesRoutes.get('/', auth_1.authMiddleware, async (req, res, next) => {
         const offset = (pageNumber - 1) * limitNumber;
         const conditions = [];
         const values = [];
+        if (req.user.role !== 'admin') {
+            values.push(req.user.id);
+            conditions.push(`c.created_by = $${values.length}`);
+        }
         if (status) {
             values.push(status);
             conditions.push(`c.status = $${values.length}`);
@@ -87,6 +98,29 @@ exports.casesRoutes.get('/', auth_1.authMiddleware, async (req, res, next) => {
         next(e);
     }
 });
+exports.casesRoutes.get('/:id', auth_1.authMiddleware, async (req, res, next) => {
+    try {
+        const caseRow = await getCaseRow(req.params.id);
+        if (!caseRow)
+            return res.status(404).json({ error: 'Case not found' });
+        if (!canAccessCase(caseRow, req.user.id, req.user.role)) {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+        const r = await db_1.pool.query(`SELECT c.*, m.code as machine_code, m.name as machine_name, u.username as created_by_username,
+              op.name as operator_name, prob.name as problem_name, cause.name as cause_name
+       FROM cases c
+       JOIN machines m ON m.id = c.machine_id
+       LEFT JOIN users u ON u.id = c.created_by
+       LEFT JOIN categories op ON op.id = c.operator_id
+       LEFT JOIN categories prob ON prob.id = c.problem_id
+       LEFT JOIN categories cause ON cause.id = c.cause_id
+       WHERE c.id = $1`, [req.params.id]);
+        res.json({ item: r.rows[0] });
+    }
+    catch (e) {
+        next(e);
+    }
+});
 exports.casesRoutes.post('/', auth_1.authMiddleware, async (req, res, next) => {
     try {
         const body = req.body;
@@ -130,8 +164,8 @@ exports.casesRoutes.post('/', auth_1.authMiddleware, async (req, res, next) => {
             description: solution
         });
         const r = await db_1.pool.query(`INSERT INTO cases(machine_id, operator_id, problem_id, cause_id, title, description, solution, ai_solution,
-                        priority, status, created_by, assigned_to)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+                        status, created_by, assigned_to)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
        RETURNING *`, [
             body.machine_id,
             body.operator_id ?? null,
@@ -141,7 +175,6 @@ exports.casesRoutes.post('/', auth_1.authMiddleware, async (req, res, next) => {
             body.description ?? null,
             solution,
             ai_solution,
-            body.priority ?? 'medium',
             body.status ?? 'open',
             req.user.id,
             body.assigned_to ?? null
@@ -151,6 +184,75 @@ exports.casesRoutes.post('/', auth_1.authMiddleware, async (req, res, next) => {
         (0, socketService_1.emitEvent)('case_created', { caseId: r.rows[0].id, title: r.rows[0].title });
         (0, socketService_1.emitEvent)('case-updated', { caseId: r.rows[0].id, title: r.rows[0].title });
         res.json({ item: r.rows[0] });
+    }
+    catch (e) {
+        next(e);
+    }
+});
+exports.casesRoutes.put('/:id', auth_1.authMiddleware, async (req, res, next) => {
+    try {
+        const caseRow = await getCaseRow(req.params.id);
+        if (!caseRow)
+            return res.status(404).json({ error: 'Case not found' });
+        if (!canAccessCase(caseRow, req.user.id, req.user.role)) {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+        const body = req.body;
+        const solution = (body.solution ?? body.description ?? caseRow.solution ?? '').toString();
+        const missing = [];
+        if (!body.machine_id)
+            missing.push('machine_id');
+        if (!body.operator_id)
+            missing.push('operator_id');
+        if (!body.problem_id)
+            missing.push('problem_id');
+        if (!body.cause_id)
+            missing.push('cause_id');
+        if (!body.title)
+            missing.push('title');
+        if (!solution.trim())
+            missing.push('solution');
+        if (missing.length) {
+            return res.status(400).json({ error: `Campo obbligatorio mancante: ${missing[0]}` });
+        }
+        if (solution.trim().length < 10) {
+            return res.status(400).json({ error: 'solution deve contenere almeno 10 caratteri.' });
+        }
+        const r = await db_1.pool.query(`UPDATE cases
+       SET machine_id = $1, operator_id = $2, problem_id = $3, cause_id = $4,
+           title = $5, description = $6, solution = $7, status = $8, updated_at = now()
+       WHERE id = $9
+       RETURNING *`, [
+            body.machine_id,
+            body.operator_id,
+            body.problem_id,
+            body.cause_id,
+            body.title,
+            body.description ?? null,
+            solution,
+            body.status ?? caseRow.status,
+            req.params.id
+        ]);
+        await db_1.pool.query(`INSERT INTO case_events(case_id,event_type,message,actor_id)
+       VALUES($1,'update','case updated',$2)`, [req.params.id, req.user.id]);
+        (0, socketService_1.emitEvent)('case-updated', { caseId: req.params.id, title: r.rows[0].title });
+        res.json({ item: r.rows[0] });
+    }
+    catch (e) {
+        next(e);
+    }
+});
+exports.casesRoutes.delete('/:id', auth_1.authMiddleware, async (req, res, next) => {
+    try {
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Solo gli admin possono eliminare i casi' });
+        }
+        const caseRow = await getCaseRow(req.params.id);
+        if (!caseRow)
+            return res.status(404).json({ error: 'Case not found' });
+        await db_1.pool.query('DELETE FROM cases WHERE id = $1', [req.params.id]);
+        (0, socketService_1.emitEvent)('case-updated', { caseId: req.params.id, action: 'deleted' });
+        res.json({ ok: true });
     }
     catch (e) {
         next(e);
