@@ -1,9 +1,10 @@
 import { env } from '../config/env';
 
-const AI_PROMPT_TEMPLATE = ({ machine, operator, problem, cause, description }: { machine: string; operator: string; problem: string; cause: string; description: string }) =>
+const AI_PROMPT_TEMPLATE = ({ machine, line, operator, problem, cause, description }: { machine: string; line: string; operator: string; problem: string; cause: string; description: string }) =>
   `Genera una soluzione tecnica per un problema di manutenzione su una macchina industriale.
 
 Macchina: ${machine}
+Linea: ${line}
 Operatore: ${operator}
 Problema: ${problem}
 Causa: ${cause}
@@ -23,7 +24,7 @@ export async function pingOllama() {
   }
 }
 
-export async function generateAiSolution(data: { machine: string; operator: string; problem: string; cause: string; description: string }) {
+export async function generateAiSolution(data: { machine: string; line: string; operator: string; problem: string; cause: string; description: string }) {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), env.AI_TIMEOUT);
   const prompt = AI_PROMPT_TEMPLATE(data);

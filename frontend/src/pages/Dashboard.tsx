@@ -29,14 +29,13 @@ type CaseItem = {
   operator_name: string;
   problem_name: string;
   cause_name: string;
+  solution?: string;
   ai_solution?: string;
 };
 
 type MachineItem = { id: string; code: string; name: string };
-
 type BreakdownItem = { status: string; count: number };
-
-type TopMachine = { code: string; name: string; open_cases: number };
+type TopMachine = { machine: string; problem_count: number };
 
 export default function Dashboard() {
   const { token, user } = useAuth();
@@ -140,7 +139,7 @@ export default function Dashboard() {
         <div className="rounded-3xl bg-slate-900/80 p-6 shadow-lg shadow-slate-950/20 text-white">
           <div className="text-sm uppercase tracking-[0.22em] text-slate-400">Ruolo utente</div>
           <div className="mt-4 text-4xl font-semibold">{user?.role ?? 'n/d'}</div>
-          <div className="mt-3 text-sm text-slate-500">{user?.role === 'admin' ? 'Accesso amministratore' : 'Accesso standard'}</div>
+          <div className="mt-3 text-sm text-slate-500">{user?.role === 'admin' ? 'Accesso amministratore' : 'Accesso standard'}.</div>
         </div>
       </div>
 
@@ -186,7 +185,7 @@ export default function Dashboard() {
           <div className="rounded-3xl bg-slate-950/80 p-4">
             <h3 className="mb-4 text-lg font-semibold text-slate-100">Trend casi</h3>
             <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer>
                 <LineChart data={breakdown.map((item) => ({ name: item.status, value: item.count }))}>
                   <CartesianGrid stroke="#1e293b" strokeDasharray="4 4" />
                   <XAxis dataKey="name" stroke="#94a3b8" />
@@ -200,7 +199,7 @@ export default function Dashboard() {
           <div className="rounded-3xl bg-slate-950/80 p-4">
             <h3 className="mb-4 text-lg font-semibold text-slate-100">Top macchine aperte</h3>
             <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer>
                 <BarChart data={topMachines} margin={{ left: -20, right: 10, top: 10, bottom: 0 }}>
                   <CartesianGrid stroke="#1e293b" strokeDasharray="4 4" />
                   <XAxis dataKey="code" stroke="#94a3b8" />
@@ -244,7 +243,7 @@ export default function Dashboard() {
                 </tr>
               ) : (
                 cases.map((item) => (
-                  <tr key={item.id} className="transition hover:bg-slate-900/80">
+                  <tr key={item.id} className="cursor-pointer transition hover:bg-slate-900/80" onClick={() => { }}>
                     <td className="px-4 py-4 font-medium text-slate-100">{item.title}</td>
                     <td className="px-4 py-4 text-slate-300">{item.machine_code}</td>
                     <td className="px-4 py-4 text-slate-300">{item.operator_name || 'N.D.'}</td>
@@ -289,4 +288,3 @@ export default function Dashboard() {
     </div>
   );
 }
-

@@ -3,9 +3,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.pingOllama = pingOllama;
 exports.generateAiSolution = generateAiSolution;
 const env_1 = require("../config/env");
-const AI_PROMPT_TEMPLATE = ({ machine, operator, problem, cause, description }) => `Genera una soluzione tecnica per un problema di manutenzione su una macchina industriale.
+const AI_PROMPT_TEMPLATE = ({ machine, line, operator, problem, cause, description }) => `Genera una soluzione tecnica per un problema di manutenzione su una macchina industriale.
 
 Macchina: ${machine}
+Linea: ${line}
 Operatore: ${operator}
 Problema: ${problem}
 Causa: ${cause}

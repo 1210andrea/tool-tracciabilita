@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS cases (
   category_id uuid REFERENCES categories(id) ON DELETE SET NULL,
   title TEXT NOT NULL,
   description TEXT,
+  solution TEXT,
   ai_solution TEXT,
   priority TEXT NOT NULL DEFAULT 'medium',
   status TEXT NOT NULL DEFAULT 'open',

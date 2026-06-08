@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware } from '../middleware/auth';
 import { pool } from '../services/dbService';
+import { emitEvent } from '../services/socketService';
 
 export const machinesRoutes = Router();
 
@@ -30,6 +31,7 @@ machinesRoutes.post('/', authMiddleware, async (req, res, next) => {
       'INSERT INTO machines(code,name,line,location) VALUES($1,$2,$3,$4) RETURNING id, code, name, line, location, created_at',
       [code, name, line ?? null, location ?? null]
     );
+    emitEvent('machine_updated', { machineId: r.rows[0].id, action: 'created' });
     res.json({ item: r.rows[0] });
   } catch (e) {
     next(e);
@@ -48,6 +50,7 @@ machinesRoutes.put('/:id', authMiddleware, async (req, res, next) => {
       [name ?? null, line ?? null, location ?? null, id]
     );
     if (!r.rows.length) return res.status(404).json({ error: 'Machine not found' });
+    emitEvent('machine_updated', { machineId: id, action: 'updated' });
     res.json({ item: r.rows[0] });
   } catch (e) {
     next(e);
@@ -60,6 +63,7 @@ machinesRoutes.delete('/:id', authMiddleware, async (req, res, next) => {
 
     const { id } = req.params;
     await pool.query('DELETE FROM machines WHERE id = $1', [id]);
+    emitEvent('machine_updated', { machineId: id, action: 'deleted' });
     res.json({ ok: true });
   } catch (e) {
     next(e);
