@@ -7,6 +7,9 @@ const db_1 = require("../db");
 const socketService_1 = require("../services/socketService");
 const aiService_1 = require("../services/aiService");
 exports.casesRoutes = (0, express_1.Router)();
+const CASE_FIELDS = `c.id, c.machine_id, c.operator_id, c.problem_id, c.cause_id, c.category_id,
+  c.title, c.description, c.solution, c.ai_solution, c.status, c.created_by, c.assigned_to,
+  c.created_at, c.updated_at`;
 async function getCaseRow(caseId) {
     const r = await db_1.pool.query('SELECT * FROM cases WHERE id = $1', [caseId]);
     return r.rows[0] ?? null;
@@ -86,7 +89,7 @@ exports.casesRoutes.get('/', auth_1.authMiddleware, async (req, res, next) => {
             conditions.push(`m.line = $${values.length}`);
         }
         const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-        const r = await db_1.pool.query(`SELECT c.*, m.code as machine_code, m.name as machine_name, u.username as created_by_username,
+        const r = await db_1.pool.query(`SELECT ${CASE_FIELDS}, m.code as machine_code, m.name as machine_name, u.username as created_by_username,
               op.name as operator_name, prob.name as problem_name, cause.name as cause_name,
               COUNT(*) OVER() AS total_count
        FROM cases c
@@ -113,7 +116,7 @@ exports.casesRoutes.get('/:id/ai-insights', auth_1.authMiddleware, async (req, r
         if (!canAccessCase(caseRow, req.user.id, req.user.role)) {
             return res.status(403).json({ error: 'Forbidden' });
         }
-        const detail = await db_1.pool.query(`SELECT c.*, m.code as machine_code, m.name as machine_name, m.line,
+        const detail = await db_1.pool.query(`SELECT ${CASE_FIELDS}, m.code as machine_code, m.name as machine_name, m.line,
               op.name as operator_name, prob.name as problem_name, cause.name as cause_name
        FROM cases c
        JOIN machines m ON m.id = c.machine_id
@@ -214,7 +217,7 @@ exports.casesRoutes.get('/:id', auth_1.authMiddleware, async (req, res, next) =>
         if (!canAccessCase(caseRow, req.user.id, req.user.role)) {
             return res.status(403).json({ error: 'Forbidden' });
         }
-        const r = await db_1.pool.query(`SELECT c.*, m.code as machine_code, m.name as machine_name, u.username as created_by_username,
+        const r = await db_1.pool.query(`SELECT ${CASE_FIELDS}, m.code as machine_code, m.name as machine_name, u.username as created_by_username,
               op.name as operator_name, prob.name as problem_name, cause.name as cause_name
        FROM cases c
        JOIN machines m ON m.id = c.machine_id

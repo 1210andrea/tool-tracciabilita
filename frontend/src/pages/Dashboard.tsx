@@ -181,6 +181,26 @@ export default function Dashboard() {
 
   const totalCases = useMemo(() => breakdown.reduce((sum, item) => sum + item.count, 0), [breakdown]);
   const pageCount = Math.max(1, Math.ceil(total / limit));
+
+  const topMachinesChart = useMemo(() => {
+    const normalize = (items: Array<Record<string, unknown>>) =>
+      items.map((item) => ({
+        machine: String(item.machine ?? item.code ?? 'N/D'),
+        problem_count: Number(item.problem_count ?? item.open_cases ?? 0)
+      })).filter((item) => item.problem_count > 0);
+
+    const fromApi = normalize(topMachines as unknown as Array<Record<string, unknown>>);
+    if (fromApi.length) return fromApi;
+
+    const counts = new Map<string, number>();
+    cases
+      .filter((c) => c.status === 'open' || c.status === 'in_progress')
+      .forEach((c) => counts.set(c.machine_code, (counts.get(c.machine_code) ?? 0) + 1));
+
+    return Array.from(counts.entries())
+      .map(([machine, problem_count]) => ({ machine, problem_count }))
+      .sort((a, b) => b.problem_count - a.problem_count);
+  }, [topMachines, cases]);
   const activeFilters = [
     dateFrom ? 'data da' : null,
     dateTo ? 'data a' : null,
@@ -229,80 +249,91 @@ export default function Dashboard() {
       </div>
 
       <div className="rounded-3xl bg-slate-900/80 p-4 shadow-lg shadow-slate-950/20 sm:p-6">
-        <div className="mb-5">
-          <h2 className="text-lg font-semibold sm:text-xl">Filtri visualizzazione</h2>
-          <p className="text-sm text-slate-400">Filtra i casi con criteri avanzati.</p>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <label className="block text-xs text-slate-400">Data da</label>
-            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="mt-1 w-full rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none" />
+            <h2 className="text-lg font-semibold sm:text-xl">Filtri visualizzazione</h2>
+            <p className="text-sm text-slate-400">I filtri si applicano automaticamente.</p>
           </div>
-          <div>
-            <label className="block text-xs text-slate-400">Data a</label>
-            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="mt-1 w-full rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none" />
-          </div>
-          <div>
-            <label className="block text-xs text-slate-400">Ora da</label>
-            <input type="time" value={timeFrom} onChange={(e) => setTimeFrom(e.target.value)} className="mt-1 w-full rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none" />
-          </div>
-          <div>
-            <label className="block text-xs text-slate-400">Ora a</label>
-            <input type="time" value={timeTo} onChange={(e) => setTimeTo(e.target.value)} className="mt-1 w-full rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none" />
-          </div>
-          <div>
-            <label className="block text-xs text-slate-400">Linea</label>
-            <select value={lineFilter} onChange={(e) => setLineFilter(e.target.value)} className="mt-1 w-full rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none">
-              <option value="">Tutte</option>
-              {[...new Set(machines.map((m) => m.line).filter(Boolean))].map((ln) => (
-                <option key={ln as string} value={ln as string}>{ln as string}</option>
-              ))}
-            </select>
-          </div>
-          <CategoriesSelect label="Operatore" value={operatorIdFilter} onChange={setOperatorIdFilter} categories={categories} type="operator" placeholder="Tutti" disabled={categories.length === 0} />
-          <CategoriesSelect label="Problema" value={problemIdFilter} onChange={setProblemIdFilter} categories={categories} type="problem" placeholder="Tutti" disabled={categories.length === 0} />
-          <CategoriesSelect label="Causa" value={causeIdFilter} onChange={setCauseIdFilter} categories={categories} type="cause" placeholder="Tutti" disabled={categories.length === 0} />
-        </div>
-
-        <div className="mt-4 flex flex-wrap gap-3">
-          <button type="button" onClick={resetFilters} className="rounded-2xl border border-slate-700 bg-slate-900/90 px-5 py-2.5 text-sm text-slate-100 transition hover:bg-slate-800">
+          <button type="button" onClick={resetFilters} className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-5 py-2.5 text-sm text-slate-100 transition hover:bg-slate-800 sm:w-auto">
             Reset filtri
           </button>
         </div>
 
-        <div className="mt-8 grid gap-6 lg:grid-cols-2">
-          <div className="rounded-3xl bg-slate-950/80 p-4">
-            <h3 className="mb-4 text-lg font-semibold text-slate-100">Trend casi</h3>
-            <div className="h-56 sm:h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={breakdown.map((item) => ({ name: item.status, value: item.count }))}>
-                  <CartesianGrid stroke="#1e293b" strokeDasharray="4 4" />
-                  <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} />
-                  <YAxis stroke="#94a3b8" fontSize={12} allowDecimals={false} />
-                  <Tooltip wrapperStyle={{ backgroundColor: '#0f172a', borderRadius: 12, border: '1px solid #334155' }} />
-                  <Line type="monotone" dataKey="value" stroke="#38bdf8" strokeWidth={3} dot={{ r: 4 }} />
-                </LineChart>
-              </ResponsiveContainer>
+        <div className="space-y-5">
+          <div>
+            <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Periodo</div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div>
+                <label className="block text-xs text-slate-400">Data da</label>
+                <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none" />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400">Data a</label>
+                <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none" />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400">Ora da</label>
+                <input type="time" value={timeFrom} onChange={(e) => setTimeFrom(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none" />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400">Ora a</label>
+                <input type="time" value={timeTo} onChange={(e) => setTimeTo(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none" />
+              </div>
             </div>
           </div>
-          <div className="rounded-3xl bg-slate-950/80 p-4">
-            <h3 className="mb-4 text-lg font-semibold text-slate-100">Top macchine aperte</h3>
-            <div className="h-56 sm:h-64">
-              {topMachines.length === 0 ? (
-                <div className="flex h-full items-center justify-center text-sm text-slate-500">Nessun caso aperto da visualizzare.</div>
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={topMachines} margin={{ left: 0, right: 10, top: 10, bottom: 0 }}>
-                    <CartesianGrid stroke="#1e293b" strokeDasharray="4 4" />
-                    <XAxis dataKey="machine" stroke="#94a3b8" fontSize={12} />
-                    <YAxis stroke="#94a3b8" fontSize={12} allowDecimals={false} />
-                    <Tooltip wrapperStyle={{ backgroundColor: '#0f172a', borderRadius: 12, border: '1px solid #334155' }} />
-                    <Bar dataKey="problem_count" fill="#38bdf8" radius={[6, 6, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
+
+          <div>
+            <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Attributi caso</div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div>
+                <label className="block text-xs text-slate-400">Linea</label>
+                <select value={lineFilter} onChange={(e) => setLineFilter(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none">
+                  <option value="">Tutte</option>
+                  {[...new Set(machines.map((m) => m.line).filter(Boolean))].map((ln) => (
+                    <option key={ln as string} value={ln as string}>{ln as string}</option>
+                  ))}
+                </select>
+              </div>
+              <CategoriesSelect label="Operatore" value={operatorIdFilter} onChange={setOperatorIdFilter} categories={categories} type="operator" placeholder="Tutti" disabled={categories.length === 0} />
+              <CategoriesSelect label="Problema" value={problemIdFilter} onChange={setProblemIdFilter} categories={categories} type="problem" placeholder="Tutti" disabled={categories.length === 0} />
+              <CategoriesSelect label="Causa" value={causeIdFilter} onChange={setCauseIdFilter} categories={categories} type="cause" placeholder="Tutti" disabled={categories.length === 0} />
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-3xl bg-slate-900/80 p-4 shadow-lg shadow-slate-950/20 sm:p-6">
+          <h3 className="mb-4 text-lg font-semibold text-slate-100">Trend casi</h3>
+          <div className="w-full" style={{ height: 280 }}>
+            <ResponsiveContainer width="100%" height={280}>
+              <LineChart data={breakdown.map((item) => ({ name: item.status, value: Number(item.count) }))} margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
+                <CartesianGrid stroke="#1e293b" strokeDasharray="4 4" />
+                <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} />
+                <YAxis stroke="#94a3b8" fontSize={12} allowDecimals={false} width={32} />
+                <Tooltip wrapperStyle={{ backgroundColor: '#0f172a', borderRadius: 12, border: '1px solid #334155' }} />
+                <Line type="monotone" dataKey="value" stroke="#38bdf8" strokeWidth={3} dot={{ r: 4 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="rounded-3xl bg-slate-900/80 p-4 shadow-lg shadow-slate-950/20 sm:p-6">
+          <h3 className="mb-4 text-lg font-semibold text-slate-100">Top macchine aperte</h3>
+          <div className="w-full" style={{ height: 280 }}>
+            {topMachinesChart.length === 0 ? (
+              <div className="flex h-full items-center justify-center text-sm text-slate-500">Nessun caso aperto da visualizzare.</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={topMachinesChart} margin={{ top: 8, right: 12, left: 0, bottom: 24 }}>
+                  <CartesianGrid stroke="#1e293b" strokeDasharray="4 4" />
+                  <XAxis dataKey="machine" stroke="#94a3b8" fontSize={11} interval={0} angle={-20} textAnchor="end" height={50} />
+                  <YAxis stroke="#94a3b8" fontSize={12} allowDecimals={false} width={32} />
+                  <Tooltip wrapperStyle={{ backgroundColor: '#0f172a', borderRadius: 12, border: '1px solid #334155' }} />
+                  <Bar dataKey="problem_count" fill="#38bdf8" radius={[6, 6, 0, 0]} maxBarSize={48} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
       </div>

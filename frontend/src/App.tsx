@@ -28,7 +28,7 @@ function Layout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <header className="border-b border-slate-700 bg-slate-900/95 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-4 md:flex-row md:items-center md:justify-between">
+        <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-4 md:flex-row md:items-center md:justify-between">
           <div>
             <div className="text-xl font-semibold">Machines App</div>
             <div className="text-sm text-slate-400">Gestione problemi macchine industriali</div>
@@ -67,7 +67,7 @@ function Layout({ children }: { children: ReactNode }) {
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>
+      <main className="mx-auto w-full max-w-7xl px-4 py-6">{children}</main>
     </div>
   );
 }

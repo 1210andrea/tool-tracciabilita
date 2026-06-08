@@ -6,6 +6,10 @@ import { generateAiSolution, generateCaseInsights } from '../services/aiService'
 
 export const casesRoutes = Router();
 
+const CASE_FIELDS = `c.id, c.machine_id, c.operator_id, c.problem_id, c.cause_id, c.category_id,
+  c.title, c.description, c.solution, c.ai_solution, c.status, c.created_by, c.assigned_to,
+  c.created_at, c.updated_at`;
+
 async function getCaseRow(caseId: string) {
   const r = await pool.query('SELECT * FROM cases WHERE id = $1', [caseId]);
   return r.rows[0] ?? null;
@@ -106,7 +110,7 @@ casesRoutes.get('/', authMiddleware, async (req, res, next) => {
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const r = await pool.query(
-      `SELECT c.*, m.code as machine_code, m.name as machine_name, u.username as created_by_username,
+      `SELECT ${CASE_FIELDS}, m.code as machine_code, m.name as machine_name, u.username as created_by_username,
               op.name as operator_name, prob.name as problem_name, cause.name as cause_name,
               COUNT(*) OVER() AS total_count
        FROM cases c
@@ -137,7 +141,7 @@ casesRoutes.get('/:id/ai-insights', authMiddleware, async (req, res, next) => {
     }
 
     const detail = await pool.query(
-      `SELECT c.*, m.code as machine_code, m.name as machine_name, m.line,
+      `SELECT ${CASE_FIELDS}, m.code as machine_code, m.name as machine_name, m.line,
               op.name as operator_name, prob.name as problem_name, cause.name as cause_name
        FROM cases c
        JOIN machines m ON m.id = c.machine_id
@@ -255,7 +259,7 @@ casesRoutes.get('/:id', authMiddleware, async (req, res, next) => {
     }
 
     const r = await pool.query(
-      `SELECT c.*, m.code as machine_code, m.name as machine_name, u.username as created_by_username,
+      `SELECT ${CASE_FIELDS}, m.code as machine_code, m.name as machine_name, u.username as created_by_username,
               op.name as operator_name, prob.name as problem_name, cause.name as cause_name
        FROM cases c
        JOIN machines m ON m.id = c.machine_id
