@@ -1,6 +1,8 @@
 import axios from 'axios';
 import { useMemo } from 'react';
 
+const API_URL = '/api';
+
 export function useApi() {
   const client = useMemo(() => {
     const instance = axios.create({ baseURL: API_URL, withCredentials: true });
@@ -16,7 +18,7 @@ export function useApi() {
 
   return {
     login: async (username: string, password: string) => {
-      const resp = await axios.post('/api/auth/login', { username, password });
+      const resp = await client.post('/auth/login', { username, password });
       return resp.data.token as string;
     },
     me: async () => {
