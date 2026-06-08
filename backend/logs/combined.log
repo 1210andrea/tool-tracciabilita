@@ -1,3 +1,0 @@
-{"level":"info","message":{"server":"listening:3001"},"service":"machines-api","timestamp":"2026-06-08T11:44:21.043Z"}
-{"level":"info","message":{"server":"listening:3001"},"service":"machines-api","timestamp":"2026-06-08T11:44:53.601Z"}
-{"level":"info","message":{"req":{"ip":"::1","method":"GET","path":"/health"}},"service":"machines-api","timestamp":"2026-06-08T11:45:10.292Z"}
