@@ -11,8 +11,10 @@ services:
       - ./nginx/ssl:/etc/nginx/ssl:ro
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
-      - frontend
-      - backend
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_started
     restart: always
     networks:
       - machines_network
@@ -23,13 +25,17 @@ services:
     build:
       context: ./frontend
       args:
-        - VITE_API_URL=https://your-domain.com/api
+        - VITE_API_URL=${VITE_API_URL:-/api}
     container_name: machines_frontend
-    environment:
-      - NODE_ENV=production
     restart: always
     networks:
       - machines_network
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   backend:
     env_file:
@@ -37,35 +43,20 @@ services:
     build: ./backend
     container_name: machines_backend
     environment:
-      - NODE_ENV=production
-      - PORT=3001
-      - DATABASE_URL=postgres://$DB_USER:$DB_PASSWORD@postgres:5432/machines_db
-      - REDIS_URL=redis://redis:6379
-      - JWT_SECRET=$JWT_SECRET
-      - JWT_REFRESH_SECRET=$JWT_REFRESH_SECRET
-      - JWT_EXPIRY=$JWT_EXPIRY
-      - JWT_REFRESH_EXPIRY=$JWT_REFRESH_EXPIRY
-      - AI_PROVIDER=ollama
-      - AI_API_URL=${AI_API_URL:-http://ollama:11434}
-      - AI_MODEL=${AI_MODEL:-llama3.1:8b}
-      - AI_TIMEOUT=${AI_TIMEOUT:-120000}
-      - LOG_LEVEL=$LOG_LEVEL
-      - CORS_ORIGIN=$CORS_ORIGIN
-      - LDAP_ENABLED=$LDAP_ENABLED
-      - LDAP_SERVER=$LDAP_SERVER
-      - LDAP_BASE_DN=$LDAP_BASE_DN
-    depends_on:
-      - postgres
-      - redis
-      - ollama
+      NODE_ENV: production
+      PORT: 3001
     restart: always
     networks:
       - machines_network
+    depends_on:
+      - postgres
+      - redis
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 30s
 
   postgres:
     env_file:
@@ -74,8 +65,8 @@ services:
     container_name: machines_postgres
     environment:
       POSTGRES_DB: machines_db
-      POSTGRES_USER: $DB_USER
-      POSTGRES_PASSWORD: $DB_PASSWORD
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -109,4 +100,3 @@ volumes:
 networks:
   machines_network:
     driver: bridge
-

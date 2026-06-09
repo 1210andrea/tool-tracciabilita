@@ -30,7 +30,7 @@ SELECT c.name, COALESCE(m.type, 'generico'), c.description
 FROM categories c
 CROSS JOIN (SELECT type FROM machines LIMIT 1) m
 WHERE c.type = 'spare_part'
-ON CONFLICT DO NOTHING;
+  AND NOT EXISTS (SELECT 1 FROM spare_parts sp WHERE sp.name = c.name AND sp.type = COALESCE(m.type, 'generico'));
 
 INSERT INTO spare_parts (name, type, description)
 SELECT DISTINCT c.name, 'generico', c.description
@@ -38,12 +38,15 @@ FROM categories c
 WHERE c.type = 'spare_part'
   AND NOT EXISTS (SELECT 1 FROM spare_parts sp WHERE sp.name = c.name);
 
-INSERT INTO solutions_applied (name, description) VALUES
-('Sostituzione componente', 'Rimozione e montaggio del pezzo difettoso'),
-('Pulizia e lubrificazione', 'Pulizia area interessata e lubrificazione parti mobili'),
-('Ricalibrazione sensore', 'Riposizionamento e taratura sensore'),
-('Aggiornamento parametri', 'Modifica parametri macchina da pannello operatore')
-ON CONFLICT DO NOTHING;
+INSERT INTO solutions_applied (name, description)
+SELECT v.name, v.description
+FROM (VALUES
+  ('Sostituzione componente', 'Rimozione e montaggio del pezzo difettoso'),
+  ('Pulizia e lubrificazione', 'Pulizia area interessata e lubrificazione parti mobili'),
+  ('Ricalibrazione sensore', 'Riposizionamento e taratura sensore'),
+  ('Aggiornamento parametri', 'Modifica parametri macchina da pannello operatore')
+) AS v(name, description)
+WHERE NOT EXISTS (SELECT 1 FROM solutions_applied sa WHERE sa.name = v.name);
 
 ALTER TABLE cases ADD COLUMN IF NOT EXISTS solution_applied_id uuid REFERENCES solutions_applied(id) ON DELETE SET NULL;
 
