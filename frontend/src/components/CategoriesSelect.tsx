@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 
-type CategoryType = 'operator' | 'problem' | 'cause';
+type CategoryType = 'operator' | 'problem' | 'cause' | 'spare_part';
 
 type Category = { id: string; type: string; name: string };
 
@@ -32,7 +32,7 @@ export function CategoriesSelect({
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none"
+        className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none"
       >
         <option value="">{placeholder ?? 'Tutti'}</option>
         {items.map((it) => (

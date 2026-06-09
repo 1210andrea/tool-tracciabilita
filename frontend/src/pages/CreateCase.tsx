@@ -6,70 +6,96 @@ import { useAuth } from '../context/AuthContext';
 const API_URL = '/api';
 
 type CategoryItem = { id: string; type: string; name: string };
-
-type MachineItem = { id: string; code: string; name: string };
-
-type UserItem = { id: string; username: string };
+type MachineItem = { id: string; code: string; name: string; type?: string };
+type SparePartItem = { id: string; name: string; type: string };
+type SolutionItem = { id: string; name: string; description?: string };
 
 export default function CreateCase() {
   const { token, user } = useAuth();
   const navigate = useNavigate();
   const [machines, setMachines] = useState<MachineItem[]>([]);
-  const [operators, setOperators] = useState<CategoryItem[]>([]);
   const [problems, setProblems] = useState<CategoryItem[]>([]);
   const [causes, setCauses] = useState<CategoryItem[]>([]);
-  const [users, setUsers] = useState<UserItem[]>([]);
+  const [spareParts, setSpareParts] = useState<SparePartItem[]>([]);
+  const [solutions, setSolutions] = useState<SolutionItem[]>([]);
 
   const [machineId, setMachineId] = useState('');
-  const [operatorId, setOperatorId] = useState('');
   const [problemId, setProblemId] = useState('');
   const [causeId, setCauseId] = useState('');
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
+  const [sparePartId, setSparePartId] = useState('');
+  const [solutionAppliedId, setSolutionAppliedId] = useState('');
 
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingParts, setLoadingParts] = useState(false);
 
   useEffect(() => {
     if (!token) return;
 
     const loadLookups = async () => {
       try {
-        const [machinesResp, categoriesResp, usersResp] = await Promise.all([
+        const [machinesResp, categoriesResp, solutionsResp] = await Promise.all([
           axios.get(`${API_URL}/machines`, { headers: { Authorization: `Bearer ${token}` } }),
           axios.get(`${API_URL}/categories`, { headers: { Authorization: `Bearer ${token}` } }),
-          user?.role === 'admin'
-            ? axios.get(`${API_URL}/users`, { headers: { Authorization: `Bearer ${token}` } })
-            : Promise.resolve({ data: { items: [] } })
+          axios.get(`${API_URL}/solutions-applied`, { headers: { Authorization: `Bearer ${token}` } })
         ]);
 
         setMachines(machinesResp.data.items || []);
         const items = categoriesResp.data.items || [];
-        setOperators(items.filter((item: CategoryItem) => item.type === 'operator'));
-
         setProblems(items.filter((item: CategoryItem) => item.type === 'problem'));
         setCauses(items.filter((item: CategoryItem) => item.type === 'cause'));
-        setUsers(usersResp.data.items || []);
+        setSolutions(solutionsResp.data.items || []);
       } catch {
         setMachines([]);
-        setOperators([]);
         setProblems([]);
         setCauses([]);
-        setUsers([]);
+        setSolutions([]);
       }
     };
 
     loadLookups();
-  }, [token, user?.role]);
+  }, [token]);
 
-  const handleCreate = async () => {
-    if (!token) return;
-    if (!machineId || !operatorId || !problemId || !causeId || !title || !description) {
-      setError('Compila tutti i campi obbligatori (macchina, operatore, problema, causa, titolo e descrizione).');
+  useEffect(() => {
+    if (!token || !machineId) {
+      setSpareParts([]);
+      setSparePartId('');
       return;
     }
 
+    const machine = machines.find((m) => m.id === machineId);
+    if (!machine?.type) {
+      setSpareParts([]);
+      setSparePartId('');
+      return;
+    }
+
+    const loadSpareParts = async () => {
+      setLoadingParts(true);
+      try {
+        const resp = await axios.get(`${API_URL}/spare-parts/by-type/${encodeURIComponent(machine.type!)}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setSpareParts(resp.data.items || []);
+        setSparePartId('');
+      } catch {
+        setSpareParts([]);
+      } finally {
+        setLoadingParts(false);
+      }
+    };
+
+    loadSpareParts();
+  }, [token, machineId, machines]);
+
+  const handleCreate = async () => {
+    if (!token) return;
+
+    if (!machineId || !problemId || !causeId || !sparePartId || !solutionAppliedId) {
+      setError('Compila tutti i campi obbligatori: macchina, problema, causa, pezzo di ricambio e soluzione applicata.');
+      return;
+    }
 
     setError(null);
     setSuccess(null);
@@ -80,26 +106,22 @@ export default function CreateCase() {
         `${API_URL}/cases`,
         {
           machine_id: machineId,
-          operator_id: operatorId,
           problem_id: problemId,
           cause_id: causeId,
-          title,
-          // backend si aspetta `solution`
-          solution: description
-
+          spare_part_id: sparePartId,
+          solution_applied_id: solutionAppliedId
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      setSuccess('Caso creato correttamente. Redirigo alla dashboard...');
+      setSuccess('Caso registrato correttamente.');
       setMachineId('');
-      setOperatorId('');
       setProblemId('');
       setCauseId('');
-      setTitle('');
-      setDescription('');
+      setSparePartId('');
+      setSolutionAppliedId('');
 
-      setTimeout(() => navigate('/'), 1200);
+      setTimeout(() => navigate(user?.role === 'admin' ? '/dashboard' : '/'), 1200);
     } catch (err: any) {
       setError(err?.response?.data?.error ?? 'Errore durante la creazione del caso.');
     } finally {
@@ -107,125 +129,88 @@ export default function CreateCase() {
     }
   };
 
+  const selectedMachine = machines.find((m) => m.id === machineId);
+
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6 p-4 sm:p-6">
       <div>
-        <h1 className="text-3xl font-bold">Nuovo caso</h1>
-        <p className="text-sm text-slate-400">Seleziona macchina, operatore, problema e causa per creare un caso preciso.</p>
+        <h1 className="text-2xl font-bold sm:text-3xl">Nuovo caso</h1>
+        <p className="text-sm text-slate-400">Registra un intervento completato sulla macchina.</p>
       </div>
 
       {error && <div className="rounded-2xl border border-red-500/40 bg-red-500/10 p-4 text-red-200">{error}</div>}
       {success && <div className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4 text-emerald-200">{success}</div>}
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-3xl bg-slate-950/80 p-6 shadow-xl shadow-slate-950/10">
-          <label className="text-sm font-medium text-slate-200">Macchina</label>
-          <select
-            value={machineId}
-            onChange={(e) => setMachineId(e.target.value)}
-            className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
-          >
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6">
+          <label className="text-sm font-medium text-slate-200">Macchina <span className="text-red-400">*</span></label>
+          <select value={machineId} onChange={(e) => setMachineId(e.target.value)} className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none">
             <option value="">Seleziona una macchina</option>
             {machines.map((machine) => (
-              <option key={machine.id} value={machine.id}>
-                {machine.code} - {machine.name}
-              </option>
+              <option key={machine.id} value={machine.id}>{machine.code} - {machine.name}</option>
             ))}
           </select>
         </div>
 
-
-
-        <div className="rounded-3xl bg-slate-950/80 p-6 shadow-xl shadow-slate-950/10">
-          <label className="text-sm font-medium text-slate-200">Operatore</label>
+        <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6">
+          <label className="text-sm font-medium text-slate-200">Pezzo di ricambio <span className="text-red-400">*</span></label>
           <select
-            value={operatorId}
-            onChange={(e) => setOperatorId(e.target.value)}
-            className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
+            value={sparePartId}
+            onChange={(e) => setSparePartId(e.target.value)}
+            disabled={!machineId || loadingParts}
+            className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none disabled:opacity-60"
           >
-            <option value="">Seleziona operatore</option>
-            {operators.map((operatorItem) => (
-              <option key={operatorItem.id} value={operatorItem.id}>
-                {operatorItem.name}
-              </option>
+            <option value="">
+              {!machineId ? 'Seleziona prima una macchina' : loadingParts ? 'Caricamento ricambi...' : spareParts.length ? 'Seleziona ricambio' : 'Nessun ricambio per questo tipo'}
+            </option>
+            {spareParts.map((item) => (
+              <option key={item.id} value={item.id}>{item.name}</option>
             ))}
           </select>
+          {selectedMachine?.type && (
+            <p className="mt-2 text-xs text-slate-500">Tipo macchina: {selectedMachine.type}</p>
+          )}
         </div>
 
-        <div className="rounded-3xl bg-slate-950/80 p-6 shadow-xl shadow-slate-950/10">
-          <label className="text-sm font-medium text-slate-200">Problema</label>
-          <select
-            value={problemId}
-            onChange={(e) => setProblemId(e.target.value)}
-            className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
-          >
+        <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6">
+          <label className="text-sm font-medium text-slate-200">Problema <span className="text-red-400">*</span></label>
+          <select value={problemId} onChange={(e) => setProblemId(e.target.value)} className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none">
             <option value="">Seleziona problema</option>
-            {problems.map((problemItem) => (
-              <option key={problemItem.id} value={problemItem.id}>
-                {problemItem.name}
-              </option>
+            {problems.map((item) => (
+              <option key={item.id} value={item.id}>{item.name}</option>
             ))}
           </select>
         </div>
 
-        <div className="rounded-3xl bg-slate-950/80 p-6 shadow-xl shadow-slate-950/10">
-          <label className="text-sm font-medium text-slate-200">Causa</label>
-          <select
-            value={causeId}
-            onChange={(e) => setCauseId(e.target.value)}
-            className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
-          >
+        <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6">
+          <label className="text-sm font-medium text-slate-200">Causa <span className="text-red-400">*</span></label>
+          <select value={causeId} onChange={(e) => setCauseId(e.target.value)} className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none">
             <option value="">Seleziona causa</option>
-            {causes.map((causeItem) => (
-              <option key={causeItem.id} value={causeItem.id}>
-                {causeItem.name}
-              </option>
+            {causes.map((item) => (
+              <option key={item.id} value={item.id}>{item.name}</option>
             ))}
           </select>
         </div>
 
-
-      </div>
-
-      <div className="rounded-3xl bg-slate-950/80 p-6 shadow-xl shadow-slate-950/10">
-        <label className="block text-sm font-medium text-slate-200">Titolo</label>
-        <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Es. Arresto lineare per vibrazione"
-          className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
-        />
-      </div>
-
-      <div className="rounded-3xl bg-slate-950/80 p-6 shadow-xl shadow-slate-950/10">
-        <label className="block text-sm font-medium text-slate-200">Descrizione</label>
-        <textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          rows={7}
-          placeholder="Aggiungi dettagli aggiuntivi, stato attuale e comportamento osservato."
-          className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
-        />
+        <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6 md:col-span-2">
+          <label className="text-sm font-medium text-slate-200">Descrizione / soluzione applicata <span className="text-red-400">*</span></label>
+          <select value={solutionAppliedId} onChange={(e) => setSolutionAppliedId(e.target.value)} className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none">
+            <option value="">Seleziona soluzione applicata</option>
+            {solutions.map((item) => (
+              <option key={item.id} value={item.id}>{item.name}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <button
-          type="button"
-          className="inline-flex items-center justify-center rounded-2xl bg-sky-500 px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-60"
-          onClick={handleCreate}
-          disabled={!token || loading}
-        >
+        <button type="button" className="inline-flex items-center justify-center rounded-2xl bg-sky-500 px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-60" onClick={handleCreate} disabled={!token || loading}>
           {loading ? 'Salvataggio...' : 'Crea caso'}
         </button>
-        <button
-          type="button"
-          className="rounded-2xl border border-slate-700 bg-slate-900/90 px-6 py-3 text-sm text-slate-100 transition hover:bg-slate-800"
-          onClick={() => navigate('/')}
-        >
-          Torna alla dashboard
+        <button type="button" className="rounded-2xl border border-slate-700 bg-slate-900/90 px-6 py-3 text-sm text-slate-100 transition hover:bg-slate-800" onClick={() => navigate(user?.role === 'admin' ? '/dashboard' : '/')}>
+          Torna indietro
         </button>
       </div>
     </div>
   );
 }
-

@@ -11,7 +11,8 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (user) nav('/');
+    if (!user) return;
+    nav('/');
   }, [user, nav]);
 
   return (
@@ -62,7 +63,7 @@ export default function Login() {
         </button>
 
         <p className="mt-5 text-center text-xs uppercase tracking-[0.18em] text-slate-500">
-          Utilizza admin/admin o user/user sui dati iniziali.
+          Utilizza admin/password o user/user sui dati iniziali.
         </p>
       </div>
     </div>

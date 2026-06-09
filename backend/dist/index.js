@@ -74,7 +74,7 @@ app.use((req, _res, next) => {
 app.get('/health', async (_req, res) => {
     const health = { status: 'OK', timestamp: new Date().toISOString(), database: 'checking...', redis: 'checking...', ai: 'checking...' };
     try {
-        const { pool } = await Promise.resolve().then(() => __importStar(require('./services/dbService')));
+        const { pool } = await Promise.resolve().then(() => __importStar(require('./db')));
         await pool.query('SELECT 1');
         health.database = 'OK';
     }
@@ -127,6 +127,16 @@ io.on('connection', (socket) => {
 });
 (0, socketService_1.setSocketServer)(io);
 app.set('io', io);
-server.listen(env_1.env.PORT, () => {
+server.listen(env_1.env.PORT, async () => {
     logger_1.logger.info({ server: `listening:${env_1.env.PORT}` });
+    if (env_1.env.AI_PROVIDER === 'ollama') {
+        const { verifyOllamaModel } = await Promise.resolve().then(() => __importStar(require('./services/aiService')));
+        const check = await verifyOllamaModel();
+        if (check.ok) {
+            logger_1.logger.info({ ai: { status: 'ready', model: env_1.env.AI_MODEL, url: env_1.env.AI_API_URL } });
+        }
+        else {
+            logger_1.logger.warn({ ai: { status: 'misconfigured', model: env_1.env.AI_MODEL, url: env_1.env.AI_API_URL, ...check } });
+        }
+    }
 });

@@ -17,8 +17,8 @@ const schema = z.object({
 
   AI_PROVIDER: z.string().default('ollama'),
   AI_API_URL: z.string().min(1).optional(),
-  AI_MODEL: z.string().default('llama2'),
-  AI_TIMEOUT: z.coerce.number().default(30000),
+  AI_MODEL: z.string().default('llama3.1:8b'),
+  AI_TIMEOUT: z.coerce.number().default(120000),
 
   LDAP_ENABLED: z.coerce.boolean().default(false),
   LDAP_SERVER: z.string().optional(),

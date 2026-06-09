@@ -46,7 +46,7 @@ app.use((req, _res, next) => {
 app.get('/health', async (_req, res) => {
   const health = { status: 'OK', timestamp: new Date().toISOString(), database: 'checking...', redis: 'checking...', ai: 'checking...' };
   try {
-    const { pool } = await import('./services/dbService');
+    const { pool } = await import('./db');
     await pool.query('SELECT 1');
     health.database = 'OK';
   } catch {
@@ -107,7 +107,16 @@ io.on('connection', (socket) => {
 setSocketServer(io);
 app.set('io', io);
 
-server.listen(env.PORT, () => {
+server.listen(env.PORT, async () => {
   logger.info({ server: `listening:${env.PORT}` });
+  if (env.AI_PROVIDER === 'ollama') {
+    const { verifyOllamaModel } = await import('./services/aiService');
+    const check = await verifyOllamaModel();
+    if (check.ok) {
+      logger.info({ ai: { status: 'ready', model: env.AI_MODEL, url: env.AI_API_URL } });
+    } else {
+      logger.warn({ ai: { status: 'misconfigured', model: env.AI_MODEL, url: env.AI_API_URL, ...check } });
+    }
+  }
 });
 

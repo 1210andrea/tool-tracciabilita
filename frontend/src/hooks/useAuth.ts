@@ -23,7 +23,7 @@ export function useApi() {
     },
     me: async () => {
       const resp = await client.get('/auth/me');
-      return resp.data.user as { id: string; role: string };
+      return resp.data.user as { id: string; role: string; username?: string; operator_category_id?: string | null; operator_name?: string | null };
     }
   };
 }
