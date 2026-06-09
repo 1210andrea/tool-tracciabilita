@@ -10,6 +10,7 @@ const users_1 = require("./users");
 const dashboard_1 = require("./dashboard");
 const stats_1 = require("./stats");
 const ai_1 = require("./ai");
+const spareparts_1 = require("./spareparts");
 function registerRoutes(app) {
     app.use('/api', auth_1.authRoutes);
     app.use('/api/ai', ai_1.aiRoutes);
@@ -19,5 +20,6 @@ function registerRoutes(app) {
     app.use('/api/users', users_1.usersRoutes);
     app.use('/api/dashboard', dashboard_1.dashboardRoutes);
     app.use('/api/stats', stats_1.statsRoutes);
+    app.use('/api', spareparts_1.sparepartsRoutes);
     app.use('/', health_1.healthRoutes);
 }

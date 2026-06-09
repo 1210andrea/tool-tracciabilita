@@ -4,25 +4,26 @@ import axios from 'axios';
 const API_URL = '/api';
 
 type CategoryItem = { id: string; type: string; name: string };
-type MachineItem = { id: string; code: string; name: string };
+type MachineItem = { id: string; code: string; name: string; type?: string };
+type SparePartItem = { id: string; name: string };
+type SolutionItem = { id: string; name: string };
 
 export type CaseDetail = {
   id: string;
   created_by?: string;
   machine_id: string;
-  operator_id?: string | null;
   problem_id?: string | null;
   cause_id?: string | null;
   spare_part_id?: string | null;
-  title: string;
+  solution_applied_id?: string | null;
   solution?: string | null;
   description?: string | null;
   machine_code?: string;
   machine_name?: string;
-  operator_name?: string;
   problem_name?: string;
   cause_name?: string;
   spare_part_name?: string;
+  solution_applied_name?: string;
   created_at?: string;
 };
 
@@ -33,7 +34,6 @@ export function CaseDetailModal({
   machines,
   categories,
   canEdit,
-  isAdmin,
   onClose,
   onSaved,
 }: {
@@ -48,42 +48,58 @@ export function CaseDetailModal({
   onSaved: () => void;
 }) {
   const [machineId, setMachineId] = useState('');
-  const [operatorId, setOperatorId] = useState('');
   const [problemId, setProblemId] = useState('');
   const [causeId, setCauseId] = useState('');
   const [sparePartId, setSparePartId] = useState('');
-  const [title, setTitle] = useState('');
+  const [solutionAppliedId, setSolutionAppliedId] = useState('');
   const [solution, setSolution] = useState('');
+  const [spareParts, setSpareParts] = useState<SparePartItem[]>([]);
+  const [solutions, setSolutions] = useState<SolutionItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    if (!token) return;
+    axios.get(`${API_URL}/solutions-applied`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => setSolutions(r.data.items || []))
+      .catch(() => setSolutions([]));
+  }, [token]);
+
+  useEffect(() => {
     if (!caseItem) return;
     setMachineId(caseItem.machine_id);
-    setOperatorId(caseItem.operator_id ?? '');
     setProblemId(caseItem.problem_id ?? '');
     setCauseId(caseItem.cause_id ?? '');
     setSparePartId(caseItem.spare_part_id ?? '');
-    setTitle(caseItem.title);
-    setSolution(caseItem.solution ?? caseItem.description ?? '');
+    setSolutionAppliedId(caseItem.solution_applied_id ?? '');
+    setSolution(caseItem.solution ?? '');
     setError(null);
   }, [caseItem]);
 
+  useEffect(() => {
+    if (!token || !machineId) {
+      setSpareParts([]);
+      return;
+    }
+    const machine = machines.find((m) => m.id === machineId);
+    if (!machine?.type) return;
+
+    axios.get(`${API_URL}/spare-parts/by-type/${encodeURIComponent(machine.type)}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then((r) => setSpareParts(r.data.items || []))
+      .catch(() => setSpareParts([]));
+  }, [token, machineId, machines]);
+
   if (!open || !caseItem) return null;
 
-  const operators = categories.filter((c) => c.type === 'operator');
   const problems = categories.filter((c) => c.type === 'problem');
   const causes = categories.filter((c) => c.type === 'cause');
-  const spareParts = categories.filter((c) => c.type === 'spare_part');
 
   const handleSave = async () => {
     if (!canEdit) return;
-    if (!machineId || !problemId || !causeId || !sparePartId || !title || !solution.trim()) {
-      setError('Compila tutti i campi obbligatori.');
-      return;
-    }
-    if (solution.trim().length < 10) {
-      setError('La descrizione deve contenere almeno 10 caratteri.');
+    if (!machineId) {
+      setError('La macchina è obbligatoria.');
       return;
     }
 
@@ -94,12 +110,11 @@ export function CaseDetailModal({
         `${API_URL}/cases/${caseItem.id}`,
         {
           machine_id: machineId,
-          ...(isAdmin ? { operator_id: operatorId } : {}),
-          problem_id: problemId,
-          cause_id: causeId,
-          spare_part_id: sparePartId,
-          title,
-          solution,
+          problem_id: problemId || null,
+          cause_id: causeId || null,
+          spare_part_id: sparePartId || null,
+          solution_applied_id: solutionAppliedId || null,
+          solution: solution || null,
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -114,7 +129,7 @@ export function CaseDetailModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-slate-700 bg-slate-900 p-6 shadow-xl">
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-slate-700 bg-slate-900 p-5 shadow-xl sm:p-6">
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>
             <h2 className="text-xl font-semibold text-slate-100">{canEdit ? 'Modifica caso' : 'Dettaglio caso'}</h2>
@@ -125,7 +140,7 @@ export function CaseDetailModal({
 
         {error && <div className="mb-4 rounded-xl bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</div>}
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <label className="text-xs text-slate-400">Macchina</label>
             <select value={machineId} disabled={!canEdit} onChange={(e) => setMachineId(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none disabled:opacity-60">
@@ -134,43 +149,35 @@ export function CaseDetailModal({
             </select>
           </div>
           <div>
-            <label className="text-xs text-slate-400">Operatore</label>
-            {isAdmin && canEdit ? (
-              <select value={operatorId} onChange={(e) => setOperatorId(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none">
-                <option value="">Seleziona</option>
-                {operators.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-              </select>
-            ) : (
-              <div className="mt-1 rounded-xl border border-slate-700 bg-slate-950/50 px-3 py-2.5 text-sm text-slate-300">{caseItem.operator_name ?? 'N.D.'}</div>
-            )}
-          </div>
-          <div>
             <label className="text-xs text-slate-400">Pezzo di ricambio</label>
             <select value={sparePartId} disabled={!canEdit} onChange={(e) => setSparePartId(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none disabled:opacity-60">
-              <option value="">Seleziona</option>
+              <option value="">Nessuno</option>
               {spareParts.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-slate-400">Soluzione applicata</label>
+            <select value={solutionAppliedId} disabled={!canEdit} onChange={(e) => setSolutionAppliedId(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none disabled:opacity-60">
+              <option value="">Nessuna</option>
+              {solutions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
           <div>
             <label className="text-xs text-slate-400">Problema</label>
             <select value={problemId} disabled={!canEdit} onChange={(e) => setProblemId(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none disabled:opacity-60">
-              <option value="">Seleziona</option>
+              <option value="">Nessuno</option>
               {problems.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </div>
           <div>
             <label className="text-xs text-slate-400">Causa</label>
             <select value={causeId} disabled={!canEdit} onChange={(e) => setCauseId(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none disabled:opacity-60">
-              <option value="">Seleziona</option>
+              <option value="">Nessuna</option>
               {causes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
           <div className="sm:col-span-2">
-            <label className="text-xs text-slate-400">Titolo</label>
-            <input value={title} disabled={!canEdit} onChange={(e) => setTitle(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none disabled:opacity-60" />
-          </div>
-          <div className="sm:col-span-2">
-            <label className="text-xs text-slate-400">Descrizione / soluzione</label>
+            <label className="text-xs text-slate-400">Soluzione</label>
             <textarea value={solution} disabled={!canEdit} onChange={(e) => setSolution(e.target.value)} rows={5} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none disabled:opacity-60" />
           </div>
         </div>

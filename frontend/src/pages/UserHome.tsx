@@ -84,7 +84,7 @@ export default function UserHome() {
               onClick={() => setSelectedCase(item)}
               className="rounded-3xl border border-slate-700 bg-slate-900/80 p-5 text-left transition hover:border-sky-500/40 hover:bg-slate-900"
             >
-              <h2 className="font-semibold text-slate-100">{item.title}</h2>
+              <h2 className="font-semibold text-slate-100">{item.machine_code} · {item.problem_name || 'Caso'}</h2>
               <div className="mt-3 space-y-1 text-sm text-slate-400">
                 <div>Macchina: <span className="text-slate-200">{item.machine_code}</span></div>
                 <div>Problema: <span className="text-slate-200">{item.problem_name || 'N.D.'}</span></div>

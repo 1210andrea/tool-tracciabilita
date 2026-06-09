@@ -67,25 +67,19 @@ categoriesRoutes.delete('/:id', authMiddleware, async (req, res, next) => {
     const { id } = req.params;
 
     // 1) Verifica referenzialità in cases
-    const opCountR = await pool.query('SELECT COUNT(*)::int as count FROM cases WHERE operator_id = $1', [id]);
     const probCountR = await pool.query('SELECT COUNT(*)::int as count FROM cases WHERE problem_id = $1', [id]);
     const causeCountR = await pool.query('SELECT COUNT(*)::int as count FROM cases WHERE cause_id = $1', [id]);
-    const spareCountR = await pool.query('SELECT COUNT(*)::int as count FROM cases WHERE spare_part_id = $1', [id]);
     const userCountR = await pool.query('SELECT COUNT(*)::int as count FROM users WHERE operator_category_id = $1', [id]);
 
-    const operatorCount = opCountR.rows[0]?.count ?? 0;
     const problemCount = probCountR.rows[0]?.count ?? 0;
     const causeCount = causeCountR.rows[0]?.count ?? 0;
-    const spareCount = spareCountR.rows[0]?.count ?? 0;
     const userCount = userCountR.rows[0]?.count ?? 0;
-    const totalUsed = operatorCount + problemCount + causeCount + spareCount + userCount;
+    const totalUsed = problemCount + causeCount + userCount;
 
     if (totalUsed > 0) {
       const parts: string[] = [];
-      if (operatorCount) parts.push(`${operatorCount} casi come operatore`);
       if (problemCount) parts.push(`${problemCount} casi come problema`);
       if (causeCount) parts.push(`${causeCount} casi come causa`);
-      if (spareCount) parts.push(`${spareCount} casi come ricambio`);
       if (userCount) parts.push(`${userCount} utenti collegati`);
       return res.status(400).json({ error: `Non eliminabile: in uso (${parts.join(', ')})` });
     }

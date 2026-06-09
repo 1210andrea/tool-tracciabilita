@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 
-type CategoryType = 'operator' | 'problem' | 'cause' | 'spare_part';
+type CategoryType = 'operator' | 'problem' | 'cause';
 
 export function AdminCategoriesTabs({
   activeType,
@@ -13,7 +13,6 @@ export function AdminCategoriesTabs({
     { key: 'operator' as const, label: 'OPERATORI' },
     { key: 'problem' as const, label: 'PROBLEMI' },
     { key: 'cause' as const, label: 'CAUSE' },
-    { key: 'spare_part' as const, label: 'RICAMBI' },
   ], []);
 
   return (

@@ -3,13 +3,20 @@ import { authMiddleware } from '../middleware/auth';
 import { pool } from '../db';
 import { emitEvent } from '../services/socketService';
 import { generateAiSolution } from '../services/aiService';
-import { resolveOperatorIdForUser } from '../services/operatorService';
 
 export const casesRoutes = Router();
 
-const CASE_FIELDS = `c.id, c.machine_id, c.operator_id, c.problem_id, c.cause_id, c.spare_part_id, c.category_id,
-  c.title, c.description, c.solution, c.ai_solution, c.status, c.created_by, c.assigned_to,
+const CASE_FIELDS = `c.id, c.machine_id, c.problem_id, c.cause_id, c.spare_part_id, c.solution_applied_id, c.category_id,
+  c.description, c.solution, c.ai_solution, c.status, c.created_by, c.assigned_to,
   c.created_at, c.updated_at`;
+
+const CASE_JOINS = `
+  JOIN machines m ON m.id = c.machine_id
+  LEFT JOIN users u ON u.id = c.created_by
+  LEFT JOIN categories prob ON prob.id = c.problem_id
+  LEFT JOIN categories cause ON cause.id = c.cause_id
+  LEFT JOIN spare_parts sp ON sp.id = c.spare_part_id
+  LEFT JOIN solutions_applied sa ON sa.id = c.solution_applied_id`;
 
 async function getCaseRow(caseId: string) {
   const r = await pool.query('SELECT * FROM cases WHERE id = $1', [caseId]);
@@ -20,13 +27,18 @@ function canAccessCase(caseRow: { created_by: string | null }, userId: string, r
   return role === 'admin' || caseRow.created_by === userId;
 }
 
+async function lookupName(table: 'categories' | 'spare_parts', id?: string | null) {
+  if (!id) return 'N/D';
+  const r = await pool.query(`SELECT name FROM ${table} WHERE id = $1`, [id]);
+  return r.rows[0]?.name ?? 'N/D';
+}
+
 casesRoutes.get('/', authMiddleware, async (req, res, next) => {
   try {
     const {
       status,
       machine_id,
       assigned_to,
-      operator_id,
       problem_id,
       cause_id,
       date_from,
@@ -75,10 +87,6 @@ casesRoutes.get('/', authMiddleware, async (req, res, next) => {
       values.push(Number(req.query.year));
       conditions.push(`EXTRACT(YEAR FROM c.created_at)::int = $${values.length}`);
     }
-    if (operator_id) {
-      values.push(operator_id as string);
-      conditions.push(`c.operator_id = $${values.length}`);
-    }
     if (problem_id) {
       values.push(problem_id as string);
       conditions.push(`c.problem_id = $${values.length}`);
@@ -112,16 +120,11 @@ casesRoutes.get('/', authMiddleware, async (req, res, next) => {
 
     const r = await pool.query(
       `SELECT ${CASE_FIELDS}, m.code as machine_code, m.name as machine_name, u.username as created_by_username,
-              op.name as operator_name, prob.name as problem_name, cause.name as cause_name,
-              sp.name as spare_part_name,
+              prob.name as problem_name, cause.name as cause_name,
+              sp.name as spare_part_name, sa.name as solution_applied_name,
               COUNT(*) OVER() AS total_count
        FROM cases c
-       JOIN machines m ON m.id = c.machine_id
-       LEFT JOIN users u ON u.id = c.created_by
-       LEFT JOIN categories op ON op.id = c.operator_id
-       LEFT JOIN categories prob ON prob.id = c.problem_id
-       LEFT JOIN categories cause ON cause.id = c.cause_id
-       LEFT JOIN categories sp ON sp.id = c.spare_part_id
+       ${CASE_JOINS}
        ${whereClause}
        ORDER BY c.created_at DESC
        LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
@@ -145,15 +148,10 @@ casesRoutes.get('/:id', authMiddleware, async (req, res, next) => {
 
     const r = await pool.query(
       `SELECT ${CASE_FIELDS}, m.code as machine_code, m.name as machine_name, u.username as created_by_username,
-              op.name as operator_name, prob.name as problem_name, cause.name as cause_name,
-              sp.name as spare_part_name
+              prob.name as problem_name, cause.name as cause_name,
+              sp.name as spare_part_name, sa.name as solution_applied_name
        FROM cases c
-       JOIN machines m ON m.id = c.machine_id
-       LEFT JOIN users u ON u.id = c.created_by
-       LEFT JOIN categories op ON op.id = c.operator_id
-       LEFT JOIN categories prob ON prob.id = c.problem_id
-       LEFT JOIN categories cause ON cause.id = c.cause_id
-       LEFT JOIN categories sp ON sp.id = c.spare_part_id
+       ${CASE_JOINS}
        WHERE c.id = $1`,
       [req.params.id]
     );
@@ -168,73 +166,60 @@ casesRoutes.post('/', authMiddleware, async (req, res, next) => {
   try {
     const body = req.body as {
       machine_id?: string;
-      operator_id?: string;
-      problem_id?: string;
-      cause_id?: string;
+      problem_id?: string | null;
+      cause_id?: string | null;
       spare_part_id?: string | null;
-      title?: string;
+      solution_applied_id?: string | null;
       description?: string;
       solution?: string;
       assigned_to?: string | null;
     };
 
-    const solution = (body.solution ?? body.description ?? '').toString();
-    const operatorId = await resolveOperatorIdForUser(req.user!.id, body.operator_id);
-
-    const missing: string[] = [];
-    if (!body.machine_id) missing.push('machine_id');
-    if (!operatorId) missing.push('operatore (collega l\'utente a un operatore in admin)');
-    if (!body.problem_id) missing.push('problem_id');
-    if (!body.cause_id) missing.push('cause_id');
-    if (!body.spare_part_id) missing.push('spare_part_id');
-    if (!body.title) missing.push('title');
-    if (!solution.trim()) missing.push('solution (o description)');
-
-    if (missing.length) {
-      return res.status(400).json({ error: `Campo obbligatorio mancante: ${missing[0]}` });
+    if (!body.machine_id) {
+      return res.status(400).json({ error: 'Campo obbligatorio mancante: machine_id' });
     }
 
-    if (solution.trim().length < 10) {
-      return res.status(400).json({ error: 'solution deve contenere almeno 10 caratteri.' });
-    }
-
-    const machineQuery = await pool.query('SELECT code, name, line FROM machines WHERE id = $1', [body.machine_id]);
+    const machineQuery = await pool.query('SELECT code, name, line, type FROM machines WHERE id = $1', [body.machine_id]);
     const machineRecord = machineQuery.rows[0];
-    const machineName = machineRecord?.name ?? body.machine_id;
-    const machineLine = machineRecord?.line ?? 'N/A';
+    if (!machineRecord) {
+      return res.status(400).json({ error: 'Macchina non trovata' });
+    }
 
-    const categoryNames = await Promise.all(
-      ['operator_id', 'problem_id', 'cause_id'].map(async (key) => {
-        const id = body[key as 'operator_id' | 'problem_id' | 'cause_id'] as string | undefined;
-        if (!id) return 'N/A';
-        const cat = await pool.query('SELECT name FROM categories WHERE id = $1', [id]);
-        return cat.rows[0]?.name ?? 'N/A';
-      })
-    );
+    const problemName = await lookupName('categories', body.problem_id);
+    const causeName = await lookupName('categories', body.cause_id);
+    const sparePartName = await lookupName('spare_parts', body.spare_part_id);
+
+    let solutionAppliedDesc = '';
+    if (body.solution_applied_id) {
+      const saR = await pool.query('SELECT name, description FROM solutions_applied WHERE id = $1', [body.solution_applied_id]);
+      solutionAppliedDesc = saR.rows[0]?.description ?? saR.rows[0]?.name ?? '';
+    }
+
+    const freeSolution = (body.solution ?? '').toString().trim();
+    const combinedDescription = [solutionAppliedDesc, freeSolution].filter(Boolean).join('\n\n') || 'N/D';
 
     const ai_solution = await generateAiSolution({
-      machine: `${machineName}`,
-      line: machineLine,
-      operator: categoryNames[0],
-      problem: categoryNames[1],
-      cause: categoryNames[2],
-      description: solution
+      machine: `${machineRecord.name}`,
+      line: machineRecord.line ?? 'N/A',
+      problem: problemName,
+      cause: causeName,
+      sparePart: sparePartName,
+      description: combinedDescription
     });
 
     const r = await pool.query(
-      `INSERT INTO cases(machine_id, operator_id, problem_id, cause_id, spare_part_id, title, description, solution, ai_solution,
+      `INSERT INTO cases(machine_id, problem_id, cause_id, spare_part_id, solution_applied_id, description, solution, ai_solution,
                         status, created_by, assigned_to)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
        RETURNING *`,
       [
         body.machine_id,
-        operatorId,
         body.problem_id ?? null,
         body.cause_id ?? null,
         body.spare_part_id ?? null,
-        body.title,
-        body.description ?? null,
-        solution,
+        body.solution_applied_id ?? null,
+        body.description ?? (solutionAppliedDesc || null),
+        freeSolution || null,
         ai_solution,
         'closed',
         req.user!.id,
@@ -248,8 +233,8 @@ casesRoutes.post('/', authMiddleware, async (req, res, next) => {
       [r.rows[0].id, req.user!.id]
     );
 
-    emitEvent('case_created', { caseId: r.rows[0].id, title: r.rows[0].title });
-    emitEvent('case-updated', { caseId: r.rows[0].id, title: r.rows[0].title });
+    emitEvent('case_created', { caseId: r.rows[0].id });
+    emitEvent('case-updated', { caseId: r.rows[0].id });
 
     res.json({ item: r.rows[0] });
   } catch (e) {
@@ -267,52 +252,32 @@ casesRoutes.put('/:id', authMiddleware, async (req, res, next) => {
 
     const body = req.body as {
       machine_id?: string;
-      operator_id?: string;
-      problem_id?: string;
-      cause_id?: string;
+      problem_id?: string | null;
+      cause_id?: string | null;
       spare_part_id?: string | null;
-      title?: string;
+      solution_applied_id?: string | null;
       description?: string;
       solution?: string;
     };
 
-    const solution = (body.solution ?? body.description ?? caseRow.solution ?? '').toString();
-    const operatorId = req.user!.role === 'admin'
-      ? await resolveOperatorIdForUser(req.user!.id, body.operator_id ?? caseRow.operator_id)
-      : caseRow.operator_id;
-
-    const missing: string[] = [];
-    if (!body.machine_id) missing.push('machine_id');
-    if (!operatorId) missing.push('operator_id');
-    if (!body.problem_id) missing.push('problem_id');
-    if (!body.cause_id) missing.push('cause_id');
-    if (!body.spare_part_id) missing.push('spare_part_id');
-    if (!body.title) missing.push('title');
-    if (!solution.trim()) missing.push('solution');
-
-    if (missing.length) {
-      return res.status(400).json({ error: `Campo obbligatorio mancante: ${missing[0]}` });
-    }
-
-    if (solution.trim().length < 10) {
-      return res.status(400).json({ error: 'solution deve contenere almeno 10 caratteri.' });
+    if (!body.machine_id) {
+      return res.status(400).json({ error: 'Campo obbligatorio mancante: machine_id' });
     }
 
     const r = await pool.query(
       `UPDATE cases
-       SET machine_id = $1, operator_id = $2, problem_id = $3, cause_id = $4, spare_part_id = $5,
-           title = $6, description = $7, solution = $8, updated_at = now()
-       WHERE id = $9
+       SET machine_id = $1, problem_id = $2, cause_id = $3, spare_part_id = $4, solution_applied_id = $5,
+           description = $6, solution = $7, updated_at = now()
+       WHERE id = $8
        RETURNING *`,
       [
         body.machine_id,
-        operatorId,
-        body.problem_id,
-        body.cause_id,
+        body.problem_id ?? null,
+        body.cause_id ?? null,
         body.spare_part_id ?? null,
-        body.title,
+        body.solution_applied_id ?? null,
         body.description ?? null,
-        solution,
+        body.solution ?? null,
         req.params.id
       ]
     );
@@ -323,7 +288,7 @@ casesRoutes.put('/:id', authMiddleware, async (req, res, next) => {
       [req.params.id, req.user!.id]
     );
 
-    emitEvent('case-updated', { caseId: req.params.id, title: r.rows[0].title });
+    emitEvent('case-updated', { caseId: req.params.id });
 
     res.json({ item: r.rows[0] });
   } catch (e) {

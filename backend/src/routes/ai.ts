@@ -7,11 +7,10 @@ export const aiRoutes = Router();
 
 aiRoutes.post('/analyze', authMiddleware, async (req, res, next) => {
   try {
-    const { machine_id, operator_id, problem_id, cause_id } = req.body as {
+    const { machine_id, problem_id, cause_id } = req.body as {
       machine_id?: string;
       problem_id?: string;
       cause_id?: string;
-      operator_id?: string;
     };
 
     if (!machine_id || !problem_id || !cause_id) {
@@ -23,11 +22,7 @@ aiRoutes.post('/analyze', authMiddleware, async (req, res, next) => {
     if (!machine) return res.status(400).json({ error: 'Macchina non trovata' });
 
     const names = await Promise.all(
-      [
-        { id: operator_id, label: 'operator' },
-        { id: problem_id, label: 'problem' },
-        { id: cause_id, label: 'cause' }
-      ].map(async ({ id }) => {
+      [problem_id, cause_id].map(async (id) => {
         if (!id) return 'N/D';
         const r = await pool.query('SELECT name FROM categories WHERE id = $1', [id]);
         return r.rows[0]?.name ?? 'N/D';
@@ -35,12 +30,14 @@ aiRoutes.post('/analyze', authMiddleware, async (req, res, next) => {
     );
 
     const similarR = await pool.query(
-      `SELECT c.title, c.solution, c.status, c.created_at,
-              m.code as machine_code, m.line, prob.name as problem_name, cause.name as cause_name
+      `SELECT c.solution, c.status, c.created_at,
+              m.code as machine_code, m.line, prob.name as problem_name, cause.name as cause_name,
+              sp.name as spare_part_name
        FROM cases c
        JOIN machines m ON m.id = c.machine_id
        LEFT JOIN categories prob ON prob.id = c.problem_id
        LEFT JOIN categories cause ON cause.id = c.cause_id
+       LEFT JOIN spare_parts sp ON sp.id = c.spare_part_id
        WHERE (
          (c.machine_id = $1 AND c.problem_id = $2)
          OR (c.problem_id = $2 AND m.line IS NOT DISTINCT FROM $3)
@@ -72,7 +69,7 @@ aiRoutes.post('/analyze', authMiddleware, async (req, res, next) => {
     if (!similarCases.length) {
       return res.json({
         insufficient: true,
-        message: `Non ho abbastanza dati storici per la macchina ${machine.code} e il problema "${names[1]}". Non ci sono casi simili nel database.`
+        message: `Non ho abbastanza dati storici per la macchina ${machine.code} e il problema "${names[0]}". Non ci sono casi simili nel database.`
       });
     }
 
@@ -92,9 +89,9 @@ aiRoutes.post('/analyze', authMiddleware, async (req, res, next) => {
     const analysis = await generateCaseInsights({
       machine: `${machine.code} - ${machine.name}`,
       line: machine.line ?? 'N/D',
-      operator: names[0],
-      problem: names[1],
-      cause: names[2],
+      operator: 'N/D',
+      problem: names[0],
+      cause: names[1],
       counts: {
         same_machine_problem: counts.same_machine_problem,
         same_problem_line: counts.same_problem_line,

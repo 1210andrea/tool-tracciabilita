@@ -23,7 +23,6 @@ export default function AiAnalysis() {
   const [machines, setMachines] = useState<MachineItem[]>([]);
   const [categories, setCategories] = useState<CategoryItem[]>([]);
   const [machineId, setMachineId] = useState('');
-  const [operatorId, setOperatorId] = useState('');
   const [problemId, setProblemId] = useState('');
   const [causeId, setCauseId] = useState('');
   const [loading, setLoading] = useState(false);
@@ -44,15 +43,14 @@ export default function AiAnalysis() {
     });
   }, [token]);
 
-  const operators = categories.filter((c) => c.type === 'operator');
   const problems = categories.filter((c) => c.type === 'problem');
   const causes = categories.filter((c) => c.type === 'cause');
   const selectedMachine = machines.find((m) => m.id === machineId);
 
   const runAnalysis = async () => {
     if (!token) return;
-    if (!machineId || !operatorId || !problemId || !causeId) {
-      setError('Seleziona macchina, operatore, problema e causa.');
+    if (!machineId || !problemId || !causeId) {
+      setError('Seleziona macchina, problema e causa.');
       return;
     }
 
@@ -63,7 +61,7 @@ export default function AiAnalysis() {
     try {
       const resp = await axios.post(
         `${API_URL}/ai/analyze`,
-        { machine_id: machineId, operator_id: operatorId, problem_id: problemId, cause_id: causeId },
+        { machine_id: machineId, problem_id: problemId, cause_id: causeId },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setResult(resp.data);
@@ -90,13 +88,6 @@ export default function AiAnalysis() {
             <select value={machineId} onChange={(e) => setMachineId(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none">
               <option value="">Seleziona macchina</option>
               {machines.map((m) => <option key={m.id} value={m.id}>{m.code} - {m.name}{m.line ? ` (${m.line})` : ''}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs text-slate-400">Operatore</label>
-            <select value={operatorId} onChange={(e) => setOperatorId(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none">
-              <option value="">Seleziona</option>
-              {operators.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
             </select>
           </div>
           <div>

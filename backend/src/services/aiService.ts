@@ -108,15 +108,15 @@ async function callOllama(messages: ChatMessage[]): Promise<string | null> {
   }
 }
 
-const AI_PROMPT_TEMPLATE = ({ machine, line, operator, problem, cause, description }: { machine: string; line: string; operator: string; problem: string; cause: string; description: string }) =>
+const AI_PROMPT_TEMPLATE = ({ machine, line, problem, cause, sparePart, description }: { machine: string; line: string; problem: string; cause: string; sparePart: string; description: string }) =>
   `Genera una soluzione tecnica per un problema di manutenzione su una macchina industriale.
 
 Macchina: ${machine}
 Linea: ${line}
-Operatore: ${operator}
 Problema: ${problem}
 Causa: ${cause}
-Descrizione utente: ${description}
+Pezzo di ricambio: ${sparePart}
+Descrizione/Soluzione: ${description}
 
 Fornisci una soluzione chiara e pratica, con passaggi operativi e consigli.`;
 
@@ -126,7 +126,7 @@ export async function pingOllama() {
   return true;
 }
 
-export async function generateAiSolution(data: { machine: string; line: string; operator: string; problem: string; cause: string; description: string }) {
+export async function generateAiSolution(data: { machine: string; line: string; problem: string; cause: string; sparePart: string; description: string }) {
   const prompt = AI_PROMPT_TEMPLATE(data);
 
   if (env.AI_PROVIDER === 'ollama') {
@@ -137,11 +137,10 @@ export async function generateAiSolution(data: { machine: string; line: string; 
     if (output) return output;
   }
 
-  return `Fallback AI solution: controlla i parametri e verifica la macchina. Operatore: ${data.operator}, Problema: ${data.problem}, Causa: ${data.cause}.`;
+  return `Fallback AI solution: controlla i parametri e verifica la macchina. Problema: ${data.problem}, Causa: ${data.cause}, Ricambio: ${data.sparePart}.`;
 }
 
 export type SimilarCaseRow = {
-  title: string;
   solution: string | null;
   status: string;
   created_at: string;
@@ -149,6 +148,7 @@ export type SimilarCaseRow = {
   line: string | null;
   problem_name: string | null;
   cause_name: string | null;
+  spare_part_name: string | null;
 };
 
 export async function generateCaseInsights(data: {
@@ -163,8 +163,7 @@ export async function generateCaseInsights(data: {
   const historyText = data.similarCases
     .map((c, i) => {
       const date = new Date(c.created_at).toLocaleDateString('it-IT');
-      return `${i + 1}. [${date}] Macchina ${c.machine_code} (${c.line ?? 'N/D'}) - Problema: ${c.problem_name ?? 'N/D'} - Causa: ${c.cause_name ?? 'N/D'}
-   Titolo: ${c.title}
+      return `${i + 1}. [${date}] Macchina ${c.machine_code} (${c.line ?? 'N/D'}) - Problema: ${c.problem_name ?? 'N/D'} - Causa: ${c.cause_name ?? 'N/D'} - Ricambio: ${c.spare_part_name ?? 'N/D'}
    Soluzione: ${c.solution?.trim() || 'non documentata'}`;
     })
     .join('\n\n');

@@ -8,6 +8,7 @@ import { usersRoutes } from './users';
 import { dashboardRoutes } from './dashboard';
 import { statsRoutes } from './stats';
 import { aiRoutes } from './ai';
+import { sparepartsRoutes } from './spareparts';
 
 export function registerRoutes(app: Express) {
   app.use('/api', authRoutes);
@@ -18,6 +19,7 @@ export function registerRoutes(app: Express) {
   app.use('/api/users', usersRoutes);
   app.use('/api/dashboard', dashboardRoutes);
   app.use('/api/stats', statsRoutes);
+  app.use('/api', sparepartsRoutes);
   app.use('/', healthRoutes);
 }
 

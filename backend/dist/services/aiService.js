@@ -114,14 +114,14 @@ async function callOllama(messages) {
         clearTimeout(t);
     }
 }
-const AI_PROMPT_TEMPLATE = ({ machine, line, operator, problem, cause, description }) => `Genera una soluzione tecnica per un problema di manutenzione su una macchina industriale.
+const AI_PROMPT_TEMPLATE = ({ machine, line, problem, cause, sparePart, description }) => `Genera una soluzione tecnica per un problema di manutenzione su una macchina industriale.
 
 Macchina: ${machine}
 Linea: ${line}
-Operatore: ${operator}
 Problema: ${problem}
 Causa: ${cause}
-Descrizione utente: ${description}
+Pezzo di ricambio: ${sparePart}
+Descrizione/Soluzione: ${description}
 
 Fornisci una soluzione chiara e pratica, con passaggi operativi e consigli.`;
 async function pingOllama() {
@@ -140,14 +140,13 @@ async function generateAiSolution(data) {
         if (output)
             return output;
     }
-    return `Fallback AI solution: controlla i parametri e verifica la macchina. Operatore: ${data.operator}, Problema: ${data.problem}, Causa: ${data.cause}.`;
+    return `Fallback AI solution: controlla i parametri e verifica la macchina. Problema: ${data.problem}, Causa: ${data.cause}, Ricambio: ${data.sparePart}.`;
 }
 async function generateCaseInsights(data) {
     const historyText = data.similarCases
         .map((c, i) => {
         const date = new Date(c.created_at).toLocaleDateString('it-IT');
-        return `${i + 1}. [${date}] Macchina ${c.machine_code} (${c.line ?? 'N/D'}) - Problema: ${c.problem_name ?? 'N/D'} - Causa: ${c.cause_name ?? 'N/D'}
-   Titolo: ${c.title}
+        return `${i + 1}. [${date}] Macchina ${c.machine_code} (${c.line ?? 'N/D'}) - Problema: ${c.problem_name ?? 'N/D'} - Causa: ${c.cause_name ?? 'N/D'} - Ricambio: ${c.spare_part_name ?? 'N/D'}
    Soluzione: ${c.solution?.trim() || 'non documentata'}`;
     })
         .join('\n\n');
