@@ -24,7 +24,6 @@ export default function CreateCase() {
   const [causeId, setCauseId] = useState('');
   const [sparePartId, setSparePartId] = useState('');
   const [solutionAppliedId, setSolutionAppliedId] = useState('');
-  const [solution, setSolution] = useState('');
 
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -92,8 +91,9 @@ export default function CreateCase() {
 
   const handleCreate = async () => {
     if (!token) return;
-    if (!machineId) {
-      setError('La macchina è obbligatoria.');
+
+    if (!machineId || !problemId || !causeId || !sparePartId || !solutionAppliedId) {
+      setError('Compila tutti i campi obbligatori: macchina, problema, causa, pezzo di ricambio e soluzione applicata.');
       return;
     }
 
@@ -106,11 +106,10 @@ export default function CreateCase() {
         `${API_URL}/cases`,
         {
           machine_id: machineId,
-          problem_id: problemId || null,
-          cause_id: causeId || null,
-          spare_part_id: sparePartId || null,
-          solution_applied_id: solutionAppliedId || null,
-          solution: solution || null
+          problem_id: problemId,
+          cause_id: causeId,
+          spare_part_id: sparePartId,
+          solution_applied_id: solutionAppliedId
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -121,7 +120,6 @@ export default function CreateCase() {
       setCauseId('');
       setSparePartId('');
       setSolutionAppliedId('');
-      setSolution('');
 
       setTimeout(() => navigate(user?.role === 'admin' ? '/dashboard' : '/'), 1200);
     } catch (err: any) {
@@ -155,7 +153,7 @@ export default function CreateCase() {
         </div>
 
         <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6">
-          <label className="text-sm font-medium text-slate-200">Pezzo di ricambio</label>
+          <label className="text-sm font-medium text-slate-200">Pezzo di ricambio <span className="text-red-400">*</span></label>
           <select
             value={sparePartId}
             onChange={(e) => setSparePartId(e.target.value)}
@@ -163,7 +161,7 @@ export default function CreateCase() {
             className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none disabled:opacity-60"
           >
             <option value="">
-              {!machineId ? 'Seleziona prima una macchina' : loadingParts ? 'Caricamento ricambi...' : spareParts.length ? 'Seleziona ricambio (opzionale)' : 'Nessun ricambio per questo tipo'}
+              {!machineId ? 'Seleziona prima una macchina' : loadingParts ? 'Caricamento ricambi...' : spareParts.length ? 'Seleziona ricambio' : 'Nessun ricambio per questo tipo'}
             </option>
             {spareParts.map((item) => (
               <option key={item.id} value={item.id}>{item.name}</option>
@@ -175,9 +173,9 @@ export default function CreateCase() {
         </div>
 
         <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6">
-          <label className="text-sm font-medium text-slate-200">Problema</label>
+          <label className="text-sm font-medium text-slate-200">Problema <span className="text-red-400">*</span></label>
           <select value={problemId} onChange={(e) => setProblemId(e.target.value)} className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none">
-            <option value="">Seleziona problema (opzionale)</option>
+            <option value="">Seleziona problema</option>
             {problems.map((item) => (
               <option key={item.id} value={item.id}>{item.name}</option>
             ))}
@@ -185,9 +183,9 @@ export default function CreateCase() {
         </div>
 
         <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6">
-          <label className="text-sm font-medium text-slate-200">Causa</label>
+          <label className="text-sm font-medium text-slate-200">Causa <span className="text-red-400">*</span></label>
           <select value={causeId} onChange={(e) => setCauseId(e.target.value)} className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none">
-            <option value="">Seleziona causa (opzionale)</option>
+            <option value="">Seleziona causa</option>
             {causes.map((item) => (
               <option key={item.id} value={item.id}>{item.name}</option>
             ))}
@@ -195,18 +193,13 @@ export default function CreateCase() {
         </div>
 
         <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6 md:col-span-2">
-          <label className="text-sm font-medium text-slate-200">Descrizione / soluzione applicata</label>
+          <label className="text-sm font-medium text-slate-200">Descrizione / soluzione applicata <span className="text-red-400">*</span></label>
           <select value={solutionAppliedId} onChange={(e) => setSolutionAppliedId(e.target.value)} className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none">
-            <option value="">Seleziona soluzione applicata (opzionale)</option>
+            <option value="">Seleziona soluzione applicata</option>
             {solutions.map((item) => (
               <option key={item.id} value={item.id}>{item.name}</option>
             ))}
           </select>
-        </div>
-
-        <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6 md:col-span-2">
-          <label className="block text-sm font-medium text-slate-200">Soluzione</label>
-          <textarea value={solution} onChange={(e) => setSolution(e.target.value)} rows={5} placeholder="Note aggiuntive sulla risoluzione (opzionale)." className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
         </div>
       </div>
 

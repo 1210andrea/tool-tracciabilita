@@ -137,8 +137,19 @@ exports.casesRoutes.get('/:id', auth_1.authMiddleware, async (req, res, next) =>
 exports.casesRoutes.post('/', auth_1.authMiddleware, async (req, res, next) => {
     try {
         const body = req.body;
-        if (!body.machine_id) {
-            return res.status(400).json({ error: 'Campo obbligatorio mancante: machine_id' });
+        const missing = [];
+        if (!body.machine_id)
+            missing.push('macchina');
+        if (!body.problem_id)
+            missing.push('problema');
+        if (!body.cause_id)
+            missing.push('causa');
+        if (!body.spare_part_id)
+            missing.push('pezzo di ricambio');
+        if (!body.solution_applied_id)
+            missing.push('soluzione applicata');
+        if (missing.length) {
+            return res.status(400).json({ error: `Campo obbligatorio mancante: ${missing[0]}` });
         }
         const machineQuery = await db_1.pool.query('SELECT code, name, line, type FROM machines WHERE id = $1', [body.machine_id]);
         const machineRecord = machineQuery.rows[0];
@@ -153,8 +164,7 @@ exports.casesRoutes.post('/', auth_1.authMiddleware, async (req, res, next) => {
             const saR = await db_1.pool.query('SELECT name, description FROM solutions_applied WHERE id = $1', [body.solution_applied_id]);
             solutionAppliedDesc = saR.rows[0]?.description ?? saR.rows[0]?.name ?? '';
         }
-        const freeSolution = (body.solution ?? '').toString().trim();
-        const combinedDescription = [solutionAppliedDesc, freeSolution].filter(Boolean).join('\n\n') || 'N/D';
+        const combinedDescription = solutionAppliedDesc || 'N/D';
         const ai_solution = await (0, aiService_1.generateAiSolution)({
             machine: `${machineRecord.name}`,
             line: machineRecord.line ?? 'N/A',
@@ -172,8 +182,8 @@ exports.casesRoutes.post('/', auth_1.authMiddleware, async (req, res, next) => {
             body.cause_id ?? null,
             body.spare_part_id ?? null,
             body.solution_applied_id ?? null,
-            body.description ?? (solutionAppliedDesc || null),
-            freeSolution || null,
+            solutionAppliedDesc || null,
+            solutionAppliedDesc || null,
             ai_solution,
             'closed',
             req.user.id,
@@ -198,9 +208,23 @@ exports.casesRoutes.put('/:id', auth_1.authMiddleware, async (req, res, next) =>
             return res.status(403).json({ error: 'Forbidden' });
         }
         const body = req.body;
-        if (!body.machine_id) {
-            return res.status(400).json({ error: 'Campo obbligatorio mancante: machine_id' });
+        const missing = [];
+        if (!body.machine_id)
+            missing.push('macchina');
+        if (!body.problem_id)
+            missing.push('problema');
+        if (!body.cause_id)
+            missing.push('causa');
+        if (!body.spare_part_id)
+            missing.push('pezzo di ricambio');
+        if (!body.solution_applied_id)
+            missing.push('soluzione applicata');
+        if (missing.length) {
+            return res.status(400).json({ error: `Campo obbligatorio mancante: ${missing[0]}` });
         }
+        let solutionAppliedDesc = '';
+        const saR = await db_1.pool.query('SELECT name, description FROM solutions_applied WHERE id = $1', [body.solution_applied_id]);
+        solutionAppliedDesc = saR.rows[0]?.description ?? saR.rows[0]?.name ?? '';
         const r = await db_1.pool.query(`UPDATE cases
        SET machine_id = $1, problem_id = $2, cause_id = $3, spare_part_id = $4, solution_applied_id = $5,
            description = $6, solution = $7, updated_at = now()
@@ -211,8 +235,8 @@ exports.casesRoutes.put('/:id', auth_1.authMiddleware, async (req, res, next) =>
             body.cause_id ?? null,
             body.spare_part_id ?? null,
             body.solution_applied_id ?? null,
-            body.description ?? null,
-            body.solution ?? null,
+            solutionAppliedDesc || null,
+            solutionAppliedDesc || null,
             req.params.id
         ]);
         await db_1.pool.query(`INSERT INTO case_events(case_id,event_type,message,actor_id)

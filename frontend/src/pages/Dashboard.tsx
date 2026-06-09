@@ -67,6 +67,7 @@ export default function Dashboard() {
   const [topProblems, setTopProblems] = useState<{ problem: string; count: number }[]>([]);
   const [topCauses, setTopCauses] = useState<{ cause: string; count: number }[]>([]);
   const [topMachines, setTopMachines] = useState<{ machine: string; count: number }[]>([]);
+  const [topSpareParts, setTopSpareParts] = useState<{ spare_part: string; usage_count: number }[]>([]);
   const [summary, setSummary] = useState({ total: 0, this_month: 0 });
 
   const [monthFilter, setMonthFilter] = useState('');
@@ -83,6 +84,7 @@ export default function Dashboard() {
   const [topProblemsLimit, setTopProblemsLimit] = useState(5);
   const [topCausesLimit, setTopCausesLimit] = useState(5);
   const [topMachinesLimit, setTopMachinesLimit] = useState(5);
+  const [topSparePartsLimit, setTopSparePartsLimit] = useState(5);
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [page, setPage] = useState(1);
@@ -116,14 +118,15 @@ export default function Dashboard() {
     setLoading(true);
     try {
       const headers = { Authorization: `Bearer ${token}` };
-      const [casesResp, dashboardResp, trendResp, lineResp, probResp, causeResp, machResp] = await Promise.all([
+      const [casesResp, dashboardResp, trendResp, lineResp, probResp, causeResp, machResp, spareResp] = await Promise.all([
         axios.get(`${API_URL}/cases`, { headers, params: caseParams }),
         axios.get(`${API_URL}/dashboard`, { headers }),
         axios.get(`${API_URL}/stats/trend-cases`, { headers, params: { ...filterParams, days: 30 } }),
         axios.get(`${API_URL}/stats/problems-by-line`, { headers, params: filterParams }),
         axios.get(`${API_URL}/stats/top-problems`, { headers, params: { ...filterParams, limit: topProblemsLimit } }),
         axios.get(`${API_URL}/stats/top-causes`, { headers, params: { ...filterParams, limit: topCausesLimit } }),
-        axios.get(`${API_URL}/stats/top-machines`, { headers, params: { ...filterParams, limit: topMachinesLimit } })
+        axios.get(`${API_URL}/stats/top-machines`, { headers, params: { ...filterParams, limit: topMachinesLimit } }),
+        axios.get(`${API_URL}/stats/top-spare-parts`, { headers, params: { ...filterParams, limit: topSparePartsLimit } })
       ]);
 
       setCases(casesResp.data.items || []);
@@ -134,6 +137,7 @@ export default function Dashboard() {
       setTopProblems(probResp.data.items || []);
       setTopCauses(causeResp.data.items || []);
       setTopMachines(machResp.data.items || []);
+      setTopSpareParts(spareResp.data.items || []);
     } catch {
       setCases([]);
       setTrend([]);
@@ -141,6 +145,7 @@ export default function Dashboard() {
       setTopProblems([]);
       setTopCauses([]);
       setTopMachines([]);
+      setTopSpareParts([]);
       setTotal(0);
     } finally {
       setLoading(false);
@@ -174,7 +179,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadData();
-  }, [token, caseParams, filterParams, topProblemsLimit, topCausesLimit, topMachinesLimit]);
+  }, [token, caseParams, filterParams, topProblemsLimit, topCausesLimit, topMachinesLimit, topSparePartsLimit]);
 
   useEffect(() => {
     setPage(1);
@@ -240,6 +245,11 @@ export default function Dashboard() {
     [item.machine_code, item.problem_name !== 'N.D.' ? item.problem_name : null].filter(Boolean).join(' · ') || item.machine_code;
 
   const chartTooltipStyle = { backgroundColor: '#0f172a', borderRadius: 12, border: '1px solid #334155' };
+
+  const sparePartsChart = useMemo(
+    () => topSpareParts.map((item) => ({ name: item.spare_part, count: Number(item.usage_count) })),
+    [topSpareParts]
+  );
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
@@ -443,6 +453,28 @@ export default function Dashboard() {
                   <YAxis stroke="#94a3b8" fontSize={12} allowDecimals={false} width={32} />
                   <Tooltip wrapperStyle={chartTooltipStyle} />
                   <Bar dataKey="count" fill="#fbbf24" radius={[6, 6, 0, 0]} maxBarSize={48} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-3xl bg-slate-900/80 p-4 shadow-lg shadow-slate-950/20 sm:p-6">
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <h3 className="text-lg font-semibold text-slate-100">Top ricambi usati</h3>
+            <TopSelector value={topSparePartsLimit} onChange={setTopSparePartsLimit} />
+          </div>
+          <div className="w-full" style={{ height: 280 }}>
+            {sparePartsChart.length === 0 ? (
+              <div className="flex h-full items-center justify-center text-sm text-slate-500">Nessun ricambio registrato.</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={sparePartsChart} margin={{ top: 8, right: 12, left: 0, bottom: 40 }}>
+                  <CartesianGrid stroke="#1e293b" strokeDasharray="4 4" />
+                  <XAxis dataKey="name" stroke="#94a3b8" fontSize={10} interval={0} angle={-25} textAnchor="end" height={55} />
+                  <YAxis stroke="#94a3b8" fontSize={12} allowDecimals={false} width={32} />
+                  <Tooltip wrapperStyle={chartTooltipStyle} />
+                  <Bar dataKey="count" fill="#f472b6" radius={[6, 6, 0, 0]} maxBarSize={48} />
                 </BarChart>
               </ResponsiveContainer>
             )}

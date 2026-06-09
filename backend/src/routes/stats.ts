@@ -161,7 +161,7 @@ statsRoutes.get('/top-machines', authMiddleware, async (req, res, next) => {
 
 statsRoutes.get('/top-spare-parts', authMiddleware, async (req, res, next) => {
   try {
-    const limit = Math.min(50, Math.max(5, Number(req.query.limit) || 5));
+    const limit = [5, 10, 15].includes(Number(req.query.limit)) ? Number(req.query.limit) : 5;
     const { whereClause, values } = buildFilterClause(req.query as FilterQuery, req.user!.id, req.user!.role);
     const extra = whereClause ? `${whereClause} AND c.spare_part_id IS NOT NULL` : 'WHERE c.spare_part_id IS NOT NULL';
     const r = await pool.query(

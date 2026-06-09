@@ -49,8 +49,8 @@ export default function AiAnalysis() {
 
   const runAnalysis = async () => {
     if (!token) return;
-    if (!machineId || !problemId || !causeId) {
-      setError('Seleziona macchina, problema e causa.');
+    if (!machineId) {
+      setError('Seleziona una macchina.');
       return;
     }
 
@@ -61,7 +61,11 @@ export default function AiAnalysis() {
     try {
       const resp = await axios.post(
         `${API_URL}/ai/analyze`,
-        { machine_id: machineId, problem_id: problemId, cause_id: causeId },
+        {
+          machine_id: machineId,
+          problem_id: problemId || undefined,
+          cause_id: causeId || undefined
+        },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       setResult(resp.data);
@@ -84,7 +88,7 @@ export default function AiAnalysis() {
       <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-4 sm:p-6">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
-            <label className="text-xs text-slate-400">Macchina</label>
+            <label className="text-xs text-slate-400">Macchina <span className="text-red-400">*</span></label>
             <select value={machineId} onChange={(e) => setMachineId(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none">
               <option value="">Seleziona macchina</option>
               {machines.map((m) => <option key={m.id} value={m.id}>{m.code} - {m.name}{m.line ? ` (${m.line})` : ''}</option>)}
@@ -93,14 +97,14 @@ export default function AiAnalysis() {
           <div>
             <label className="text-xs text-slate-400">Problema</label>
             <select value={problemId} onChange={(e) => setProblemId(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none">
-              <option value="">Seleziona</option>
+              <option value="">Opzionale</option>
               {problems.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </div>
           <div className="sm:col-span-2">
             <label className="text-xs text-slate-400">Causa</label>
             <select value={causeId} onChange={(e) => setCauseId(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none">
-              <option value="">Seleziona</option>
+              <option value="">Opzionale</option>
               {causes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>

@@ -52,7 +52,6 @@ export function CaseDetailModal({
   const [causeId, setCauseId] = useState('');
   const [sparePartId, setSparePartId] = useState('');
   const [solutionAppliedId, setSolutionAppliedId] = useState('');
-  const [solution, setSolution] = useState('');
   const [spareParts, setSpareParts] = useState<SparePartItem[]>([]);
   const [solutions, setSolutions] = useState<SolutionItem[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -72,7 +71,6 @@ export function CaseDetailModal({
     setCauseId(caseItem.cause_id ?? '');
     setSparePartId(caseItem.spare_part_id ?? '');
     setSolutionAppliedId(caseItem.solution_applied_id ?? '');
-    setSolution(caseItem.solution ?? '');
     setError(null);
   }, [caseItem]);
 
@@ -98,8 +96,8 @@ export function CaseDetailModal({
 
   const handleSave = async () => {
     if (!canEdit) return;
-    if (!machineId) {
-      setError('La macchina è obbligatoria.');
+    if (!machineId || !problemId || !causeId || !sparePartId || !solutionAppliedId) {
+      setError('Compila tutti i campi obbligatori.');
       return;
     }
 
@@ -110,11 +108,10 @@ export function CaseDetailModal({
         `${API_URL}/cases/${caseItem.id}`,
         {
           machine_id: machineId,
-          problem_id: problemId || null,
-          cause_id: causeId || null,
-          spare_part_id: sparePartId || null,
-          solution_applied_id: solutionAppliedId || null,
-          solution: solution || null,
+          problem_id: problemId,
+          cause_id: causeId,
+          spare_part_id: sparePartId,
+          solution_applied_id: solutionAppliedId,
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -175,10 +172,6 @@ export function CaseDetailModal({
               <option value="">Nessuna</option>
               {causes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
-          </div>
-          <div className="sm:col-span-2">
-            <label className="text-xs text-slate-400">Soluzione</label>
-            <textarea value={solution} disabled={!canEdit} onChange={(e) => setSolution(e.target.value)} rows={5} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none disabled:opacity-60" />
           </div>
         </div>
 

@@ -175,8 +175,14 @@ casesRoutes.post('/', authMiddleware, async (req, res, next) => {
       assigned_to?: string | null;
     };
 
-    if (!body.machine_id) {
-      return res.status(400).json({ error: 'Campo obbligatorio mancante: machine_id' });
+    const missing: string[] = [];
+    if (!body.machine_id) missing.push('macchina');
+    if (!body.problem_id) missing.push('problema');
+    if (!body.cause_id) missing.push('causa');
+    if (!body.spare_part_id) missing.push('pezzo di ricambio');
+    if (!body.solution_applied_id) missing.push('soluzione applicata');
+    if (missing.length) {
+      return res.status(400).json({ error: `Campo obbligatorio mancante: ${missing[0]}` });
     }
 
     const machineQuery = await pool.query('SELECT code, name, line, type FROM machines WHERE id = $1', [body.machine_id]);
@@ -195,8 +201,7 @@ casesRoutes.post('/', authMiddleware, async (req, res, next) => {
       solutionAppliedDesc = saR.rows[0]?.description ?? saR.rows[0]?.name ?? '';
     }
 
-    const freeSolution = (body.solution ?? '').toString().trim();
-    const combinedDescription = [solutionAppliedDesc, freeSolution].filter(Boolean).join('\n\n') || 'N/D';
+    const combinedDescription = solutionAppliedDesc || 'N/D';
 
     const ai_solution = await generateAiSolution({
       machine: `${machineRecord.name}`,
@@ -218,8 +223,8 @@ casesRoutes.post('/', authMiddleware, async (req, res, next) => {
         body.cause_id ?? null,
         body.spare_part_id ?? null,
         body.solution_applied_id ?? null,
-        body.description ?? (solutionAppliedDesc || null),
-        freeSolution || null,
+        solutionAppliedDesc || null,
+        solutionAppliedDesc || null,
         ai_solution,
         'closed',
         req.user!.id,
@@ -260,9 +265,19 @@ casesRoutes.put('/:id', authMiddleware, async (req, res, next) => {
       solution?: string;
     };
 
-    if (!body.machine_id) {
-      return res.status(400).json({ error: 'Campo obbligatorio mancante: machine_id' });
+    const missing: string[] = [];
+    if (!body.machine_id) missing.push('macchina');
+    if (!body.problem_id) missing.push('problema');
+    if (!body.cause_id) missing.push('causa');
+    if (!body.spare_part_id) missing.push('pezzo di ricambio');
+    if (!body.solution_applied_id) missing.push('soluzione applicata');
+    if (missing.length) {
+      return res.status(400).json({ error: `Campo obbligatorio mancante: ${missing[0]}` });
     }
+
+    let solutionAppliedDesc = '';
+    const saR = await pool.query('SELECT name, description FROM solutions_applied WHERE id = $1', [body.solution_applied_id]);
+    solutionAppliedDesc = saR.rows[0]?.description ?? saR.rows[0]?.name ?? '';
 
     const r = await pool.query(
       `UPDATE cases
@@ -276,8 +291,8 @@ casesRoutes.put('/:id', authMiddleware, async (req, res, next) => {
         body.cause_id ?? null,
         body.spare_part_id ?? null,
         body.solution_applied_id ?? null,
-        body.description ?? null,
-        body.solution ?? null,
+        solutionAppliedDesc || null,
+        solutionAppliedDesc || null,
         req.params.id
       ]
     );
