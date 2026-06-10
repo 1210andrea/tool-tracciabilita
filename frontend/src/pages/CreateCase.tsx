@@ -6,8 +6,9 @@ import { useAuth } from '../context/AuthContext';
 const API_URL = '/api';
 
 type CategoryItem = { id: string; type: string; name: string };
-type MachineItem = { id: string; code: string; name: string; type?: string };
-type SparePartItem = { id: string; name: string; type: string };
+type MachineItem = { id: string; code: string; name: string; type?: string; reparto?: string };
+type SparePartItem = { id: string; name: string; type?: string; reparto?: string };
+
 type SolutionItem = { id: string; name: string; description?: string };
 
 type CaseDetailResponse = {
@@ -86,7 +87,9 @@ export default function CreateCase() {
     }
 
     const machine = machines.find((m) => m.id === machineId);
-    if (!machine?.type) {
+    const repartoOrType = (machine?.reparto ?? machine?.type) as string | undefined;
+
+    if (!repartoOrType) {
       setSpareParts([]);
       setSparePartId('');
       return;
@@ -95,7 +98,7 @@ export default function CreateCase() {
     const loadSpareParts = async () => {
       setLoadingParts(true);
       try {
-        const resp = await axios.get(`${API_URL}/spare-parts/by-type/${encodeURIComponent(machine.type!)}` , {
+        const resp = await axios.get(`${API_URL}/spare-parts/by-type/${encodeURIComponent(repartoOrType)}` , {
           headers: { Authorization: `Bearer ${token}` }
         });
         setSpareParts(resp.data.items || []);
@@ -109,6 +112,7 @@ export default function CreateCase() {
 
     loadSpareParts();
   }, [token, machineId, machines]);
+
 
   useEffect(() => {
     if (!token || !createdCaseId) return;
@@ -253,9 +257,10 @@ export default function CreateCase() {
               <option key={item.id} value={item.id}>{item.name}</option>
             ))}
           </select>
-          {selectedMachine?.type && (
-            <p className="mt-2 text-xs text-slate-500">Tipo macchina: {selectedMachine.type}</p>
+          {(selectedMachine?.reparto ?? selectedMachine?.type) && (
+            <p className="mt-2 text-xs text-slate-500">Tipo/Reparto macchina: {selectedMachine?.reparto ?? selectedMachine?.type}</p>
           )}
+
         </div>
 
         <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6">
