@@ -10,9 +10,24 @@ type MachineItem = { id: string; code: string; name: string; type?: string };
 type SparePartItem = { id: string; name: string; type: string };
 type SolutionItem = { id: string; name: string; description?: string };
 
+type CaseDetailResponse = {
+  item: {
+    id: string;
+    ai_solution?: string | null;
+  };
+};
+
+type CreateCaseResponse = {
+  item: {
+    id: string;
+    ai_solution?: string | null;
+  };
+};
+
 export default function CreateCase() {
   const { token, user } = useAuth();
   const navigate = useNavigate();
+
   const [machines, setMachines] = useState<MachineItem[]>([]);
   const [problems, setProblems] = useState<CategoryItem[]>([]);
   const [causes, setCauses] = useState<CategoryItem[]>([]);
@@ -27,8 +42,13 @@ export default function CreateCase() {
 
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
   const [loading, setLoading] = useState(false);
   const [loadingParts, setLoadingParts] = useState(false);
+
+  const [createdCaseId, setCreatedCaseId] = useState<string | null>(null);
+  const [aiStatus, setAiStatus] = useState<'idle' | 'generating' | 'ready' | 'failed'>('idle');
+  const [aiSolution, setAiSolution] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -42,9 +62,9 @@ export default function CreateCase() {
         ]);
 
         setMachines(machinesResp.data.items || []);
-        const items = categoriesResp.data.items || [];
-        setProblems(items.filter((item: CategoryItem) => item.type === 'problem'));
-        setCauses(items.filter((item: CategoryItem) => item.type === 'cause'));
+        const items: CategoryItem[] = categoriesResp.data.items || [];
+        setProblems(items.filter((item) => item.type === 'problem'));
+        setCauses(items.filter((item) => item.type === 'cause'));
         setSolutions(solutionsResp.data.items || []);
       } catch {
         setMachines([]);
@@ -74,7 +94,7 @@ export default function CreateCase() {
     const loadSpareParts = async () => {
       setLoadingParts(true);
       try {
-        const resp = await axios.get(`${API_URL}/spare-parts/by-type/${encodeURIComponent(machine.type!)}`, {
+        const resp = await axios.get(`${API_URL}/spare-parts/by-type/${encodeURIComponent(machine.type!)}` , {
           headers: { Authorization: `Bearer ${token}` }
         });
         setSpareParts(resp.data.items || []);
@@ -89,6 +109,43 @@ export default function CreateCase() {
     loadSpareParts();
   }, [token, machineId, machines]);
 
+  useEffect(() => {
+    if (!token || !createdCaseId) return;
+
+    let cancelled = false;
+    let interval: number | undefined;
+
+    const poll = async () => {
+      try {
+        const resp = await axios.get(`${API_URL}/cases/${createdCaseId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        const data = resp.data as CaseDetailResponse;
+        const ai = data?.item?.ai_solution ?? null;
+
+        if (cancelled) return;
+
+        if (ai) {
+          setAiSolution(ai);
+          setAiStatus('ready');
+          if (interval) window.clearInterval(interval);
+        }
+      } catch {
+        // keep polling until timeout in server side; for UI mark failed only on hard errors
+      }
+    };
+
+    interval = window.setInterval(poll, 2000);
+    // immediate try
+    poll();
+
+    return () => {
+      cancelled = true;
+      if (interval) window.clearInterval(interval);
+    };
+  }, [token, createdCaseId]);
+
   const handleCreate = async () => {
     if (!token) return;
 
@@ -101,8 +158,12 @@ export default function CreateCase() {
     setSuccess(null);
     setLoading(true);
 
+    setAiStatus('generating');
+    setAiSolution(null);
+    setCreatedCaseId(null);
+
     try {
-      await axios.post(
+      const resp = await axios.post(
         `${API_URL}/cases`,
         {
           machine_id: machineId,
@@ -112,17 +173,22 @@ export default function CreateCase() {
           solution_applied_id: solutionAppliedId
         },
         { headers: { Authorization: `Bearer ${token}` } }
-      );
+      ) as { data: CreateCaseResponse };
 
-      setSuccess('Caso registrato correttamente.');
+      const id = resp.data?.item?.id;
+      setCreatedCaseId(id ?? null);
+      setSuccess('Caso creato! La soluzione IA è in generazione...');
+
+      // reset selezioni form
       setMachineId('');
       setProblemId('');
       setCauseId('');
       setSparePartId('');
       setSolutionAppliedId('');
 
-      setTimeout(() => navigate(user?.role === 'admin' ? '/dashboard' : '/'), 1200);
+      // non navigare subito: lasciamo vedere lo stato
     } catch (err: any) {
+      setAiStatus('failed');
       setError(err?.response?.data?.error ?? 'Errore durante la creazione del caso.');
     } finally {
       setLoading(false);
@@ -140,6 +206,25 @@ export default function CreateCase() {
 
       {error && <div className="rounded-2xl border border-red-500/40 bg-red-500/10 p-4 text-red-200">{error}</div>}
       {success && <div className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4 text-emerald-200">{success}</div>}
+
+      {aiStatus === 'generating' && createdCaseId && (
+        <div className="rounded-2xl border border-sky-500/40 bg-sky-500/10 p-4 text-sky-100">
+          ⏳ Generando soluzione IA (può impiegare fino a 30 secondi)...
+        </div>
+      )}
+
+      {aiStatus === 'ready' && aiSolution && (
+        <div className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4 text-emerald-100">
+          ✅ Soluzione IA pronta!
+          <div className="mt-2 whitespace-pre-wrap text-sm text-emerald-50">{aiSolution}</div>
+        </div>
+      )}
+
+      {aiStatus === 'failed' && (
+        <div className="rounded-2xl border border-rose-500/40 bg-rose-500/10 p-4 text-rose-200">
+          ❌ Generazione IA fallita.
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6">
@@ -214,3 +299,4 @@ export default function CreateCase() {
     </div>
   );
 }
+
