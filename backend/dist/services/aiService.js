@@ -114,7 +114,7 @@ async function callOllama(messages) {
         clearTimeout(t);
     }
 }
-const AI_PROMPT_TEMPLATE = ({ machine, line, problem, cause, sparePart, description }) => `Genera una soluzione tecnica per un problema di manutenzione su una macchina industriale.
+const AI_PROMPT_TEMPLATE = ({ machine, line, problem, cause, sparePart, description, notes }) => `Genera una soluzione tecnica per un problema di manutenzione su una macchina industriale.
 
 Macchina: ${machine}
 Linea: ${line}
@@ -122,6 +122,7 @@ Problema: ${problem}
 Causa: ${cause}
 Pezzo di ricambio: ${sparePart}
 Descrizione/Soluzione: ${description}
+${notes ? `Note aggiuntive dell'operatore: ${notes}` : ''}
 
 Fornisci una soluzione chiara e pratica, con passaggi operativi e consigli.`;
 async function pingOllama() {
@@ -147,7 +148,8 @@ async function generateCaseInsights(data) {
         .map((c, i) => {
         const date = new Date(c.created_at).toLocaleDateString('it-IT');
         return `${i + 1}. [${date}] Macchina ${c.machine_code} (${c.line ?? 'N/D'}) - Problema: ${c.problem_name ?? 'N/D'} - Causa: ${c.cause_name ?? 'N/D'} - Ricambio: ${c.spare_part_name ?? 'N/D'}
-   Soluzione: ${c.solution?.trim() || 'non documentata'}`;
+   Soluzione: ${c.solution?.trim() || 'non documentata'}
+   ${c.notes ? `Note operatore: ${c.notes}` : ''}`;
     })
         .join('\n\n');
     const prompt = `Analizza i dati storici di manutenzione e rispondi in italiano.

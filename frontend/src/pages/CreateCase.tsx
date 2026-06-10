@@ -56,6 +56,7 @@ export default function CreateCase() {
   const [createdCaseId, setCreatedCaseId] = useState<string | null>(null);
   const [aiStatus, setAiStatus] = useState<'idle' | 'generating' | 'ready' | 'failed'>('idle');
   const [aiSolution, setAiSolution] = useState<string | null>(null);
+  const [notes, setNotes] = useState('');
 
   useEffect(() => {
     if (!token) return;
@@ -140,7 +141,8 @@ export default function CreateCase() {
             problem_id: problemId || null,
             cause_id: causeId || null,
             spare_part_id: sparePartId || null,
-            description: selectedSolution ? `${selectedSolution.name}: ${selectedSolution.description || ''}`.trim() : 'N/D'
+            description: selectedSolution ? `${selectedSolution.name}: ${selectedSolution.description || ''}`.trim() : 'N/D',
+            notes: notes.trim() || null
           },
           { headers: { Authorization: `Bearer ${token}` } }
         );
@@ -153,7 +155,7 @@ export default function CreateCase() {
     }, 1000); // 1-second debounce
 
     return () => clearTimeout(timer);
-  }, [token, machineId, problemId, causeId, sparePartId, solutionAppliedId, solutions]);
+  }, [token, machineId, problemId, causeId, sparePartId, solutionAppliedId, solutions, notes]);
 
 
   useEffect(() => {
@@ -217,7 +219,8 @@ export default function CreateCase() {
           problem_id: problemId,
           cause_id: causeId,
           spare_part_id: sparePartId,
-          solution_applied_id: solutionAppliedId
+          solution_applied_id: solutionAppliedId,
+          notes: notes.trim() || null
         },
         { headers: { Authorization: `Bearer ${token}` } }
       ) as { data: CreateCaseResponse };
@@ -232,6 +235,7 @@ export default function CreateCase() {
       setCauseId('');
       setSparePartId('');
       setSolutionAppliedId('');
+      setNotes('');
 
       // non navigare subito: lasciamo vedere lo stato
     } catch (err: any) {
@@ -333,6 +337,19 @@ export default function CreateCase() {
               <option key={item.id} value={item.id}>{item.name}</option>
             ))}
           </select>
+        </div>
+
+        <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6 md:col-span-2">
+          <div className="flex justify-between items-center">
+            <label className="text-sm font-medium text-slate-200">Note aggiuntive</label>
+            <span className="text-xs text-slate-400">{notes.length}/1000 caratteri</span>
+          </div>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value.slice(0, 1000))}
+            placeholder="Aggiungi dettagli aggiuntivi sull'intervento, anomalie riscontrate o altre osservazioni..."
+            className="mt-3 w-full h-28 rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none resize-none focus:border-sky-500/50 transition-colors"
+          />
         </div>
       </div>
       

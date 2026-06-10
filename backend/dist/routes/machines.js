@@ -8,8 +8,21 @@ const socketService_1 = require("../services/socketService");
 exports.machinesRoutes = (0, express_1.Router)();
 exports.machinesRoutes.get('/', auth_1.authMiddleware, async (_req, res, next) => {
     try {
-        const r = await db_1.pool.query('SELECT id, code, name, line, location, type, created_at FROM machines ORDER BY created_at DESC');
+        const r = await db_1.pool.query('SELECT id, code, name, line, location, tipologia, type, posizione, created_at FROM machines ORDER BY created_at DESC');
         res.json({ items: r.rows });
+    }
+    catch (e) {
+        next(e);
+    }
+});
+exports.machinesRoutes.get('/tipologie', auth_1.authMiddleware, async (_req, res, next) => {
+    try {
+        const r = await db_1.pool.query(`SELECT DISTINCT tipologia
+       FROM machines
+       WHERE tipologia IS NOT NULL AND tipologia <> ''
+       ORDER BY tipologia`);
+        const tipologie = r.rows.map((row) => row.tipologia);
+        res.json({ items: tipologie });
     }
     catch (e) {
         next(e);
@@ -19,10 +32,11 @@ exports.machinesRoutes.post('/', auth_1.authMiddleware, async (req, res, next) =
     try {
         if (req.user?.role !== 'admin')
             return res.status(403).json({ error: 'Forbidden' });
-        const { code, name, line, location, type } = req.body;
+        const { code, name, line, location, tipologia, type, posizione } = req.body;
         if (!code || !name)
             return res.status(400).json({ error: 'code and name are required' });
-        const r = await db_1.pool.query('INSERT INTO machines(code,name,line,location,type) VALUES($1,$2,$3,$4,$5) RETURNING id, code, name, line, location, type, created_at', [code, name, line ?? null, location ?? null, type ?? null]);
+        const resolvedTipologia = (tipologia ?? type ?? posizione ?? null);
+        const r = await db_1.pool.query('INSERT INTO machines(code,name,line,location,tipologia) VALUES($1,$2,$3,$4,$5) RETURNING id, code, name, line, location, tipologia, created_at', [code, name, line ?? null, location ?? null, resolvedTipologia]);
         (0, socketService_1.emitEvent)('machine_updated', { machineId: r.rows[0].id, action: 'created' });
         res.json({ item: r.rows[0] });
     }
@@ -35,9 +49,9 @@ exports.machinesRoutes.put('/:id', auth_1.authMiddleware, async (req, res, next)
         if (req.user?.role !== 'admin')
             return res.status(403).json({ error: 'Forbidden' });
         const { id } = req.params;
-        const { name, line, location } = req.body;
-        const r = await db_1.pool.query(`UPDATE machines SET name = COALESCE($1, name), line = COALESCE($2, line), location = COALESCE($3, location)
-       WHERE id = $4 RETURNING id, code, name, line, location, created_at`, [name ?? null, line ?? null, location ?? null, id]);
+        const { name, line, location, tipologia } = req.body;
+        const r = await db_1.pool.query(`UPDATE machines SET name = COALESCE($1, name), line = COALESCE($2, line), location = COALESCE($3, location), tipologia = COALESCE($4, tipologia)
+       WHERE id = $5 RETURNING id, code, name, line, location, tipologia, created_at`, [name ?? null, line ?? null, location ?? null, tipologia ?? null, id]);
         if (!r.rows.length)
             return res.status(404).json({ error: 'Machine not found' });
         (0, socketService_1.emitEvent)('machine_updated', { machineId: id, action: 'updated' });

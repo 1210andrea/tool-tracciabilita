@@ -108,7 +108,7 @@ async function callOllama(messages: ChatMessage[]): Promise<string | null> {
   }
 }
 
-const AI_PROMPT_TEMPLATE = ({ machine, line, problem, cause, sparePart, description }: { machine: string; line: string; problem: string; cause: string; sparePart: string; description: string }) =>
+const AI_PROMPT_TEMPLATE = ({ machine, line, problem, cause, sparePart, description, notes }: { machine: string; line: string; problem: string; cause: string; sparePart: string; description: string; notes?: string }) =>
   `Genera una soluzione tecnica per un problema di manutenzione su una macchina industriale.
 
 Macchina: ${machine}
@@ -117,6 +117,7 @@ Problema: ${problem}
 Causa: ${cause}
 Pezzo di ricambio: ${sparePart}
 Descrizione/Soluzione: ${description}
+${notes ? `Note aggiuntive dell'operatore: ${notes}` : ''}
 
 Fornisci una soluzione chiara e pratica, con passaggi operativi e consigli.`;
 
@@ -126,7 +127,7 @@ export async function pingOllama() {
   return true;
 }
 
-export async function generateAiSolution(data: { machine: string; line: string; problem: string; cause: string; sparePart: string; description: string }) {
+export async function generateAiSolution(data: { machine: string; line: string; problem: string; cause: string; sparePart: string; description: string; notes?: string }) {
   const prompt = AI_PROMPT_TEMPLATE(data);
 
   if (env.AI_PROVIDER === 'ollama') {
@@ -149,6 +150,7 @@ export type SimilarCaseRow = {
   problem_name: string | null;
   cause_name: string | null;
   spare_part_name: string | null;
+  notes?: string | null;
 };
 
 export async function generateCaseInsights(data: {
@@ -164,7 +166,8 @@ export async function generateCaseInsights(data: {
     .map((c, i) => {
       const date = new Date(c.created_at).toLocaleDateString('it-IT');
       return `${i + 1}. [${date}] Macchina ${c.machine_code} (${c.line ?? 'N/D'}) - Problema: ${c.problem_name ?? 'N/D'} - Causa: ${c.cause_name ?? 'N/D'} - Ricambio: ${c.spare_part_name ?? 'N/D'}
-   Soluzione: ${c.solution?.trim() || 'non documentata'}`;
+   Soluzione: ${c.solution?.trim() || 'non documentata'}
+   ${c.notes ? `Note operatore: ${c.notes}` : ''}`;
     })
     .join('\n\n');
 

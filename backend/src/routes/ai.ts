@@ -7,12 +7,13 @@ export const aiRoutes = Router();
 
 aiRoutes.post('/suggest-solution', authMiddleware, async (req, res, next) => {
   try {
-    const { machine_id, problem_id, cause_id, description, spare_part_id } = req.body as {
+    const { machine_id, problem_id, cause_id, description, spare_part_id, notes } = req.body as {
       machine_id?: string;
       problem_id?: string | null;
       cause_id?: string | null;
       description?: string;
       spare_part_id?: string | null;
+      notes?: string;
     };
 
     if (!machine_id) return res.status(400).json({ error: 'machine_id è obbligatorio' });
@@ -40,7 +41,8 @@ aiRoutes.post('/suggest-solution', authMiddleware, async (req, res, next) => {
       problem: problemName,
       cause: causeName,
       sparePart: sparePartName,
-      description: desc
+      description: desc,
+      notes: notes?.trim() || undefined
     });
 
     res.json({ suggestion, insufficient: false });
@@ -88,7 +90,7 @@ aiRoutes.post('/analyze', authMiddleware, async (req, res, next) => {
     const whereClause = filterConditions.join(' AND ');
 
     const similarR = await pool.query(
-      `SELECT c.solution, c.status, c.created_at,
+      `SELECT c.solution, c.status, c.created_at, c.notes,
               m.code as machine_code, m.line, prob.name as problem_name, cause.name as cause_name,
               sp.name as spare_part_name
        FROM cases c

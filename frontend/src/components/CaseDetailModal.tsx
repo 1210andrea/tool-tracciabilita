@@ -25,6 +25,7 @@ export type CaseDetail = {
   spare_part_name?: string;
   solution_applied_name?: string;
   created_at?: string;
+  notes?: string | null;
 };
 
 export function CaseDetailModal({
@@ -56,6 +57,7 @@ export function CaseDetailModal({
   const [solutions, setSolutions] = useState<SolutionItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [notes, setNotes] = useState('');
 
   useEffect(() => {
     if (!token) return;
@@ -71,6 +73,7 @@ export function CaseDetailModal({
     setCauseId(caseItem.cause_id ?? '');
     setSparePartId(caseItem.spare_part_id ?? '');
     setSolutionAppliedId(caseItem.solution_applied_id ?? '');
+    setNotes(caseItem.notes ?? '');
     setError(null);
   }, [caseItem]);
 
@@ -112,6 +115,7 @@ export function CaseDetailModal({
           cause_id: causeId,
           spare_part_id: sparePartId,
           solution_applied_id: solutionAppliedId,
+          notes: notes.trim() || null,
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -172,6 +176,24 @@ export function CaseDetailModal({
               <option value="">Nessuna</option>
               {causes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
+          </div>
+          <div className="sm:col-span-2">
+            <div className="flex justify-between items-center">
+              <label className="text-xs text-slate-400">Note aggiuntive</label>
+              {canEdit && <span className="text-[10px] text-slate-500">{notes.length}/1000 caratteri</span>}
+            </div>
+            {canEdit ? (
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value.slice(0, 1000))}
+                placeholder="Aggiungi dettagli aggiuntivi..."
+                className="mt-1 w-full h-24 rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2 text-sm text-slate-100 outline-none resize-none focus:border-sky-500/50 transition-colors"
+              />
+            ) : (
+              <div className="mt-1 w-full rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-2.5 text-sm text-slate-300 min-h-[4rem] whitespace-pre-wrap">
+                {notes || <span className="text-slate-500 italic">Nessuna nota aggiuntiva</span>}
+              </div>
+            )}
           </div>
         </div>
 

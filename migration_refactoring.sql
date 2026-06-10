@@ -63,3 +63,6 @@ END $$;
 
 -- Ora che i dati sono stati migrati in spare_part_tipologie, rimuoviamo la vecchia colonna type da spare_parts
 ALTER TABLE spare_parts DROP COLUMN IF EXISTS type;
+
+-- Aggiungi la colonna notes alla tabella casi
+ALTER TABLE cases ADD COLUMN IF NOT EXISTS notes VARCHAR(1000);

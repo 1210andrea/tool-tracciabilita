@@ -8,7 +8,7 @@ export const casesRoutes = Router();
 
 const CASE_FIELDS = `c.id, c.machine_id, c.problem_id, c.cause_id, c.spare_part_id, c.solution_applied_id, c.category_id,
   c.description, c.solution, c.ai_solution, c.status, c.created_by, c.assigned_to,
-  c.created_at, c.updated_at`;
+  c.notes, c.created_at, c.updated_at`;
 
 
 const CASE_JOINS = `
@@ -229,7 +229,7 @@ casesRoutes.get('/export-csv', authMiddleware, async (req, res, next) => {
               COALESCE(oper.name, u.username) as operator_name,
               prob.name as problem_name, cause.name as cause_name,
               sp.name as spare_part_name, sa.name as solution_applied_name,
-              c.description, c.solution, c.ai_solution, c.status, c.created_at
+              c.description, c.solution, c.notes, c.ai_solution, c.status, c.created_at
        FROM cases c
        ${CASE_JOINS}
        ${whereClause}
@@ -247,6 +247,7 @@ casesRoutes.get('/export-csv', authMiddleware, async (req, res, next) => {
       'Ricambio Usato',
       'Soluzione Applicata',
       'Descrizione',
+      'Note',
       'Soluzione AI',
       'Stato',
       'Data Creazione'
@@ -270,6 +271,7 @@ casesRoutes.get('/export-csv', authMiddleware, async (req, res, next) => {
         row.spare_part_name,
         row.solution_applied_name,
         row.description || row.solution,
+        row.notes,
         row.ai_solution,
         row.status,
         row.created_at ? new Date(row.created_at).toISOString() : ''
@@ -321,6 +323,7 @@ casesRoutes.post('/', authMiddleware, async (req, res, next) => {
       description?: string;
       solution?: string;
       assigned_to?: string | null;
+      notes?: string | null;
     };
 
     const missing: string[] = [];
@@ -331,6 +334,10 @@ casesRoutes.post('/', authMiddleware, async (req, res, next) => {
     if (!body.solution_applied_id) missing.push('soluzione applicata');
     if (missing.length) {
       return res.status(400).json({ error: `Campo obbligatorio mancante: ${missing[0]}` });
+    }
+
+    if (body.notes && body.notes.length > 1000) {
+      return res.status(400).json({ error: 'Le note non possono superare i 1000 caratteri.' });
     }
 
     const machineQuery = await pool.query('SELECT code, name, line, type FROM machines WHERE id = $1', [body.machine_id]);
@@ -354,8 +361,8 @@ casesRoutes.post('/', authMiddleware, async (req, res, next) => {
     // Creazione caso: ritorna subito, generazione AI in background
     const r = await pool.query(
       `INSERT INTO cases(machine_id, problem_id, cause_id, spare_part_id, solution_applied_id, description, solution, ai_solution,
-                        status, created_by, assigned_to)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+                        status, created_by, assigned_to, notes)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        RETURNING *`,
       [
         body.machine_id,
@@ -368,7 +375,8 @@ casesRoutes.post('/', authMiddleware, async (req, res, next) => {
         null,
         'closed',
         req.user!.id,
-        body.assigned_to ?? null
+        body.assigned_to ?? null,
+        body.notes?.trim() || null
       ]
     );
 
@@ -379,7 +387,8 @@ casesRoutes.post('/', authMiddleware, async (req, res, next) => {
       problem: problemName,
       cause: causeName,
       sparePart: sparePartName,
-      description: combinedDescription
+      description: combinedDescription,
+      notes: body.notes?.trim() || undefined
     })
       .then(async (ai_solution) => {
         await pool.query('UPDATE cases SET ai_solution = $1, updated_at = now() WHERE id = $2', [ai_solution, r.rows[0].id]);
@@ -424,6 +433,7 @@ casesRoutes.put('/:id', authMiddleware, async (req, res, next) => {
       solution_applied_id?: string | null;
       description?: string;
       solution?: string;
+      notes?: string | null;
     };
 
     const missing: string[] = [];
@@ -436,6 +446,10 @@ casesRoutes.put('/:id', authMiddleware, async (req, res, next) => {
       return res.status(400).json({ error: `Campo obbligatorio mancante: ${missing[0]}` });
     }
 
+    if (body.notes && body.notes.length > 1000) {
+      return res.status(400).json({ error: 'Le note non possono superare i 1000 caratteri.' });
+    }
+
     let solutionAppliedDesc = '';
     const saR = await pool.query('SELECT name, description FROM solutions_applied WHERE id = $1', [body.solution_applied_id]);
     solutionAppliedDesc = saR.rows[0]?.description ?? saR.rows[0]?.name ?? '';
@@ -443,8 +457,8 @@ casesRoutes.put('/:id', authMiddleware, async (req, res, next) => {
     const r = await pool.query(
       `UPDATE cases
        SET machine_id = $1, problem_id = $2, cause_id = $3, spare_part_id = $4, solution_applied_id = $5,
-           description = $6, solution = $7, updated_at = now()
-       WHERE id = $8
+           description = $6, solution = $7, notes = $8, updated_at = now()
+       WHERE id = $9
        RETURNING *`,
       [
         body.machine_id,
@@ -454,6 +468,7 @@ casesRoutes.put('/:id', authMiddleware, async (req, res, next) => {
         body.solution_applied_id ?? null,
         solutionAppliedDesc || null,
         solutionAppliedDesc || null,
+        body.notes?.trim() || null,
         req.params.id
       ]
     );
