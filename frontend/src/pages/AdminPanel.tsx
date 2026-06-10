@@ -29,6 +29,7 @@ export default function AdminPanel() {
   const [users, setUsers] = useState<User[]>([]);
   const [spareParts, setSpareParts] = useState<SparePart[]>([]);
   const [solutionsApplied, setSolutionsApplied] = useState<SolutionApplied[]>([]);
+  const [availableTipologie, setAvailableTipologie] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -45,24 +46,27 @@ export default function AdminPanel() {
     if (!token) return;
     setLoading(true);
     try {
-      const [categoriesResp, machinesResp, usersResp, spareResp, solutionsResp] = await Promise.all([
+      const [categoriesResp, machinesResp, usersResp, spareResp, solutionsResp, tipologieResp] = await Promise.all([
         axios.get(`${API_URL}/categories`, headers),
         axios.get(`${API_URL}/machines`, headers),
         axios.get(`${API_URL}/users`, headers),
         axios.get(`${API_URL}/spare-parts`, headers),
-        axios.get(`${API_URL}/solutions-applied`, headers)
+        axios.get(`${API_URL}/solutions-applied`, headers),
+        axios.get(`${API_URL}/machines/tipologie`, headers)
       ]);
       setCategories(categoriesResp.data.items || []);
       setMachines(machinesResp.data.items || []);
       setUsers(usersResp.data.items || []);
       setSpareParts(spareResp.data.items || []);
       setSolutionsApplied(solutionsResp.data.items || []);
+      setAvailableTipologie(tipologieResp.data.items || []);
     } catch {
       setCategories([]);
       setMachines([]);
       setUsers([]);
       setSpareParts([]);
       setSolutionsApplied([]);
+      setAvailableTipologie([]);
     } finally {
       setLoading(false);
     }
@@ -114,7 +118,7 @@ export default function AdminPanel() {
     try {
       await axios.post(`${API_URL}/spare-parts`, sparePartForm, headers);
       setMessage('Ricambio aggiunto.');
-      setSparePartForm({ name: '', type: 'generico', description: '' });
+      setSparePartForm({ name: '', tipologie: [], description: '' });
       loadAll();
     } catch (err: any) {
       setMessage(err?.response?.data?.error ?? 'Errore salvataggio ricambio.');
@@ -315,11 +319,39 @@ export default function AdminPanel() {
 
               {spareSolutionsSubTab === 'spare_parts' ? (
                 <>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="space-y-4">
                     <input value={sparePartForm.name} onChange={(e) => setSparePartForm((c) => ({ ...c, name: e.target.value }))} placeholder="Nome ricambio" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
-                    <select value={sparePartForm.type} onChange={(e) => setSparePartForm((c) => ({ ...c, type: e.target.value }))} className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none">
-                      {MACHINE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                    </select>
+                    
+                    <div>
+                      <span className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Tipologie Macchine Collegate</span>
+                      {availableTipologie.length === 0 ? (
+                        <p className="text-sm text-slate-500 bg-slate-900/50 p-3 rounded-2xl border border-slate-800">
+                          Nessuna tipologia trovata. Crea prima una macchina con una tipologia.
+                        </p>
+                      ) : (
+                        <div className="flex flex-wrap gap-2 p-3 rounded-2xl border border-slate-800 bg-slate-900/30">
+                          {availableTipologie.map((t) => {
+                            const isChecked = sparePartForm.tipologie.includes(t);
+                            return (
+                              <label key={t} className="flex items-center gap-2 cursor-pointer bg-slate-950 px-3.5 py-2 rounded-xl border border-slate-800 hover:bg-slate-800/80 transition select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={(e) => {
+                                    const nextTipologie = e.target.checked
+                                      ? [...sparePartForm.tipologie, t]
+                                      : sparePartForm.tipologie.filter((x) => x !== t);
+                                    setSparePartForm((c) => ({ ...c, tipologie: nextTipologie }));
+                                  }}
+                                  className="accent-sky-500 h-4 w-4 cursor-pointer"
+                                />
+                                <span className="text-sm text-slate-200">{t}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <textarea value={sparePartForm.description} onChange={(e) => setSparePartForm((c) => ({ ...c, description: e.target.value }))} rows={3} placeholder="Descrizione (opzionale)" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
                   <button type="button" className="w-full rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 sm:w-auto" onClick={submitSparePart}>
@@ -397,11 +429,14 @@ export default function AdminPanel() {
             <div className="space-y-4">
               {spareParts.map((part) => {
                 const inUse = (part.usage_count ?? 0) > 0;
+                const partTipologie = part.tipologie && part.tipologie.length ? part.tipologie : (part.tipologia && part.tipologia.length ? part.tipologia : []);
                 return (
                   <div key={part.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <div className="font-semibold text-slate-100">{part.name}</div>
-                      <div className="text-sm text-slate-500">Tipo: {part.type} · {part.description || 'Nessuna descrizione'}</div>
+                      <div className="text-sm text-slate-500">
+                        Tipologie: {partTipologie.length ? partTipologie.join(', ') : 'Nessuna'} · {part.description || 'Nessuna descrizione'}
+                      </div>
                       {inUse && <div className="text-xs text-amber-400">In uso da {part.usage_count} casi</div>}
                     </div>
                     {!inUse ? (

@@ -37,6 +37,7 @@ type CaseItem = {
   solution?: string;
   description?: string;
   ai_solution?: string;
+  operator_name?: string;
 };
 
 type MachineItem = { id: string; code: string; name: string; line?: string };
@@ -228,6 +229,29 @@ export default function Dashboard() {
     }
   };
 
+  const handleExportCSV = async () => {
+    if (!token) return;
+    try {
+      const headers = { Authorization: `Bearer ${token}` };
+      const response = await axios.get(`${API_URL}/cases/export-csv`, {
+        headers,
+        params: filterParams,
+        responseType: 'blob'
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `casi_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      console.error('Errore durante l\'esportazione CSV', err);
+      setEventMessage('Errore durante l\'esportazione CSV.');
+    }
+  };
+
   const pageCount = Math.max(1, Math.ceil(total / limit));
 
   const trendChart = useMemo(
@@ -296,9 +320,17 @@ export default function Dashboard() {
             <h2 className="text-lg font-semibold sm:text-xl">Filtri visualizzazione</h2>
             <p className="text-sm text-slate-400">I grafici e la lista si aggiornano automaticamente.</p>
           </div>
-          <button type="button" onClick={resetFilters} className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-5 py-2.5 text-sm text-slate-100 transition hover:bg-slate-800 sm:w-auto">
-            Reset filtri
-          </button>
+          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+            <button type="button" onClick={handleExportCSV} className="w-full rounded-2xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-emerald-500 sm:w-auto flex items-center justify-center gap-2">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+              </svg>
+              Esporta CSV
+            </button>
+            <button type="button" onClick={resetFilters} className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-5 py-2.5 text-sm text-slate-100 transition hover:bg-slate-800 sm:w-auto">
+              Reset filtri
+            </button>
+          </div>
         </div>
 
         <div className="space-y-5">
@@ -506,6 +538,7 @@ export default function Dashboard() {
               <thead className="bg-slate-950/90 text-slate-400">
                 <tr>
                   <th className="px-3 py-3 sm:px-4">Macchina</th>
+                  <th className="px-3 py-3 sm:px-4">Operatore</th>
                   <th className="hidden px-3 py-3 sm:table-cell sm:px-4">Problema</th>
                   <th className="hidden px-3 py-3 md:table-cell md:px-4">Causa</th>
                   <th className="hidden px-3 py-3 lg:table-cell lg:px-4">Ricambio</th>
@@ -516,7 +549,7 @@ export default function Dashboard() {
               <tbody className="divide-y divide-slate-800 bg-slate-950/70">
                 {cases.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-10 text-center text-slate-500">
+                    <td colSpan={7} className="px-4 py-10 text-center text-slate-500">
                       {loading ? 'Caricamento casi...' : 'Nessun caso corrispondente ai filtri.'}
                     </td>
                   </tr>
@@ -524,6 +557,7 @@ export default function Dashboard() {
                   cases.map((item) => (
                     <tr key={item.id} className="transition hover:bg-slate-900/80">
                       <td className="px-3 py-3 font-medium text-slate-100 sm:px-4 sm:py-4">{item.machine_code}</td>
+                      <td className="px-3 py-3 text-slate-300 sm:px-4 sm:py-4">{item.operator_name || 'N.D.'}</td>
                       <td className="hidden px-3 py-3 text-slate-300 sm:table-cell sm:px-4 sm:py-4">{item.problem_name || 'N.D.'}</td>
                       <td className="hidden px-3 py-3 text-slate-300 md:table-cell md:px-4 md:py-4">{item.cause_name || 'N.D.'}</td>
                       <td className="hidden px-3 py-3 text-slate-300 lg:table-cell lg:px-4 lg:py-4">{item.spare_part_name || 'N.D.'}</td>

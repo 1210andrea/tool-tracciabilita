@@ -125,6 +125,7 @@ casesRoutes.get('/', authMiddleware, async (req, res, next) => {
 
     const r = await pool.query(
       `SELECT ${CASE_FIELDS}, m.code as machine_code, m.name as machine_name, u.username as created_by_username,
+              COALESCE(oper.name, u.username) as operator_name,
               prob.name as problem_name, cause.name as cause_name,
               sp.name as spare_part_name, sa.name as solution_applied_name,
               COUNT(*) OVER() AS total_count
@@ -143,6 +144,147 @@ casesRoutes.get('/', authMiddleware, async (req, res, next) => {
   }
 });
 
+casesRoutes.get('/export-csv', authMiddleware, async (req, res, next) => {
+  try {
+    const {
+      status,
+      machine_id,
+      assigned_to,
+      problem_id,
+      cause_id,
+      date_from,
+      date_to,
+      time_from,
+      time_to,
+      line
+    } = req.query as Record<string, string>;
+
+    const conditions: string[] = [];
+    const values: Array<string | number | string[]> = [];
+
+    if (req.user!.role !== 'admin') {
+      values.push(req.user!.id);
+      conditions.push(`c.created_by = $${values.length}`);
+    }
+
+    if (req.query.statuses) {
+      const statuses = (req.query.statuses as string).split(',').map((s) => s.trim()).filter(Boolean);
+      if (statuses.length) {
+        values.push(statuses);
+        conditions.push(`c.status = ANY($${values.length})`);
+      }
+    } else if (status) {
+      values.push(status);
+      conditions.push(`c.status = $${values.length}`);
+    }
+    if (machine_id) {
+      values.push(machine_id);
+      conditions.push(`c.machine_id = $${values.length}`);
+    }
+    if (assigned_to) {
+      values.push(assigned_to);
+      conditions.push(`c.assigned_to = $${values.length}`);
+    }
+    if (req.query.month) {
+      values.push(Number(req.query.month));
+      conditions.push(`EXTRACT(MONTH FROM c.created_at)::int = $${values.length}`);
+    }
+    if (req.query.year) {
+      values.push(Number(req.query.year));
+      conditions.push(`EXTRACT(YEAR FROM c.created_at)::int = $${values.length}`);
+    }
+    if (problem_id) {
+      values.push(problem_id as string);
+      conditions.push(`c.problem_id = $${values.length}`);
+    }
+    if (cause_id) {
+      values.push(cause_id as string);
+      conditions.push(`c.cause_id = $${values.length}`);
+    }
+    if (date_from) {
+      values.push(date_from as string);
+      conditions.push(`c.created_at::date >= $${values.length}`);
+    }
+    if (date_to) {
+      values.push(date_to as string);
+      conditions.push(`c.created_at::date <= $${values.length}`);
+    }
+    if (time_from) {
+      values.push(time_from as string);
+      conditions.push(`TO_CHAR(c.created_at, 'HH24:MI') >= $${values.length}`);
+    }
+    if (time_to) {
+      values.push(time_to as string);
+      conditions.push(`TO_CHAR(c.created_at, 'HH24:MI') <= $${values.length}`);
+    }
+    if (line) {
+      values.push(line as string);
+      conditions.push(`m.line = $${values.length}`);
+    }
+
+    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const r = await pool.query(
+      `SELECT c.id, m.code as machine_code, m.name as machine_name, u.username as created_by_username,
+              COALESCE(oper.name, u.username) as operator_name,
+              prob.name as problem_name, cause.name as cause_name,
+              sp.name as spare_part_name, sa.name as solution_applied_name,
+              c.description, c.solution, c.ai_solution, c.status, c.created_at
+       FROM cases c
+       ${CASE_JOINS}
+       ${whereClause}
+       ORDER BY c.created_at DESC`,
+      values
+    );
+
+    const headers = [
+      'ID Caso',
+      'Codice Macchina',
+      'Nome Macchina',
+      'Operatore',
+      'Problema',
+      'Causa',
+      'Ricambio Usato',
+      'Soluzione Applicata',
+      'Descrizione',
+      'Soluzione AI',
+      'Stato',
+      'Data Creazione'
+    ];
+
+    const escapeCSV = (val: any) => {
+      if (val === null || val === undefined) return '';
+      const str = String(val).replace(/"/g, '""');
+      return `"${str}"`;
+    };
+
+    let csvContent = headers.join(',') + '\n';
+    for (const row of r.rows) {
+      const lineData = [
+        row.id,
+        row.machine_code,
+        row.machine_name,
+        row.operator_name,
+        row.problem_name,
+        row.cause_name,
+        row.spare_part_name,
+        row.solution_applied_name,
+        row.description || row.solution,
+        row.ai_solution,
+        row.status,
+        row.created_at ? new Date(row.created_at).toISOString() : ''
+      ];
+      csvContent += lineData.map(escapeCSV).join(',') + '\n';
+    }
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="casi_esportati.csv"');
+    return res.status(200).send(csvContent);
+  } catch (e) {
+    next(e);
+  }
+});
+
 casesRoutes.get('/:id', authMiddleware, async (req, res, next) => {
   try {
     const caseRow = await getCaseRow(req.params.id);
@@ -153,6 +295,7 @@ casesRoutes.get('/:id', authMiddleware, async (req, res, next) => {
 
     const r = await pool.query(
       `SELECT ${CASE_FIELDS}, m.code as machine_code, m.name as machine_name, u.username as created_by_username,
+              COALESCE(oper.name, u.username) as operator_name,
               prob.name as problem_name, cause.name as cause_name,
               sp.name as spare_part_name, sa.name as solution_applied_name
        FROM cases c

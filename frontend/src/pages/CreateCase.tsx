@@ -40,7 +40,7 @@ export default function CreateCase() {
   const [machineId, setMachineId] = useState('');
   const [problemId, setProblemId] = useState('');
   const [causeId, setCauseId] = useState('');
-  const [sparePartIds, setSparePartIds] = useState<string[]>([]);
+  const [sparePartId, setSparePartId] = useState('');
   const [realTimeAi, setRealTimeAi] = useState<string | null>(null);
   const [realTimeAiStatus, setRealTimeAiStatus] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle');
 
@@ -87,7 +87,7 @@ export default function CreateCase() {
   useEffect(() => {
     if (!token || !machineId) {
       setSpareParts([]);
-      setSparePartIds([]);
+      setSparePartId('');
       return;
     }
 
@@ -96,7 +96,7 @@ export default function CreateCase() {
 
     if (!tipologia) {
       setSpareParts([]);
-      setSparePartIds([]);
+      setSparePartId('');
       return;
     }
 
@@ -108,7 +108,7 @@ export default function CreateCase() {
           headers: { Authorization: `Bearer ${token}` }
         });
         setSpareParts(resp.data.items || []);
-        setSparePartIds([]);
+        setSparePartId('');
 
       } catch {
         setSpareParts([]);
@@ -119,6 +119,41 @@ export default function CreateCase() {
 
     loadSpareParts();
   }, [token, machineId, machines]);
+
+
+  // Real-time AI suggestions with debounce
+  useEffect(() => {
+    if (!token || !machineId || !problemId) {
+      setRealTimeAi(null);
+      setRealTimeAiStatus('idle');
+      return;
+    }
+
+    setRealTimeAiStatus('loading');
+    const timer = setTimeout(async () => {
+      try {
+        const selectedSolution = solutions.find((s) => s.id === solutionAppliedId);
+        const resp = await axios.post(
+          `${API_URL}/ai/suggest-solution`,
+          {
+            machine_id: machineId,
+            problem_id: problemId || null,
+            cause_id: causeId || null,
+            spare_part_id: sparePartId || null,
+            description: selectedSolution ? `${selectedSolution.name}: ${selectedSolution.description || ''}`.trim() : 'N/D'
+          },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        setRealTimeAi(resp.data.suggestion);
+        setRealTimeAiStatus('ready');
+      } catch (err) {
+        console.error(err);
+        setRealTimeAiStatus('failed');
+      }
+    }, 1000); // 1-second debounce
+
+    return () => clearTimeout(timer);
+  }, [token, machineId, problemId, causeId, sparePartId, solutionAppliedId, solutions]);
 
 
   useEffect(() => {
@@ -300,6 +335,42 @@ export default function CreateCase() {
           </select>
         </div>
       </div>
+      
+      {machineId && problemId && (
+        <div className="rounded-3xl border border-sky-500/20 bg-slate-950/80 p-5 shadow-xl shadow-sky-500/5 sm:p-6 transition-all duration-300">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <span className="flex h-2.5 w-2.5 rounded-full bg-sky-400 animate-pulse" />
+              <h3 className="text-md font-semibold uppercase tracking-wider text-sky-400">Analisi IA in tempo reale</h3>
+            </div>
+            {realTimeAiStatus === 'loading' && (
+              <span className="text-xs text-slate-400 flex items-center gap-1.5">
+                <span className="animate-spin h-3.5 w-3.5 border-2 border-slate-600 border-t-sky-400 rounded-full" />
+                Elaborazione...
+              </span>
+            )}
+            {realTimeAiStatus === 'ready' && <span className="text-xs text-emerald-400 font-medium">Aggiornato</span>}
+            {realTimeAiStatus === 'failed' && <span className="text-xs text-rose-400 font-medium">Errore di connessione</span>}
+          </div>
+
+          <div className="rounded-2xl bg-slate-900/50 p-4 border border-slate-800/80">
+            {realTimeAiStatus === 'loading' && !realTimeAi && (
+              <p className="text-sm text-slate-500 italic">L'intelligenza artificiale sta analizzando i parametri inseriti...</p>
+            )}
+            {realTimeAiStatus === 'idle' && (
+              <p className="text-sm text-slate-500 italic">Inserisci la macchina e il problema per ottenere suggerimenti immediati.</p>
+            )}
+            {realTimeAiStatus === 'failed' && (
+              <p className="text-sm text-rose-300/80">Impossibile generare suggerimenti in tempo reale. Riprova più tardi.</p>
+            )}
+            {realTimeAi && (
+              <div className="prose prose-invert max-w-none text-slate-200 text-sm whitespace-pre-wrap leading-relaxed">
+                {realTimeAi}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <button type="button" className="inline-flex items-center justify-center rounded-2xl bg-sky-500 px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-60" onClick={handleCreate} disabled={!token || loading}>

@@ -16,6 +16,21 @@ machinesRoutes.get('/', authMiddleware, async (_req, res, next) => {
   }
 });
 
+machinesRoutes.get('/tipologie', authMiddleware, async (_req, res, next) => {
+  try {
+    const r = await pool.query(
+      `SELECT DISTINCT tipologia
+       FROM machines
+       WHERE tipologia IS NOT NULL AND tipologia <> ''
+       ORDER BY tipologia`
+    );
+    const tipologie = r.rows.map((row) => row.tipologia);
+    res.json({ items: tipologie });
+  } catch (e) {
+    next(e);
+  }
+});
+
 
 machinesRoutes.post('/', authMiddleware, async (req, res, next) => {
   try {
@@ -52,11 +67,11 @@ machinesRoutes.put('/:id', authMiddleware, async (req, res, next) => {
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
 
     const { id } = req.params;
-    const { name, line, location } = req.body as { name?: string; line?: string; location?: string };
+    const { name, line, location, tipologia } = req.body as { name?: string; line?: string; location?: string; tipologia?: string };
     const r = await pool.query(
-      `UPDATE machines SET name = COALESCE($1, name), line = COALESCE($2, line), location = COALESCE($3, location)
-       WHERE id = $4 RETURNING id, code, name, line, location, created_at`,
-      [name ?? null, line ?? null, location ?? null, id]
+      `UPDATE machines SET name = COALESCE($1, name), line = COALESCE($2, line), location = COALESCE($3, location), tipologia = COALESCE($4, tipologia)
+       WHERE id = $5 RETURNING id, code, name, line, location, tipologia, created_at`,
+      [name ?? null, line ?? null, location ?? null, tipologia ?? null, id]
     );
     if (!r.rows.length) return res.status(404).json({ error: 'Machine not found' });
     emitEvent('machine_updated', { machineId: id, action: 'updated' });
