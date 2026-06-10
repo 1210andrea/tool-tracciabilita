@@ -165,14 +165,7 @@ exports.casesRoutes.post('/', auth_1.authMiddleware, async (req, res, next) => {
             solutionAppliedDesc = saR.rows[0]?.description ?? saR.rows[0]?.name ?? '';
         }
         const combinedDescription = solutionAppliedDesc || 'N/D';
-        const ai_solution = await (0, aiService_1.generateAiSolution)({
-            machine: `${machineRecord.name}`,
-            line: machineRecord.line ?? 'N/A',
-            problem: problemName,
-            cause: causeName,
-            sparePart: sparePartName,
-            description: combinedDescription
-        });
+        // Creazione caso: ritorna subito, generazione AI in background
         const r = await db_1.pool.query(`INSERT INTO cases(machine_id, problem_id, cause_id, spare_part_id, solution_applied_id, description, solution, ai_solution,
                         status, created_by, assigned_to)
        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
@@ -184,11 +177,29 @@ exports.casesRoutes.post('/', auth_1.authMiddleware, async (req, res, next) => {
             body.solution_applied_id ?? null,
             solutionAppliedDesc || null,
             solutionAppliedDesc || null,
-            ai_solution,
+            null,
             'closed',
             req.user.id,
             body.assigned_to ?? null
         ]);
+        // Kick off async AI generation (senza bloccare la risposta)
+        (0, aiService_1.generateAiSolution)({
+            machine: `${machineRecord.name}`,
+            line: machineRecord.line ?? 'N/A',
+            problem: problemName,
+            cause: causeName,
+            sparePart: sparePartName,
+            description: combinedDescription
+        })
+            .then(async (ai_solution) => {
+            await db_1.pool.query('UPDATE cases SET ai_solution = $1, updated_at = now() WHERE id = $2', [ai_solution, r.rows[0].id]);
+            (0, socketService_1.emitEvent)('case-updated', { caseId: r.rows[0].id });
+        })
+            .catch((err) => {
+            // non blocchiamo l'utente: log/gestione errori in background
+            // eslint-disable-next-line no-console
+            console.error('AI generation failed', err);
+        });
         await db_1.pool.query(`INSERT INTO case_events(case_id,event_type,message,actor_id)
        VALUES($1,'system','case created',$2)`, [r.rows[0].id, req.user.id]);
         (0, socketService_1.emitEvent)('case_created', { caseId: r.rows[0].id });

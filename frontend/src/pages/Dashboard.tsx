@@ -82,9 +82,11 @@ export default function Dashboard() {
   const [causeIdFilter, setCauseIdFilter] = useState('');
 
   const [topProblemsLimit, setTopProblemsLimit] = useState(5);
+  const [topProblemsByLineLimit, setTopProblemsByLineLimit] = useState(5);
   const [topCausesLimit, setTopCausesLimit] = useState(5);
   const [topMachinesLimit, setTopMachinesLimit] = useState(5);
   const [topSparePartsLimit, setTopSparePartsLimit] = useState(5);
+
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [page, setPage] = useState(1);
@@ -122,7 +124,8 @@ export default function Dashboard() {
         axios.get(`${API_URL}/cases`, { headers, params: caseParams }),
         axios.get(`${API_URL}/dashboard`, { headers }),
         axios.get(`${API_URL}/stats/trend-cases`, { headers, params: { ...filterParams, days: 30 } }),
-        axios.get(`${API_URL}/stats/problems-by-line`, { headers, params: filterParams }),
+        axios.get(`${API_URL}/stats/problems-by-line`, { headers, params: { ...filterParams, limit: topProblemsByLineLimit } }),
+
         axios.get(`${API_URL}/stats/top-problems`, { headers, params: { ...filterParams, limit: topProblemsLimit } }),
         axios.get(`${API_URL}/stats/top-causes`, { headers, params: { ...filterParams, limit: topCausesLimit } }),
         axios.get(`${API_URL}/stats/top-machines`, { headers, params: { ...filterParams, limit: topMachinesLimit } }),
@@ -375,8 +378,12 @@ export default function Dashboard() {
         </div>
 
         <div className="rounded-3xl bg-slate-900/80 p-4 shadow-lg shadow-slate-950/20 sm:p-6">
-          <h3 className="mb-4 text-lg font-semibold text-slate-100">Problemi per linea</h3>
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <h3 className="text-lg font-semibold text-slate-100">Problemi per linea</h3>
+            <TopSelector value={topProblemsByLineLimit} onChange={setTopProblemsByLineLimit} />
+          </div>
           <div className="w-full" style={{ height: 280 }}>
+
             {problemsByLine.length === 0 ? (
               <div className="flex h-full items-center justify-center text-sm text-slate-500">Nessun dato.</div>
             ) : (

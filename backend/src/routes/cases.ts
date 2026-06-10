@@ -203,15 +203,7 @@ casesRoutes.post('/', authMiddleware, async (req, res, next) => {
 
     const combinedDescription = solutionAppliedDesc || 'N/D';
 
-    const ai_solution = await generateAiSolution({
-      machine: `${machineRecord.name}`,
-      line: machineRecord.line ?? 'N/A',
-      problem: problemName,
-      cause: causeName,
-      sparePart: sparePartName,
-      description: combinedDescription
-    });
-
+    // Creazione caso: ritorna subito, generazione AI in background
     const r = await pool.query(
       `INSERT INTO cases(machine_id, problem_id, cause_id, spare_part_id, solution_applied_id, description, solution, ai_solution,
                         status, created_by, assigned_to)
@@ -225,12 +217,33 @@ casesRoutes.post('/', authMiddleware, async (req, res, next) => {
         body.solution_applied_id ?? null,
         solutionAppliedDesc || null,
         solutionAppliedDesc || null,
-        ai_solution,
+        null,
         'closed',
         req.user!.id,
         body.assigned_to ?? null
       ]
     );
+
+    // Kick off async AI generation (senza bloccare la risposta)
+    generateAiSolution({
+      machine: `${machineRecord.name}`,
+      line: machineRecord.line ?? 'N/A',
+      problem: problemName,
+      cause: causeName,
+      sparePart: sparePartName,
+      description: combinedDescription
+    })
+      .then(async (ai_solution) => {
+        await pool.query('UPDATE cases SET ai_solution = $1, updated_at = now() WHERE id = $2', [ai_solution, r.rows[0].id]);
+        emitEvent('case-updated', { caseId: r.rows[0].id });
+      })
+      .catch((err) => {
+        // non blocchiamo l'utente: log/gestione errori in background
+        // eslint-disable-next-line no-console
+        console.error('AI generation failed', err);
+      });
+
+
 
     await pool.query(
       `INSERT INTO case_events(case_id,event_type,message,actor_id)

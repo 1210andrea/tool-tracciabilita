@@ -30,6 +30,14 @@ exports.authRoutes.post('/auth/login', async (req, res, next) => {
         const { username, password } = req.body;
         if (!username || !password)
             return res.status(400).json({ error: 'username/password required' });
+        // logging minimo per correlare i 500 durante login
+        // (senza leak di password)
+        // eslint-disable-next-line no-console
+        console.log('[auth/login] attempt', { username });
+        if (!env_1.env.JWT_SECRET || env_1.env.JWT_SECRET.length < 10) {
+            // Errore di configurazione server-side: meglio farlo emergere chiaramente
+            return res.status(500).json({ error: 'Server misconfigured (JWT_SECRET missing)' });
+        }
         if (env_1.env.LDAP_ENABLED) {
             const ldap = new ldapService_1.LDAPService();
             try {
@@ -64,7 +72,15 @@ exports.authRoutes.post('/auth/login', async (req, res, next) => {
         return res.json({ token, role: r.rows[0].role });
     }
     catch (e) {
-        next(e);
+        const msg = String(e?.message ?? '');
+        // Log dettagliato per capire la causa del 500
+        // eslint-disable-next-line no-console
+        console.error('[auth/login] failed', { username: req.body?.username ?? undefined, msg, name: e?.name, stack: e?.stack });
+        // Errori prevedibili vengono convertiti in risposta 401 invece che 500
+        if (/invalid|credentials|bcrypt|hash|jwt/i.test(msg)) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+        return next(e);
     }
 });
 exports.authRoutes.get('/auth/me', auth_1.authMiddleware, async (req, res, next) => {

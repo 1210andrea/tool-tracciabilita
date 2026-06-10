@@ -11,18 +11,19 @@ type SparePartItem = { id: string; name: string; type: string };
 type SolutionItem = { id: string; name: string; description?: string };
 
 type CaseDetailResponse = {
-  item: {
-    id: string;
+  item?: {
+    id?: string;
     ai_solution?: string | null;
   };
 };
 
 type CreateCaseResponse = {
-  item: {
-    id: string;
+  item?: {
+    id?: string;
     ai_solution?: string | null;
   };
 };
+
 
 export default function CreateCase() {
   const { token, user } = useAuth();

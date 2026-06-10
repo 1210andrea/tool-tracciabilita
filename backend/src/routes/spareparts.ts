@@ -21,6 +21,8 @@ sparepartsRoutes.get('/spare-parts', authMiddleware, async (_req, res, next) => 
 
 sparepartsRoutes.get('/spare-parts/by-type/:type', authMiddleware, async (req, res, next) => {
   try {
+    // Compatibilità temporanea con lo schema attuale (spare_parts.type).
+    // NOTA: quando verrà applicata la migrazione many-to-many spare_part_types, questa route andrà aggiornata.
     const r = await pool.query(
       'SELECT id, name, type, description, created_at FROM spare_parts WHERE type = $1 ORDER BY name',
       [req.params.type]
@@ -30,6 +32,7 @@ sparepartsRoutes.get('/spare-parts/by-type/:type', authMiddleware, async (req, r
     next(e);
   }
 });
+
 
 sparepartsRoutes.post('/spare-parts', authMiddleware, async (req, res, next) => {
   try {

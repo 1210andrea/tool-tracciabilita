@@ -77,6 +77,8 @@ statsRoutes.get('/trend-cases', authMiddleware, async (req, res, next) => {
 
 statsRoutes.get('/problems-by-line', authMiddleware, async (req, res, next) => {
   try {
+    const allowed = [5, 10, 15];
+    const limit = allowed.includes(Number(req.query.limit)) ? Number(req.query.limit) : 5;
     const { whereClause, values } = buildFilterClause(req.query as FilterQuery, req.user!.id, req.user!.role);
     const r = await pool.query(
       `SELECT COALESCE(m.line, 'N/D') AS line, COUNT(*)::int AS problem_count
@@ -85,14 +87,16 @@ statsRoutes.get('/problems-by-line', authMiddleware, async (req, res, next) => {
        ${whereClause}
        GROUP BY m.line
        HAVING COUNT(*) > 0
-       ORDER BY problem_count DESC`,
-      values
+       ORDER BY problem_count DESC
+       LIMIT $${values.length + 1}`,
+      [...values, limit]
     );
     res.json({ items: r.rows });
   } catch (e) {
     next(e);
   }
 });
+
 
 statsRoutes.get('/top-problems', authMiddleware, async (req, res, next) => {
   try {
