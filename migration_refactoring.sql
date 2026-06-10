@@ -60,3 +60,6 @@ BEGIN
     ON CONFLICT (spare_part_id, tipologia) DO NOTHING;
   END IF;
 END $$;
+
+-- Ora che i dati sono stati migrati in spare_part_tipologie, rimuoviamo la vecchia colonna type da spare_parts
+ALTER TABLE spare_parts DROP COLUMN IF EXISTS type;
