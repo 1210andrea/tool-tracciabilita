@@ -34,13 +34,26 @@ CREATE TABLE IF NOT EXISTS categories (
 ALTER TABLE IF EXISTS categories ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'general';
 ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS operator_category_id uuid REFERENCES categories(id) ON DELETE SET NULL;
 
+-- Tabella pezzi di ricambio
 CREATE TABLE IF NOT EXISTS spare_parts (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
   name VARCHAR(255) NOT NULL,
-  type VARCHAR(100) NOT NULL,
   description TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Tabella tipo di ricambio (es. "Generico", "Specifico", ecc)
+CREATE TABLE IF NOT EXISTS spare_part_types (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  spare_part_id uuid NOT NULL REFERENCES spare_parts(id) ON DELETE CASCADE,
+  type VARCHAR(100) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(spare_part_id, type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_spare_parts_type ON spare_part_types(type);
+CREATE INDEX IF NOT EXISTS idx_spare_parts_spare_part ON spare_part_types(spare_part_id);
+
 
 CREATE TABLE IF NOT EXISTS solutions_applied (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -80,6 +93,7 @@ ALTER TABLE IF EXISTS cases DROP COLUMN IF EXISTS priority;
 ALTER TABLE IF EXISTS cases DROP CONSTRAINT IF EXISTS cases_spare_part_id_fkey;
 ALTER TABLE IF EXISTS cases ADD COLUMN IF NOT EXISTS spare_part_id uuid;
 
+
 CREATE TABLE IF NOT EXISTS case_events (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
   case_id uuid NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
@@ -92,7 +106,8 @@ CREATE TABLE IF NOT EXISTS case_events (
 CREATE INDEX IF NOT EXISTS idx_cases_machine_id ON cases(machine_id);
 CREATE INDEX IF NOT EXISTS idx_cases_status ON cases(status);
 CREATE INDEX IF NOT EXISTS idx_case_events_case_id ON case_events(case_id);
-CREATE INDEX IF NOT EXISTS idx_spare_parts_type ON spare_parts(type);
+-- idx_spare_parts_type moved to spare_part_types
+
 
 DO $$
 BEGIN
@@ -135,8 +150,9 @@ INSERT INTO machines(code,name,line,location,type) VALUES
 ('SIMM91','Linea 3 - Imballaggio','Linea 3','Reparto C','imballaggio')
 ON CONFLICT(code) DO UPDATE SET type = EXCLUDED.type;
 
-INSERT INTO spare_parts(name, type, description)
-SELECT v.name, v.type, v.description
+-- Seed spare parts + tipi (many-to-many)
+INSERT INTO spare_parts(name, description)
+SELECT v.name, v.description
 FROM (VALUES
   ('Cinghia di trazione', 'nastro', 'Cinghia principale nastro'),
   ('Sensore ottico', 'nastro', 'Sensore rilevamento prodotto'),
@@ -145,7 +161,24 @@ FROM (VALUES
   ('Connettore M12', 'controllo', 'Connettore sensore industriale'),
   ('Nastro trasportatore', 'imballaggio', 'Nastro linea imballaggio')
 ) AS v(name, type, description)
-WHERE NOT EXISTS (SELECT 1 FROM spare_parts sp WHERE sp.name = v.name AND sp.type = v.type);
+WHERE NOT EXISTS (SELECT 1 FROM spare_parts sp WHERE sp.name = v.name);
+
+INSERT INTO spare_part_types(spare_part_id, type)
+SELECT sp.id, v.type
+FROM (VALUES
+  ('Cinghia di trazione', 'nastro'),
+  ('Sensore ottico', 'nastro'),
+  ('Valvola pneumatica', 'assemblaggio'),
+  ('Motore riduttore', 'assemblaggio'),
+  ('Connettore M12', 'controllo'),
+  ('Nastro trasportatore', 'imballaggio')
+) AS v(name, type)
+JOIN spare_parts sp ON sp.name = v.name
+WHERE NOT EXISTS (
+  SELECT 1 FROM spare_part_types spt
+  WHERE spt.spare_part_id = sp.id AND spt.type = v.type
+);
+
 
 INSERT INTO solutions_applied(name, description)
 SELECT v.name, v.description
@@ -170,7 +203,13 @@ UPDATE users u SET operator_category_id = c.id
 FROM categories c
 WHERE c.type = 'operator' AND LOWER(c.name) = LOWER(u.username) AND u.operator_category_id IS NULL;
 
+-- reparto: compatibilità (oggi usiamo machines.type come reparto)
+ALTER TABLE IF EXISTS machines ADD COLUMN IF NOT EXISTS reparto VARCHAR(100);
+UPDATE machines SET reparto = COALESCE(reparto, type);
+
 UPDATE machines SET type = 'nastro' WHERE type IS NULL AND line = 'Linea 1';
 UPDATE machines SET type = 'assemblaggio' WHERE type IS NULL AND line = 'Linea 2' AND code = 'SIMM56';
 UPDATE machines SET type = 'controllo' WHERE type IS NULL AND line = 'Linea 2' AND code = 'SIMM78';
 UPDATE machines SET type = 'imballaggio' WHERE type IS NULL AND line = 'Linea 3';
+UPDATE machines SET reparto = COALESCE(reparto, type);
+

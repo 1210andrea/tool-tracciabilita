@@ -83,7 +83,9 @@ export default function Dashboard() {
 
   const [topProblemsLimit, setTopProblemsLimit] = useState(5);
   const [topProblemsByLineLimit, setTopProblemsByLineLimit] = useState(5);
+
   const [topCausesLimit, setTopCausesLimit] = useState(5);
+
   const [topMachinesLimit, setTopMachinesLimit] = useState(5);
   const [topSparePartsLimit, setTopSparePartsLimit] = useState(5);
 
@@ -125,6 +127,7 @@ export default function Dashboard() {
         axios.get(`${API_URL}/dashboard`, { headers }),
         axios.get(`${API_URL}/stats/trend-cases`, { headers, params: { ...filterParams, days: 30 } }),
         axios.get(`${API_URL}/stats/problems-by-line`, { headers, params: { ...filterParams, limit: topProblemsByLineLimit } }),
+
 
         axios.get(`${API_URL}/stats/top-problems`, { headers, params: { ...filterParams, limit: topProblemsLimit } }),
         axios.get(`${API_URL}/stats/top-causes`, { headers, params: { ...filterParams, limit: topCausesLimit } }),
@@ -182,7 +185,8 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadData();
-  }, [token, caseParams, filterParams, topProblemsLimit, topCausesLimit, topMachinesLimit, topSparePartsLimit]);
+  }, [token, caseParams, filterParams, topProblemsLimit, topProblemsByLineLimit, topCausesLimit, topMachinesLimit, topSparePartsLimit]);
+
 
   useEffect(() => {
     setPage(1);
