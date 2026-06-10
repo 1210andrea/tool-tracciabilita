@@ -5,7 +5,52 @@ import { formatOllamaUnavailableMessage, generateCaseInsights } from '../service
 
 export const aiRoutes = Router();
 
+aiRoutes.post('/suggest-solution', authMiddleware, async (req, res, next) => {
+  try {
+    const { machine_id, problem_id, cause_id, description, spare_part_id } = req.body as {
+      machine_id?: string;
+      problem_id?: string | null;
+      cause_id?: string | null;
+      description?: string;
+      spare_part_id?: string | null;
+    };
+
+    if (!machine_id) return res.status(400).json({ error: 'machine_id è obbligatorio' });
+
+    const [machineR, problemR, causeR, spareR] = await Promise.all([
+      pool.query('SELECT code, name, line, tipologia FROM machines WHERE id = $1', [machine_id]),
+      problem_id ? pool.query('SELECT name FROM categories WHERE id = $1', [problem_id]) : Promise.resolve({ rows: [] }),
+      cause_id ? pool.query('SELECT name FROM categories WHERE id = $1', [cause_id]) : Promise.resolve({ rows: [] }),
+      spare_part_id ? pool.query('SELECT name FROM spare_parts WHERE id = $1', [spare_part_id]) : Promise.resolve({ rows: [] })
+    ]);
+
+    const machine = machineR.rows[0];
+    if (!machine) return res.status(400).json({ error: 'Macchina non trovata' });
+
+    const problemName = problemR.rows[0]?.name ?? 'N/D';
+    const causeName = causeR.rows[0]?.name ?? 'N/D';
+    const sparePartName = spareR.rows[0]?.name ?? 'N/D';
+    const desc = description?.trim() ? description.trim() : 'N/D';
+
+    // Usa lo stesso generatore esistente (quick suggestion) senza bloccare DB
+    const { generateAiSolution } = await import('../services/aiService');
+    const suggestion = await generateAiSolution({
+      machine: `${machine.name}`,
+      line: machine.line ?? 'N/A',
+      problem: problemName,
+      cause: causeName,
+      sparePart: sparePartName,
+      description: desc
+    });
+
+    res.json({ suggestion, insufficient: false });
+  } catch (e) {
+    next(e);
+  }
+});
+
 aiRoutes.post('/analyze', authMiddleware, async (req, res, next) => {
+
   try {
     const { machine_id, problem_id, cause_id } = req.body as {
       machine_id?: string;

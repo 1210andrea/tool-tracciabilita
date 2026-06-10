@@ -7,30 +7,37 @@ export const machinesRoutes = Router();
 
 machinesRoutes.get('/', authMiddleware, async (_req, res, next) => {
   try {
-    const r = await pool.query('SELECT id, code, name, line, location, type, created_at FROM machines ORDER BY created_at DESC');
+    const r = await pool.query(
+      'SELECT id, code, name, line, location, tipologia, type, posizione, created_at FROM machines ORDER BY created_at DESC'
+    );
     res.json({ items: r.rows });
   } catch (e) {
     next(e);
   }
 });
 
+
 machinesRoutes.post('/', authMiddleware, async (req, res, next) => {
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
 
-    const { code, name, line, location, type } = req.body as {
+    const { code, name, line, location, tipologia, type, posizione } = req.body as {
       code: string;
       name: string;
       line?: string;
       location?: string;
+      tipologia?: string;
       type?: string;
+      posizione?: string;
     };
 
     if (!code || !name) return res.status(400).json({ error: 'code and name are required' });
 
+    const resolvedTipologia = (tipologia ?? type ?? posizione ?? null) as string | null;
+
     const r = await pool.query(
-      'INSERT INTO machines(code,name,line,location,type) VALUES($1,$2,$3,$4,$5) RETURNING id, code, name, line, location, type, created_at',
-      [code, name, line ?? null, location ?? null, type ?? null]
+      'INSERT INTO machines(code,name,line,location,tipologia) VALUES($1,$2,$3,$4,$5) RETURNING id, code, name, line, location, tipologia, created_at',
+      [code, name, line ?? null, location ?? null, resolvedTipologia]
     );
     emitEvent('machine_updated', { machineId: r.rows[0].id, action: 'created' });
     res.json({ item: r.rows[0] });
@@ -38,6 +45,7 @@ machinesRoutes.post('/', authMiddleware, async (req, res, next) => {
     next(e);
   }
 });
+
 
 machinesRoutes.put('/:id', authMiddleware, async (req, res, next) => {
   try {

@@ -10,13 +10,18 @@ const CASE_FIELDS = `c.id, c.machine_id, c.problem_id, c.cause_id, c.spare_part_
   c.description, c.solution, c.ai_solution, c.status, c.created_by, c.assigned_to,
   c.created_at, c.updated_at`;
 
+
 const CASE_JOINS = `
   JOIN machines m ON m.id = c.machine_id
   LEFT JOIN users u ON u.id = c.created_by
   LEFT JOIN categories prob ON prob.id = c.problem_id
   LEFT JOIN categories cause ON cause.id = c.cause_id
   LEFT JOIN spare_parts sp ON sp.id = c.spare_part_id
-  LEFT JOIN solutions_applied sa ON sa.id = c.solution_applied_id`;
+  LEFT JOIN solutions_applied sa ON sa.id = c.solution_applied_id
+  LEFT JOIN categories oper ON oper.id = (SELECT operator_category_id FROM users uu WHERE uu.id = c.created_by)`;
+
+
+
 
 async function getCaseRow(caseId: string) {
   const r = await pool.query('SELECT * FROM cases WHERE id = $1', [caseId]);

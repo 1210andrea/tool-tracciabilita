@@ -17,11 +17,20 @@ CREATE TABLE IF NOT EXISTS machines (
   name TEXT NOT NULL,
   line TEXT,
   location TEXT,
-  type VARCHAR(100),
+  tipologia VARCHAR(100),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE IF EXISTS machines ADD COLUMN IF NOT EXISTS line TEXT;
+ALTER TABLE IF EXISTS machines ADD COLUMN IF NOT EXISTS tipologia VARCHAR(100);
+
+-- back-compat: se esiste ancora la vecchia colonna type/posizione, la mappiamo
 ALTER TABLE IF EXISTS machines ADD COLUMN IF NOT EXISTS type VARCHAR(100);
+ALTER TABLE IF EXISTS machines ADD COLUMN IF NOT EXISTS posizione VARCHAR(100);
+
+-- se tipologia è vuota, prendiamo il valore dalla vecchia colonna
+UPDATE machines SET tipologia = COALESCE(NULLIF(tipologia, ''), posizione, type);
+
+CREATE INDEX IF NOT EXISTS idx_machines_tipologia ON machines(tipologia);
 
 CREATE TABLE IF NOT EXISTS categories (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -42,7 +51,20 @@ CREATE TABLE IF NOT EXISTS spare_parts (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Tabella tipo di ricambio (es. "Generico", "Specifico", ecc)
+-- Many-to-many: pezzo di ricambio <-> tipologie macchina (valori presi da machines.tipologia)
+-- nota: manteniamo la vecchia spare_part_types in back-compat ma la nuova logica usa spare_part_tipologie.
+CREATE TABLE IF NOT EXISTS spare_part_tipologie (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  spare_part_id uuid NOT NULL REFERENCES spare_parts(id) ON DELETE CASCADE,
+  tipologia VARCHAR(100) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(spare_part_id, tipologia)
+);
+
+CREATE INDEX IF NOT EXISTS idx_spare_part_tipologie_tipologia ON spare_part_tipologie(tipologia);
+CREATE INDEX IF NOT EXISTS idx_spare_part_tipologie_spare_part ON spare_part_tipologie(spare_part_id);
+
+-- Back-compat: spare_part_types esiste già in alcuni ambienti; se presente, la usiamo per migrare i dati.
 CREATE TABLE IF NOT EXISTS spare_part_types (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
   spare_part_id uuid NOT NULL REFERENCES spare_parts(id) ON DELETE CASCADE,
@@ -53,6 +75,9 @@ CREATE TABLE IF NOT EXISTS spare_part_types (
 
 CREATE INDEX IF NOT EXISTS idx_spare_parts_type ON spare_part_types(type);
 CREATE INDEX IF NOT EXISTS idx_spare_parts_spare_part ON spare_part_types(spare_part_id);
+
+
+
 
 
 CREATE TABLE IF NOT EXISTS solutions_applied (
@@ -163,6 +188,7 @@ FROM (VALUES
 ) AS v(name, type, description)
 WHERE NOT EXISTS (SELECT 1 FROM spare_parts sp WHERE sp.name = v.name);
 
+-- legacy seed (manteniamo solo per migrare dati se serve)
 INSERT INTO spare_part_types(spare_part_id, type)
 SELECT sp.id, v.type
 FROM (VALUES
@@ -178,6 +204,26 @@ WHERE NOT EXISTS (
   SELECT 1 FROM spare_part_types spt
   WHERE spt.spare_part_id = sp.id AND spt.type = v.type
 );
+
+-- nuova seed: spare_part_tipologie (tipologia == machines.tipologia)
+INSERT INTO spare_part_tipologie(spare_part_id, tipologia)
+SELECT sp.id, v.tipologia
+FROM (VALUES
+  ('Cinghia di trazione', 'nastro'),
+  ('Sensore ottico', 'nastro'),
+  ('Valvola pneumatica', 'assemblaggio'),
+  ('Motore riduttore', 'assemblaggio'),
+  ('Connettore M12', 'controllo'),
+  ('Nastro trasportatore', 'imballaggio')
+) AS v(name, tipologia)
+JOIN spare_parts sp ON sp.name = v.name
+WHERE NOT EXISTS (
+  SELECT 1 FROM spare_part_tipologie spt
+  WHERE spt.spare_part_id = sp.id AND spt.tipologia = v.tipologia
+);
+
+
+
 
 
 INSERT INTO solutions_applied(name, description)

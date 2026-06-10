@@ -6,8 +6,9 @@ import { useAuth } from '../context/AuthContext';
 const API_URL = '/api';
 
 type CategoryItem = { id: string; type: string; name: string };
-type MachineItem = { id: string; code: string; name: string; type?: string; reparto?: string };
-type SparePartItem = { id: string; name: string; type?: string; reparto?: string };
+type MachineItem = { id: string; code: string; name: string; tipologia?: string; type?: string; reparto?: string };
+type SparePartItem = { id: string; name: string; tipologie?: string[]; types?: string[] };
+
 
 type SolutionItem = { id: string; name: string; description?: string };
 
@@ -39,8 +40,12 @@ export default function CreateCase() {
   const [machineId, setMachineId] = useState('');
   const [problemId, setProblemId] = useState('');
   const [causeId, setCauseId] = useState('');
-  const [sparePartId, setSparePartId] = useState('');
+  const [sparePartIds, setSparePartIds] = useState<string[]>([]);
+  const [realTimeAi, setRealTimeAi] = useState<string | null>(null);
+  const [realTimeAiStatus, setRealTimeAiStatus] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle');
+
   const [solutionAppliedId, setSolutionAppliedId] = useState('');
+
 
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -82,27 +87,29 @@ export default function CreateCase() {
   useEffect(() => {
     if (!token || !machineId) {
       setSpareParts([]);
-      setSparePartId('');
+      setSparePartIds([]);
       return;
     }
 
     const machine = machines.find((m) => m.id === machineId);
-    const repartoOrType = (machine?.reparto ?? machine?.type) as string | undefined;
+    const tipologia = (machine?.tipologia ?? machine?.type ?? machine?.reparto) as string | undefined;
 
-    if (!repartoOrType) {
+    if (!tipologia) {
       setSpareParts([]);
-      setSparePartId('');
+      setSparePartIds([]);
       return;
     }
+
 
     const loadSpareParts = async () => {
       setLoadingParts(true);
       try {
-        const resp = await axios.get(`${API_URL}/spare-parts/by-type/${encodeURIComponent(repartoOrType)}` , {
+        const resp = await axios.get(`${API_URL}/spare-parts/by-type/${encodeURIComponent(tipologia)}` , {
           headers: { Authorization: `Bearer ${token}` }
         });
         setSpareParts(resp.data.items || []);
-        setSparePartId('');
+        setSparePartIds([]);
+
       } catch {
         setSpareParts([]);
       } finally {

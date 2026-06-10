@@ -4,6 +4,11 @@ import { pool } from '../db';
 
 export const sparepartsRoutes = Router();
 
+function sparePartTipologiaWhere(field: string, values: string[]) {
+  // field è la colonna tipologia, values sono i tipologie (IN)
+  return `${field} = ANY($1::text[])`;
+}
+
 sparepartsRoutes.get('/spare-parts', authMiddleware, async (_req, res, next) => {
   try {
     const r = await pool.query(
@@ -12,9 +17,9 @@ sparepartsRoutes.get('/spare-parts', authMiddleware, async (_req, res, next) => 
               sp.description,
               sp.created_at,
               COUNT(c.id)::int AS usage_count,
-              COALESCE(ARRAY_AGG(spt.type) FILTER (WHERE spt.type IS NOT NULL), '{}') AS types
+              COALESCE(ARRAY_AGG(spt.tipologia) FILTER (WHERE spt.tipologia IS NOT NULL), '{}') AS tipologie
        FROM spare_parts sp
-       LEFT JOIN spare_part_types spt ON spt.spare_part_id = sp.id
+       LEFT JOIN spare_part_tipologie spt ON spt.spare_part_id = sp.id
        LEFT JOIN cases c ON c.spare_part_id = sp.id
        GROUP BY sp.id
        ORDER BY sp.created_at DESC`
@@ -26,13 +31,14 @@ sparepartsRoutes.get('/spare-parts', authMiddleware, async (_req, res, next) => 
 });
 
 
+// compat: manteniamo by-type/:type, ma lo interpretiamo come tipologia
 sparepartsRoutes.get('/spare-parts/by-type/:type', authMiddleware, async (req, res, next) => {
   try {
     const r = await pool.query(
       `SELECT sp.id, sp.name, sp.description, sp.created_at,
-              ARRAY_AGG(spt.type) FILTER (WHERE spt.type IS NOT NULL) AS types
+              COALESCE(ARRAY_AGG(spt.tipologia) FILTER (WHERE spt.tipologia IS NOT NULL), '{}') AS tipologie
        FROM spare_parts sp
-       JOIN spare_part_types spt ON spt.spare_part_id = sp.id AND spt.type = $1
+       JOIN spare_part_tipologie spt ON spt.spare_part_id = sp.id AND spt.tipologia = $1
        GROUP BY sp.id
        ORDER BY sp.name`,
       [req.params.type]
@@ -43,26 +49,27 @@ sparepartsRoutes.get('/spare-parts/by-type/:type', authMiddleware, async (req, r
   }
 });
 
+
 sparepartsRoutes.post('/spare-parts', authMiddleware, async (req, res, next) => {
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
 
-    const { name, description, types } = req.body as {
+    const { name, description, tipologie, types } = req.body as {
       name?: string;
       description?: string;
-      types?: string[];
+      tipologie?: string[];
+      types?: string[]; // back-compat
     };
 
     if (!name?.trim()) {
       return res.status(400).json({ error: 'name è obbligatorio' });
     }
 
-    const cleanedTypes = Array.isArray(types)
-      ? types.map((t) => String(t).trim()).filter((t) => Boolean(t))
-      : [];
+    const raw = Array.isArray(tipologie) && tipologie.length ? tipologie : (Array.isArray(types) ? types : []);
+    const cleanedTipologie = raw.map((t) => String(t).trim()).filter(Boolean);
 
-    if (!cleanedTypes.length) {
-      return res.status(400).json({ error: 'types (array di tipi/reparti) è obbligatorio' });
+    if (!cleanedTipologie.length) {
+      return res.status(400).json({ error: 'tipologie (array) è obbligatorio' });
     }
 
     const client = await pool.connect();
@@ -77,15 +84,15 @@ sparepartsRoutes.post('/spare-parts', authMiddleware, async (req, res, next) => 
       const sparePartId = spR.rows[0].id as string;
 
       const values: any[] = [];
-      const placeholders = cleanedTypes.map((t, idx) => {
+      const placeholders = cleanedTipologie.map((t, idx) => {
         values.push(sparePartId, t);
         return `($${idx * 2 + 1}, $${idx * 2 + 2})`;
       });
 
       await client.query(
-        `INSERT INTO spare_part_types(spare_part_id, type)
+        `INSERT INTO spare_part_tipologie(spare_part_id, tipologia)
          VALUES ${placeholders.join(', ')}
-         ON CONFLICT(spare_part_id, type) DO NOTHING`,
+         ON CONFLICT(spare_part_id, tipologia) DO NOTHING`,
         values
       );
 
@@ -96,7 +103,7 @@ sparepartsRoutes.post('/spare-parts', authMiddleware, async (req, res, next) => 
           id: sparePartId,
           name: spR.rows[0].name,
           description: spR.rows[0].description,
-          types: cleanedTypes
+          tipologie: cleanedTipologie
         }
       });
     } catch (e) {
@@ -109,6 +116,9 @@ sparepartsRoutes.post('/spare-parts', authMiddleware, async (req, res, next) => 
     next(e);
   }
 });
+
+
+
 
 sparepartsRoutes.delete('/spare-parts/:id', authMiddleware, async (req, res, next) => {
   try {

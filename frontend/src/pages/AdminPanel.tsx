@@ -6,13 +6,14 @@ import { AdminCategoriesTabs } from '../components/AdminCategoriesTabs';
 import { ConfirmModal } from '../components/ConfirmModal';
 
 type Category = { id: string; type: string; name: string; description?: string };
-type Machine = { id: string; code: string; name: string; line?: string; location?: string; type?: string };
+type Machine = { id: string; code: string; name: string; line?: string; location?: string; tipologia?: string; type?: string; posizione?: string };
 type User = { id: string; username: string; email?: string; role: string };
-type SparePart = { id: string; name: string; type: string; description?: string; usage_count?: number };
+type SparePart = { id: string; name: string; tipologia?: string[]; tipologie?: string[]; type?: string; description?: string; usage_count?: number };
 type SolutionApplied = { id: string; name: string; description?: string; usage_count?: number };
 
 const API_URL = '/api';
-const MACHINE_TYPES = ['nastro', 'assemblaggio', 'controllo', 'imballaggio', 'generico'];
+const TIPologie_TYPES = ['nastro', 'assemblaggio', 'controllo', 'imballaggio'];
+
 
 export default function AdminPanel() {
   const { token } = useAuth();
@@ -32,10 +33,11 @@ export default function AdminPanel() {
   const [message, setMessage] = useState<string | null>(null);
 
   const [categoryForm, setCategoryForm] = useState({ type: 'operator', name: '', description: '' });
-  const [machineForm, setMachineForm] = useState({ code: '', name: '', line: '', location: '', type: 'generico' });
+  const [machineForm, setMachineForm] = useState({ code: '', name: '', line: '', location: '', tipologia: '' });
   const [userForm, setUserForm] = useState({ username: '', email: '', password: '', role: 'user', operator_category_id: '' });
-  const [sparePartForm, setSparePartForm] = useState({ name: '', type: 'generico', description: '' });
+  const [sparePartForm, setSparePartForm] = useState({ name: '', tipologie: [] as string[], description: '' });
   const [solutionForm, setSolutionForm] = useState({ name: '', description: '' });
+
 
   const headers = useMemo(() => ({ headers: { Authorization: `Bearer ${token}` } }), [token]);
 
@@ -83,14 +85,16 @@ export default function AdminPanel() {
 
   const submitMachine = async () => {
     try {
-      await axios.post(`${API_URL}/machines`, machineForm, headers);
+      // back-compat BE: se manca tipologia, ma c'era type/posizione, li risolve via SQL
+      await axios.post(`${API_URL}/machines`, { ...machineForm, tipologia: machineForm.tipologia || undefined }, headers);
       setMessage('Macchina aggiunta.');
-      setMachineForm({ code: '', name: '', line: '', location: '', type: 'generico' });
+      setMachineForm({ code: '', name: '', line: '', location: '', tipologia: '' });
       loadAll();
     } catch (err: any) {
       setMessage(err?.response?.data?.error ?? 'Errore salvataggio macchina.');
     }
   };
+
 
   const submitUser = async () => {
     try {
@@ -237,6 +241,7 @@ export default function AdminPanel() {
 
           {activeTab === 'machines' && (
             <>
+
               <div>
                 <h2 className="text-xl font-semibold text-slate-100">Nuova macchina</h2>
                 <p className="text-sm text-slate-400">Aggiungi qui le macchine della linea.</p>
@@ -246,8 +251,8 @@ export default function AdminPanel() {
                 <input value={machineForm.name} onChange={(e) => setMachineForm((c) => ({ ...c, name: e.target.value }))} placeholder="Nome macchina" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
                 <input value={machineForm.line} onChange={(e) => setMachineForm((c) => ({ ...c, line: e.target.value }))} placeholder="Linea" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
                 <input value={machineForm.location} onChange={(e) => setMachineForm((c) => ({ ...c, location: e.target.value }))} placeholder="Posizione" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
-                <select value={machineForm.type} onChange={(e) => setMachineForm((c) => ({ ...c, type: e.target.value }))} className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none sm:col-span-2">
-                  {MACHINE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                <select value={machineForm.tipologia} onChange={(e) => setMachineForm((c) => ({ ...c, tipologia: e.target.value }))} className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none sm:col-span-2">
+                  {TIPologie_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
               <button type="button" className="w-full rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 sm:w-auto" onClick={submitMachine}>
