@@ -293,8 +293,9 @@ export default function CreateCase() {
               setMachineId(exact ? exact.id : '');
             }}
             placeholder="Scrivi (es. SIMM45 - Linea 1 ...)"
-            className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
+            className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none placeholder:text-slate-500 focus:border-sky-500/40 focus:ring-2 focus:ring-sky-500/10"
           />
+
 
 
         </div>
