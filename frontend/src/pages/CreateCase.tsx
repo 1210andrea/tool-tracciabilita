@@ -288,13 +288,19 @@ export default function CreateCase() {
             })()}
             onChange={(e) => {
               const v = e.target.value;
-              // non fare matching automatico: l'input serve solo a mostrare/consentire selezione dall'elenco
-              if (!v) setMachineId('');
+              if (!v) {
+                setMachineId('');
+                return;
+              }
+              // Consenti scrittura: se il valore (code - name) corrisponde a una macchina, aggiorna la selezione
+              const exact = machines.find((m) => `${m.code} - ${m.name}` === v);
+              if (exact) setMachineId(exact.id);
             }}
-            placeholder="Seleziona una macchina dalla lista"
+            placeholder="Seleziona o scrivi (es. SIMM45)"
             className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
             list="machines-list"
           />
+
 
           <datalist id="machines-list">
             {machines.map((m) => (
