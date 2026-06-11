@@ -288,20 +288,24 @@ export default function CreateCase() {
             })()}
             onChange={(e) => {
               const v = e.target.value;
-              const matches = machines.filter((m) => (`${m.code} - ${m.name}`.toLowerCase()).includes(v.toLowerCase()));
-              if (matches.length === 1) setMachineId(matches[0].id);
+              // non fare matching automatico: l'input serve solo a mostrare/consentire selezione dall'elenco
               if (!v) setMachineId('');
             }}
-            placeholder="Scrivi per cercare (es. SIMM45)"
+            placeholder="Seleziona una macchina dalla lista"
             className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
             list="machines-list"
           />
 
           <datalist id="machines-list">
             {machines.map((m) => (
-              <option key={m.id} value={`${m.code} - ${m.name}`} />
+              <option
+                key={m.id}
+                value={`${m.code} - ${m.name}`}
+                onClick={() => setMachineId(m.id)}
+              />
             ))}
           </datalist>
+
         </div>
 
 
