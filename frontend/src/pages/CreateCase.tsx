@@ -280,13 +280,30 @@ export default function CreateCase() {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6">
           <label className="text-sm font-medium text-slate-200">Macchina <span className="text-red-400">*</span></label>
-          <select value={machineId} onChange={(e) => setMachineId(e.target.value)} className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none">
-            <option value="">Seleziona una macchina</option>
-            {machines.map((machine) => (
-              <option key={machine.id} value={machine.id}>{machine.code} - {machine.name}</option>
+
+          <input
+            value={(() => {
+              const selected = machines.find((m) => m.id === machineId);
+              return selected ? `${selected.code} - ${selected.name}` : '';
+            })()}
+            onChange={(e) => {
+              const v = e.target.value;
+              const matches = machines.filter((m) => (`${m.code} - ${m.name}`.toLowerCase()).includes(v.toLowerCase()));
+              if (matches.length === 1) setMachineId(matches[0].id);
+              if (!v) setMachineId('');
+            }}
+            placeholder="Scrivi per cercare (es. SIMM45)"
+            className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
+            list="machines-list"
+          />
+
+          <datalist id="machines-list">
+            {machines.map((m) => (
+              <option key={m.id} value={`${m.code} - ${m.name}`} />
             ))}
-          </select>
+          </datalist>
         </div>
+
 
         <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6">
           <label className="text-sm font-medium text-slate-200">Pezzo di ricambio <span className="text-red-400">*</span></label>
