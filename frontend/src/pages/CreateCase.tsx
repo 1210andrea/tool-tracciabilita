@@ -288,29 +288,14 @@ export default function CreateCase() {
             })()}
             onChange={(e) => {
               const v = e.target.value;
-              if (!v) {
-                setMachineId('');
-                return;
-              }
-              // Consenti scrittura: se il valore (code - name) corrisponde a una macchina, aggiorna la selezione
+              // reset selezione finché non combacia esattamente
               const exact = machines.find((m) => `${m.code} - ${m.name}` === v);
-              if (exact) setMachineId(exact.id);
+              setMachineId(exact ? exact.id : '');
             }}
-            placeholder="Seleziona o scrivi (es. SIMM45)"
+            placeholder="Scrivi (es. SIMM45 - Linea 1 ...)"
             className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
-            list="machines-list"
           />
 
-
-          <datalist id="machines-list">
-            {machines.map((m) => (
-              <option
-                key={m.id}
-                value={`${m.code} - ${m.name}`}
-                onClick={() => setMachineId(m.id)}
-              />
-            ))}
-          </datalist>
 
         </div>
 
