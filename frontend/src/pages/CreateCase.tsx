@@ -38,11 +38,19 @@ export default function CreateCase() {
   const [solutions, setSolutions] = useState<SolutionItem[]>([]);
 
   const [machineId, setMachineId] = useState('');
+  const [machineSearch, setMachineSearch] = useState('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [problemId, setProblemId] = useState('');
   const [causeId, setCauseId] = useState('');
   const [sparePartId, setSparePartId] = useState('');
   const [realTimeAi, setRealTimeAi] = useState<string | null>(null);
   const [realTimeAiStatus, setRealTimeAiStatus] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle');
+
+  const filteredMachines = machineSearch.trim() === ''
+    ? machines
+    : machines.filter((m) =>
+        `${m.code} - ${m.name}`.toLowerCase().includes(machineSearch.toLowerCase())
+      );
 
   const [solutionAppliedId, setSolutionAppliedId] = useState('');
 
@@ -231,6 +239,7 @@ export default function CreateCase() {
 
       // reset selezioni form
       setMachineId('');
+      setMachineSearch('');
       setProblemId('');
       setCauseId('');
       setSparePartId('');
@@ -281,23 +290,60 @@ export default function CreateCase() {
         <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6">
           <label className="text-sm font-medium text-slate-200">Macchina <span className="text-red-400">*</span></label>
 
-          <input
-            value={(() => {
-              const selected = machines.find((m) => m.id === machineId);
-              return selected ? `${selected.code} - ${selected.name}` : '';
-            })()}
-            onChange={(e) => {
-              const v = e.target.value;
-              // reset selezione finché non combacia esattamente
-              const exact = machines.find((m) => `${m.code} - ${m.name}` === v);
-              setMachineId(exact ? exact.id : '');
-            }}
-            placeholder="Scrivi (es. SIMM45 - Linea 1 ...)"
-            className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none placeholder:text-slate-500 focus:border-sky-500/40 focus:ring-2 focus:ring-sky-500/10"
-          />
-
-
-
+          <div className="relative mt-3">
+            <input
+              type="text"
+              value={machineSearch}
+              onChange={(e) => {
+                const val = e.target.value;
+                setMachineSearch(val);
+                const exact = machines.find(
+                  (m) =>
+                    `${m.code} - ${m.name}`.toLowerCase() === val.toLowerCase().trim() ||
+                    m.code.toLowerCase() === val.toLowerCase().trim()
+                );
+                setMachineId(exact ? exact.id : '');
+              }}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => {
+                setTimeout(() => setShowSuggestions(false), 200);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  setShowSuggestions(false);
+                }
+              }}
+              placeholder="Scrivi (es. SIMM45 - Linea 1 ...)"
+              className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none placeholder:text-slate-500 focus:border-sky-500/40 focus:ring-2 focus:ring-sky-500/10"
+            />
+            {showSuggestions && filteredMachines.length > 0 && (
+              <div className="absolute left-0 right-0 z-50 mt-2 max-h-60 overflow-y-auto rounded-2xl border border-slate-700 bg-slate-950/95 p-2 shadow-2xl backdrop-blur-md transition-all duration-200">
+                {filteredMachines.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                    }}
+                    onClick={() => {
+                      setMachineId(m.id);
+                      setMachineSearch(`${m.code} - ${m.name}`);
+                      setShowSuggestions(false);
+                    }}
+                    className="w-full text-left px-4 py-3 rounded-xl hover:bg-sky-500/20 hover:text-sky-300 text-slate-200 text-sm transition-colors duration-150 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1"
+                  >
+                    <div className="font-semibold text-slate-100">{m.code}</div>
+                    <div className="text-xs text-slate-400">{m.name}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+            {showSuggestions && machineSearch.trim() !== '' && filteredMachines.length === 0 && (
+              <div className="absolute left-0 right-0 z-50 mt-2 rounded-2xl border border-slate-700 bg-slate-950/95 p-4 shadow-2xl backdrop-blur-md text-sm text-slate-400 text-center italic">
+                Nessuna macchina trovata
+              </div>
+            )}
+          </div>
         </div>
 
 
