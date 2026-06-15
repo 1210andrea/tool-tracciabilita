@@ -21,6 +21,7 @@ import { ConfirmModal } from '../components/ConfirmModal';
 const API_URL = '/api';
 
 type CaseItem = {
+
   id: string;
   machine_id: string;
   machine_code: string;
