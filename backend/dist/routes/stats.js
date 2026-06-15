@@ -142,12 +142,12 @@ exports.statsRoutes.get('/top-spare-parts', auth_1.authMiddleware, async (req, r
     try {
         const limit = [5, 10, 15].includes(Number(req.query.limit)) ? Number(req.query.limit) : 5;
         const { whereClause, values } = buildFilterClause(req.query, req.user.id, req.user.role);
-        const extra = whereClause ? `${whereClause} AND c.spare_part_id IS NOT NULL` : 'WHERE c.spare_part_id IS NOT NULL';
         const r = await db_1.pool.query(`SELECT sp.name AS spare_part, COUNT(*)::int AS usage_count
        FROM cases c
        JOIN machines m ON m.id = c.machine_id
-       JOIN spare_parts sp ON sp.id = c.spare_part_id
-       ${extra}
+       JOIN case_spare_parts csp ON csp.case_id = c.id
+       JOIN spare_parts sp ON sp.id = csp.spare_part_id
+       ${whereClause}
        GROUP BY sp.name
        HAVING COUNT(*) > 0
        ORDER BY usage_count DESC

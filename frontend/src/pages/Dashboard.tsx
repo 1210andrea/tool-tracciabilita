@@ -70,6 +70,7 @@ export default function Dashboard() {
   const [topCauses, setTopCauses] = useState<{ cause: string; count: number }[]>([]);
   const [topMachines, setTopMachines] = useState<{ machine: string; count: number }[]>([]);
   const [topSpareParts, setTopSpareParts] = useState<{ spare_part: string; usage_count: number }[]>([]);
+  const [problemiTempo, setProblemiTempo] = useState<{ nome: string; tempo_totale: number }[]>([]);
   const [summary, setSummary] = useState({ total: 0, this_month: 0 });
 
   const [monthFilter, setMonthFilter] = useState('');
@@ -124,17 +125,16 @@ export default function Dashboard() {
     setLoading(true);
     try {
       const headers = { Authorization: `Bearer ${token}` };
-      const [casesResp, dashboardResp, trendResp, lineResp, probResp, causeResp, machResp, spareResp] = await Promise.all([
+      const [casesResp, dashboardResp, trendResp, lineResp, probResp, causeResp, machResp, spareResp, probTempoResp] = await Promise.all([
         axios.get(`${API_URL}/cases`, { headers, params: caseParams }),
         axios.get(`${API_URL}/dashboard`, { headers }),
         axios.get(`${API_URL}/stats/trend-cases`, { headers, params: { ...filterParams, days: 30 } }),
         axios.get(`${API_URL}/stats/problems-by-line`, { headers, params: { ...filterParams, limit: topProblemsByLineLimit } }),
-
-
         axios.get(`${API_URL}/stats/top-problems`, { headers, params: { ...filterParams, limit: topProblemsLimit } }),
         axios.get(`${API_URL}/stats/top-causes`, { headers, params: { ...filterParams, limit: topCausesLimit } }),
         axios.get(`${API_URL}/stats/top-machines`, { headers, params: { ...filterParams, limit: topMachinesLimit } }),
-        axios.get(`${API_URL}/stats/top-spare-parts`, { headers, params: { ...filterParams, limit: topSparePartsLimit } })
+        axios.get(`${API_URL}/stats/top-spare-parts`, { headers, params: { ...filterParams, limit: topSparePartsLimit } }),
+        axios.get(`${API_URL}/dashboard/problemi-tempo`, { headers })
       ]);
 
       setCases(casesResp.data.items || []);
@@ -146,6 +146,7 @@ export default function Dashboard() {
       setTopCauses(causeResp.data.items || []);
       setTopMachines(machResp.data.items || []);
       setTopSpareParts(spareResp.data.items || []);
+      setProblemiTempo(probTempoResp.data.data || []);
     } catch {
       setCases([]);
       setTrend([]);
@@ -154,6 +155,7 @@ export default function Dashboard() {
       setTopCauses([]);
       setTopMachines([]);
       setTopSpareParts([]);
+      setProblemiTempo([]);
       setTotal(0);
     } finally {
       setLoading(false);
@@ -519,6 +521,32 @@ export default function Dashboard() {
                   <YAxis stroke="#94a3b8" fontSize={12} allowDecimals={false} width={32} />
                   <Tooltip wrapperStyle={chartTooltipStyle} />
                   <Bar dataKey="count" fill="#f472b6" radius={[6, 6, 0, 0]} maxBarSize={48} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-3xl bg-slate-900/80 p-4 shadow-lg shadow-slate-950/20 sm:p-6 md:col-span-2">
+          <h3 className="mb-4 text-lg font-semibold text-slate-100">Problemi che Occupano Più Tempo (Ore)</h3>
+          <div className="w-full font-sans" style={{ minHeight: 340 }}>
+            {problemiTempo.length === 0 ? (
+              <div className="flex h-[340px] items-center justify-center text-sm text-slate-500">Nessun dato relativo al tempo impiegato per i problemi chiusi.</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={Math.max(340, problemiTempo.length * 40)}>
+                <BarChart
+                  layout="vertical"
+                  data={problemiTempo}
+                  margin={{ top: 10, right: 30, left: 100, bottom: 10 }}
+                >
+                  <CartesianGrid stroke="#1e293b" strokeDasharray="4 4" />
+                  <XAxis type="number" stroke="#94a3b8" fontSize={12} />
+                  <YAxis type="category" dataKey="nome" stroke="#94a3b8" fontSize={11} width={90} />
+                  <Tooltip
+                    wrapperStyle={chartTooltipStyle}
+                    formatter={(value: any) => [`${Number(value).toFixed(1)} ore`, 'Tempo Impiego']}
+                  />
+                  <Bar dataKey="tempo_totale" fill="#fb923c" radius={[0, 6, 6, 0]} maxBarSize={24} />
                 </BarChart>
               </ResponsiveContainer>
             )}

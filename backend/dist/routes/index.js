@@ -12,6 +12,8 @@ const stats_1 = require("./stats");
 const ai_1 = require("./ai");
 const spareparts_1 = require("./spareparts");
 const problem_time_1 = require("./problem_time");
+const auth_2 = require("../middleware/auth");
+const aiService_1 = require("../services/aiService");
 function registerRoutes(app) {
     app.use('/api', auth_1.authRoutes);
     app.use('/api/ai', ai_1.aiRoutes);
@@ -23,5 +25,29 @@ function registerRoutes(app) {
     app.use('/api/stats', stats_1.statsRoutes);
     app.use('/api/stats', problem_time_1.problemTimeRoutes);
     app.use('/api', spareparts_1.sparepartsRoutes);
+    app.post('/api/analisi-ia', auth_2.authMiddleware, async (req, res, next) => {
+        try {
+            const { problem_name, problem_description, solutions_tried, solutions_applied, spare_parts_used, tempo_impiego, notes } = req.body;
+            if (!problem_name) {
+                return res.status(400).json({ error: 'Il nome del problema è obbligatorio' });
+            }
+            const analysis = await (0, aiService_1.generateTechnicalAnalysis)({
+                problem_name,
+                problem_description,
+                solutions_tried: solutions_tried || [],
+                solutions_applied: solutions_applied || [],
+                spare_parts_used: spare_parts_used || [],
+                tempo_impiego: tempo_impiego || 0.5,
+                notes
+            });
+            if (!analysis) {
+                return res.status(503).json({ error: (0, aiService_1.formatOllamaUnavailableMessage)() });
+            }
+            res.json({ analysis });
+        }
+        catch (e) {
+            next(e);
+        }
+    });
     app.use('/', health_1.healthRoutes);
 }

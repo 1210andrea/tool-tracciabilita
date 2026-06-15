@@ -92,12 +92,17 @@ aiRoutes.post('/analyze', authMiddleware, async (req, res, next) => {
     const similarR = await pool.query(
       `SELECT c.solution, c.status, c.created_at, c.notes,
               m.code as machine_code, m.line, prob.name as problem_name, cause.name as cause_name,
-              sp.name as spare_part_name
+              COALESCE(
+                (SELECT string_agg(sp.name, ', ')
+                 FROM case_spare_parts csp
+                 JOIN spare_parts sp ON sp.id = csp.spare_part_id
+                 WHERE csp.case_id = c.id),
+                'N.D.'
+              ) AS spare_part_name
        FROM cases c
        JOIN machines m ON m.id = c.machine_id
        LEFT JOIN categories prob ON prob.id = c.problem_id
        LEFT JOIN categories cause ON cause.id = c.cause_id
-       LEFT JOIN spare_parts sp ON sp.id = c.spare_part_id
        WHERE ${whereClause}
        ORDER BY c.created_at DESC
        LIMIT 15`,
@@ -180,3 +185,49 @@ aiRoutes.post('/analyze', authMiddleware, async (req, res, next) => {
     next(e);
   }
 });
+
+aiRoutes.post('/analisi-ia', authMiddleware, async (req, res, next) => {
+  try {
+    const {
+      problem_name,
+      problem_description,
+      solutions_tried,
+      solutions_applied,
+      spare_parts_used,
+      tempo_impiego,
+      notes
+    } = req.body as {
+      problem_name?: string;
+      problem_description?: string;
+      solutions_tried?: string[];
+      solutions_applied?: string[];
+      spare_parts_used?: string[];
+      tempo_impiego?: number;
+      notes?: string;
+    };
+
+    if (!problem_name) {
+      return res.status(400).json({ error: 'Il nome del problema è obbligatorio' });
+    }
+
+    const { generateTechnicalAnalysis, formatOllamaUnavailableMessage } = await import('../services/aiService');
+    const analysis = await generateTechnicalAnalysis({
+      problem_name,
+      problem_description,
+      solutions_tried: solutions_tried || [],
+      solutions_applied: solutions_applied || [],
+      spare_parts_used: spare_parts_used || [],
+      tempo_impiego: tempo_impiego || 0.5,
+      notes
+    });
+
+    if (!analysis) {
+      return res.status(503).json({ error: formatOllamaUnavailableMessage() });
+    }
+
+    res.json({ analysis });
+  } catch (e) {
+    next(e);
+  }
+});
+

@@ -70,3 +70,56 @@ ALTER TABLE cases DROP COLUMN IF EXISTS operator_id;
 ALTER TABLE cases DROP COLUMN IF EXISTS title;
 
 CREATE INDEX IF NOT EXISTS idx_spare_parts_type ON spare_parts(type);
+
+-- 1. Aggiungere colonna "tempo_impiego" alla tabella "cases" (se non esiste)
+ALTER TABLE cases ADD COLUMN IF NOT EXISTS tempo_impiego DECIMAL(5,2) DEFAULT 0.5;
+
+-- 2. Creare tabella junction per soluzioni provate (many-to-many)
+CREATE TABLE IF NOT EXISTS case_solutions_tried (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  case_id uuid NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+  solution_id uuid NOT NULL REFERENCES solutions_applied(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(case_id, solution_id)
+);
+
+-- 3. Creare tabella junction per soluzioni applicate (many-to-many)
+CREATE TABLE IF NOT EXISTS case_solutions_applied (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  case_id uuid NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+  solution_id uuid NOT NULL REFERENCES solutions_applied(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(case_id, solution_id)
+);
+
+-- 4. Creare tabella junction per pezzi di ricambio (many-to-many)
+CREATE TABLE IF NOT EXISTS case_spare_parts (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  case_id uuid NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+  spare_part_id uuid NOT NULL REFERENCES spare_parts(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(case_id, spare_part_id)
+);
+
+-- 5. Migra i dati esistenti prima di eliminare le colonne
+INSERT INTO case_solutions_applied (case_id, solution_id)
+SELECT id, solution_applied_id 
+FROM cases 
+WHERE solution_applied_id IS NOT NULL
+ON CONFLICT (case_id, solution_id) DO NOTHING;
+
+INSERT INTO case_spare_parts (case_id, spare_part_id)
+SELECT id, spare_part_id 
+FROM cases 
+WHERE spare_part_id IS NOT NULL
+ON CONFLICT (case_id, spare_part_id) DO NOTHING;
+
+-- 6. Eliminare colonne obsolete dalla tabella "cases" (se esistono)
+ALTER TABLE cases DROP COLUMN IF EXISTS solution_applied_id;
+ALTER TABLE cases DROP COLUMN IF EXISTS spare_part_id;
+
+-- 7. Index per performance
+CREATE INDEX IF NOT EXISTS idx_case_solutions_tried ON case_solutions_tried(case_id);
+CREATE INDEX IF NOT EXISTS idx_case_solutions_applied ON case_solutions_applied(case_id);
+CREATE INDEX IF NOT EXISTS idx_case_spare_parts ON case_spare_parts(case_id);
+

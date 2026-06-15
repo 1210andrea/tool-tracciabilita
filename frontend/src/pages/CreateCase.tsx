@@ -8,24 +8,110 @@ const API_URL = '/api';
 type CategoryItem = { id: string; type: string; name: string };
 type MachineItem = { id: string; code: string; name: string; tipologia?: string; type?: string; reparto?: string };
 type SparePartItem = { id: string; name: string; tipologie?: string[]; types?: string[] };
-
-
 type SolutionItem = { id: string; name: string; description?: string };
 
-type CaseDetailResponse = {
-  item?: {
-    id?: string;
-    ai_solution?: string | null;
-  };
-};
-
 type CreateCaseResponse = {
+  success?: boolean;
+  case_id?: string;
   item?: {
     id?: string;
-    ai_solution?: string | null;
   };
 };
 
+function MultiSelect({
+  label,
+  options,
+  selectedValues,
+  onChange,
+  placeholder = 'Seleziona...',
+  helperText,
+  required = false
+}: {
+  label: string;
+  options: { id: string; name: string }[];
+  selectedValues: string[];
+  onChange: (vals: string[]) => void;
+  placeholder?: string;
+  helperText?: string;
+  required?: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  const toggleValue = (id: string) => {
+    if (selectedValues.includes(id)) {
+      onChange(selectedValues.filter((v) => v !== id));
+    } else {
+      onChange([...selectedValues, id]);
+    }
+  };
+
+  return (
+    <div className="relative space-y-1">
+      <label className="text-sm font-medium text-slate-200 flex justify-between">
+        <span>{label} {required && <span className="text-red-400">*</span>}</span>
+        {selectedValues.length > 0 && (
+          <span className="text-xs text-sky-400 font-semibold">
+            {selectedValues.length} selezionat{selectedValues.length === 1 ? 'o' : 'i'}
+          </span>
+        )}
+      </label>
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setIsOpen(!isOpen)}
+          className="w-full text-left rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none flex justify-between items-center focus:border-sky-500/40 focus:ring-2 focus:ring-sky-500/10 transition duration-150"
+        >
+          <span className="truncate text-sm">
+            {selectedValues.length > 0
+              ? options
+                  .filter((o) => selectedValues.includes(o.id))
+                  .map((o) => o.name)
+                  .join(', ')
+              : placeholder}
+          </span>
+          <svg
+            className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        {isOpen && (
+          <>
+            <div className="fixed inset-0 z-30" onClick={() => setIsOpen(false)} />
+            <div className="absolute left-0 right-0 z-40 mt-2 max-h-60 overflow-y-auto rounded-2xl border border-slate-700 bg-slate-950 p-2 shadow-2xl backdrop-blur-md transition-all duration-200">
+              {options.length === 0 ? (
+                <div className="px-4 py-3 text-sm text-slate-500 italic text-center">Nessuna opzione disponibile</div>
+              ) : (
+                options.map((opt) => {
+                  const isChecked = selectedValues.includes(opt.id);
+                  return (
+                    <label
+                      key={opt.id}
+                      className="flex items-center gap-3 px-4 py-2.5 rounded-xl hover:bg-sky-500/20 hover:text-sky-300 text-slate-200 text-sm cursor-pointer transition select-none"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => toggleValue(opt.id)}
+                        className="accent-sky-500 h-4 w-4 cursor-pointer rounded"
+                      />
+                      <span className="truncate">{opt.name}</span>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+          </>
+        )}
+      </div>
+      {helperText && <p className="text-xs text-slate-500 mt-1">{helperText}</p>}
+    </div>
+  );
+}
 
 export default function CreateCase() {
   const { token, user } = useAuth();
@@ -42,7 +128,12 @@ export default function CreateCase() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [problemId, setProblemId] = useState('');
   const [causeId, setCauseId] = useState('');
-  const [sparePartId, setSparePartId] = useState('');
+  
+  const [soluzioniProvate, setSoluzioniProvate] = useState<string[]>([]);
+  const [soluzioniApplicate, setSoluzioniApplicate] = useState<string[]>([]);
+  const [pezziRicambio, setPezziRicambio] = useState<string[]>([]);
+  const [tempoImpiego, setTempoImpiego] = useState(0.5);
+
   const [realTimeAi, setRealTimeAi] = useState<string | null>(null);
   const [realTimeAiStatus, setRealTimeAiStatus] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle');
 
@@ -52,18 +143,10 @@ export default function CreateCase() {
         `${m.code} - ${m.name}`.toLowerCase().includes(machineSearch.toLowerCase())
       );
 
-  const [solutionAppliedId, setSolutionAppliedId] = useState('');
-
-
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-
   const [loading, setLoading] = useState(false);
   const [loadingParts, setLoadingParts] = useState(false);
-
-  const [createdCaseId, setCreatedCaseId] = useState<string | null>(null);
-  const [aiStatus, setAiStatus] = useState<'idle' | 'generating' | 'ready' | 'failed'>('idle');
-  const [aiSolution, setAiSolution] = useState<string | null>(null);
   const [notes, setNotes] = useState('');
 
   useEffect(() => {
@@ -96,7 +179,7 @@ export default function CreateCase() {
   useEffect(() => {
     if (!token || !machineId) {
       setSpareParts([]);
-      setSparePartId('');
+      setPezziRicambio([]);
       return;
     }
 
@@ -105,10 +188,9 @@ export default function CreateCase() {
 
     if (!tipologia) {
       setSpareParts([]);
-      setSparePartId('');
+      setPezziRicambio([]);
       return;
     }
-
 
     const loadSpareParts = async () => {
       setLoadingParts(true);
@@ -117,8 +199,7 @@ export default function CreateCase() {
           headers: { Authorization: `Bearer ${token}` }
         });
         setSpareParts(resp.data.items || []);
-        setSparePartId('');
-
+        setPezziRicambio([]);
       } catch {
         setSpareParts([]);
       } finally {
@@ -128,7 +209,6 @@ export default function CreateCase() {
 
     loadSpareParts();
   }, [token, machineId, machines]);
-
 
   // Real-time AI suggestions with debounce
   useEffect(() => {
@@ -141,15 +221,22 @@ export default function CreateCase() {
     setRealTimeAiStatus('loading');
     const timer = setTimeout(async () => {
       try {
-        const selectedSolution = solutions.find((s) => s.id === solutionAppliedId);
+        const descText = soluzioniApplicate
+          .map((id) => {
+            const sol = solutions.find((s) => s.id === id);
+            return sol ? `${sol.name}: ${sol.description || ''}`.trim() : '';
+          })
+          .filter(Boolean)
+          .join(', ');
+
         const resp = await axios.post(
           `${API_URL}/ai/suggest-solution`,
           {
             machine_id: machineId,
             problem_id: problemId || null,
             cause_id: causeId || null,
-            spare_part_id: sparePartId || null,
-            description: selectedSolution ? `${selectedSolution.name}: ${selectedSolution.description || ''}`.trim() : 'N/D',
+            spare_part_id: pezziRicambio[0] || null,
+            description: descText || 'N/D',
             notes: notes.trim() || null
           },
           { headers: { Authorization: `Bearer ${token}` } }
@@ -163,51 +250,13 @@ export default function CreateCase() {
     }, 1000); // 1-second debounce
 
     return () => clearTimeout(timer);
-  }, [token, machineId, problemId, causeId, sparePartId, solutionAppliedId, solutions, notes]);
-
-
-  useEffect(() => {
-    if (!token || !createdCaseId) return;
-
-    let cancelled = false;
-    let interval: number | undefined;
-
-    const poll = async () => {
-      try {
-        const resp = await axios.get(`${API_URL}/cases/${createdCaseId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-
-        const data = resp.data as CaseDetailResponse;
-        const ai = data?.item?.ai_solution ?? null;
-
-        if (cancelled) return;
-
-        if (ai) {
-          setAiSolution(ai);
-          setAiStatus('ready');
-          if (interval) window.clearInterval(interval);
-        }
-      } catch {
-        // keep polling until timeout in server side; for UI mark failed only on hard errors
-      }
-    };
-
-    interval = window.setInterval(poll, 2000);
-    // immediate try
-    poll();
-
-    return () => {
-      cancelled = true;
-      if (interval) window.clearInterval(interval);
-    };
-  }, [token, createdCaseId]);
+  }, [token, machineId, problemId, causeId, pezziRicambio, soluzioniApplicate, solutions, notes]);
 
   const handleCreate = async () => {
     if (!token) return;
 
-    if (!machineId || !problemId || !causeId || !sparePartId || !solutionAppliedId) {
-      setError('Compila tutti i campi obbligatori: macchina, problema, causa, pezzo di ricambio e soluzione applicata.');
+    if (!machineId || !problemId || !causeId || !soluzioniApplicate.length) {
+      setError('Compila tutti i campi obbligatori: macchina, problema, causa e almeno una soluzione applicata.');
       return;
     }
 
@@ -215,40 +264,39 @@ export default function CreateCase() {
     setSuccess(null);
     setLoading(true);
 
-    setAiStatus('generating');
-    setAiSolution(null);
-    setCreatedCaseId(null);
-
     try {
-      const resp = await axios.post(
+      await axios.post(
         `${API_URL}/cases`,
         {
           machine_id: machineId,
           problem_id: problemId,
           cause_id: causeId,
-          spare_part_id: sparePartId,
-          solution_applied_id: solutionAppliedId,
+          soluzioni_provate: soluzioniProvate,
+          soluzioni_applicate: soluzioniApplicate,
+          pezzi_ricambio: pezziRicambio,
+          tempo_impiego: tempoImpiego,
           notes: notes.trim() || null
         },
         { headers: { Authorization: `Bearer ${token}` } }
       ) as { data: CreateCaseResponse };
 
-      const id = resp.data?.item?.id;
-      setCreatedCaseId(id ?? null);
-      setSuccess('Caso creato! La soluzione IA è in generazione...');
+      setSuccess('Caso creato con successo! Reindirizzamento...');
 
-      // reset selezioni form
+      // reset form selections
       setMachineId('');
       setMachineSearch('');
       setProblemId('');
       setCauseId('');
-      setSparePartId('');
-      setSolutionAppliedId('');
+      setSoluzioniProvate([]);
+      setSoluzioniApplicate([]);
+      setPezziRicambio([]);
+      setTempoImpiego(0.5);
       setNotes('');
 
-      // non navigare subito: lasciamo vedere lo stato
+      setTimeout(() => {
+        navigate(user?.role === 'admin' ? '/dashboard' : '/');
+      }, 1500);
     } catch (err: any) {
-      setAiStatus('failed');
       setError(err?.response?.data?.error ?? 'Errore durante la creazione del caso.');
     } finally {
       setLoading(false);
@@ -266,25 +314,6 @@ export default function CreateCase() {
 
       {error && <div className="rounded-2xl border border-red-500/40 bg-red-500/10 p-4 text-red-200">{error}</div>}
       {success && <div className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4 text-emerald-200">{success}</div>}
-
-      {aiStatus === 'generating' && createdCaseId && (
-        <div className="rounded-2xl border border-sky-500/40 bg-sky-500/10 p-4 text-sky-100">
-          ⏳ Generando soluzione IA (può impiegare fino a 30 secondi)...
-        </div>
-      )}
-
-      {aiStatus === 'ready' && aiSolution && (
-        <div className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4 text-emerald-100">
-          ✅ Soluzione IA pronta!
-          <div className="mt-2 whitespace-pre-wrap text-sm text-emerald-50">{aiSolution}</div>
-        </div>
-      )}
-
-      {aiStatus === 'failed' && (
-        <div className="rounded-2xl border border-rose-500/40 bg-rose-500/10 p-4 text-rose-200">
-          ❌ Generazione IA fallita.
-        </div>
-      )}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6">
@@ -314,7 +343,7 @@ export default function CreateCase() {
                 }
               }}
               placeholder="Scrivi (es. SIMM45 - Linea 1 ...)"
-              className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none placeholder:text-slate-500 focus:border-sky-500/40 focus:ring-2 focus:ring-sky-500/10"
+              className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none placeholder:text-slate-500 focus:border-sky-500/40 focus:ring-2 focus:ring-sky-500/10 text-sm"
             />
             {showSuggestions && filteredMachines.length > 0 && (
               <div className="absolute left-0 right-0 z-50 mt-2 max-h-60 overflow-y-auto rounded-2xl border border-slate-700 bg-slate-950/95 p-2 shadow-2xl backdrop-blur-md transition-all duration-200">
@@ -346,31 +375,21 @@ export default function CreateCase() {
           </div>
         </div>
 
-
         <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6">
-          <label className="text-sm font-medium text-slate-200">Pezzo di ricambio <span className="text-red-400">*</span></label>
-          <select
-            value={sparePartId}
-            onChange={(e) => setSparePartId(e.target.value)}
-            disabled={!machineId || loadingParts}
-            className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none disabled:opacity-60"
-          >
-            <option value="">
-              {!machineId ? 'Seleziona prima una macchina' : loadingParts ? 'Caricamento ricambi...' : spareParts.length ? 'Seleziona ricambio' : 'Nessun ricambio per questo tipo'}
-            </option>
-            {spareParts.map((item) => (
-              <option key={item.id} value={item.id}>{item.name}</option>
-            ))}
-          </select>
-          {(selectedMachine?.reparto ?? selectedMachine?.type) && (
-            <p className="mt-2 text-xs text-slate-500">Tipo/Reparto macchina: {selectedMachine?.reparto ?? selectedMachine?.type}</p>
-          )}
-
+          <MultiSelect
+            label="Pezzi di Ricambio"
+            options={spareParts}
+            selectedValues={pezziRicambio}
+            onChange={setPezziRicambio}
+            placeholder={!machineId ? 'Seleziona prima una macchina' : loadingParts ? 'Caricamento ricambi...' : spareParts.length ? 'Seleziona pezzi di ricambio' : 'Nessun ricambio per questo tipo'}
+            helperText={selectedMachine ? `Tipo/Reparto macchina: ${selectedMachine.reparto ?? selectedMachine.type ?? ''}` : 'Seleziona i pezzi di ricambio utilizzati per questo intervento'}
+            required={false}
+          />
         </div>
 
         <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6">
           <label className="text-sm font-medium text-slate-200">Problema <span className="text-red-400">*</span></label>
-          <select value={problemId} onChange={(e) => setProblemId(e.target.value)} className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none">
+          <select value={problemId} onChange={(e) => setProblemId(e.target.value)} className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none text-sm">
             <option value="">Seleziona problema</option>
             {problems.map((item) => (
               <option key={item.id} value={item.id}>{item.name}</option>
@@ -380,7 +399,7 @@ export default function CreateCase() {
 
         <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6">
           <label className="text-sm font-medium text-slate-200">Causa <span className="text-red-400">*</span></label>
-          <select value={causeId} onChange={(e) => setCauseId(e.target.value)} className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none">
+          <select value={causeId} onChange={(e) => setCauseId(e.target.value)} className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none text-sm">
             <option value="">Seleziona causa</option>
             {causes.map((item) => (
               <option key={item.id} value={item.id}>{item.name}</option>
@@ -389,13 +408,51 @@ export default function CreateCase() {
         </div>
 
         <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6 md:col-span-2">
-          <label className="text-sm font-medium text-slate-200">Descrizione / soluzione applicata <span className="text-red-400">*</span></label>
-          <select value={solutionAppliedId} onChange={(e) => setSolutionAppliedId(e.target.value)} className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none">
-            <option value="">Seleziona soluzione applicata</option>
-            {solutions.map((item) => (
-              <option key={item.id} value={item.id}>{item.name}</option>
-            ))}
-          </select>
+          <MultiSelect
+            label="Soluzioni Provate"
+            options={solutions}
+            selectedValues={soluzioniProvate}
+            onChange={setSoluzioniProvate}
+            placeholder="Seleziona soluzioni provate..."
+            helperText="Soluzioni che sono state tentate ma NON hanno risolto il problema"
+            required={false}
+          />
+        </div>
+
+        <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6 md:col-span-2">
+          <MultiSelect
+            label="Soluzione Applicata"
+            options={solutions}
+            selectedValues={soluzioniApplicate}
+            onChange={setSoluzioniApplicate}
+            placeholder="Seleziona soluzione/i applicata/e..."
+            helperText="Soluzione/i che ha/hanno effettivamente risolto il problema"
+            required={true}
+          />
+        </div>
+
+        <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6 md:col-span-2">
+          <label className="text-sm font-medium text-slate-200">Tempo Impiego <span className="text-red-400">*</span></label>
+          <div className="mt-3 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setTempoImpiego((t) => Math.max(0.5, t - 0.5))}
+              className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-700 bg-slate-900 text-lg font-bold text-slate-300 hover:bg-slate-800 transition active:scale-95"
+            >
+              -
+            </button>
+            <div className="flex-1 h-12 rounded-2xl border border-slate-700 bg-slate-900/90 px-4 flex items-center justify-center text-slate-100 font-semibold text-sm">
+              {tempoImpiego}h ({Math.floor(tempoImpiego)}h {Math.round((tempoImpiego % 1) * 60)}m)
+            </div>
+            <button
+              type="button"
+              onClick={() => setTempoImpiego((t) => Math.min(999, t + 0.5))}
+              className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-700 bg-slate-900 text-lg font-bold text-slate-300 hover:bg-slate-800 transition active:scale-95"
+            >
+              +
+            </button>
+          </div>
+          <p className="text-xs text-slate-500 mt-2">Durata totale dell'intervento manutentivo in ore.</p>
         </div>
 
         <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6 md:col-span-2">
@@ -407,7 +464,7 @@ export default function CreateCase() {
             value={notes}
             onChange={(e) => setNotes(e.target.value.slice(0, 1000))}
             placeholder="Aggiungi dettagli aggiuntivi sull'intervento, anomalie riscontrate o altre osservazioni..."
-            className="mt-3 w-full h-28 rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none resize-none focus:border-sky-500/50 transition-colors"
+            className="mt-3 w-full h-28 rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none resize-none focus:border-sky-500/50 transition-colors text-sm"
           />
         </div>
       </div>
@@ -417,7 +474,7 @@ export default function CreateCase() {
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <span className="flex h-2.5 w-2.5 rounded-full bg-sky-400 animate-pulse" />
-              <h3 className="text-md font-semibold uppercase tracking-wider text-sky-400">Analisi IA in tempo reale</h3>
+              <h3 className="text-sm font-semibold uppercase tracking-wider text-sky-400">Analisi IA in tempo reale</h3>
             </div>
             {realTimeAiStatus === 'loading' && (
               <span className="text-xs text-slate-400 flex items-center gap-1.5">
@@ -459,4 +516,3 @@ export default function CreateCase() {
     </div>
   );
 }
-

@@ -29,3 +29,18 @@ exports.dashboardRoutes.get('/', auth_1.authMiddleware, async (req, res, next) =
         next(e);
     }
 });
+exports.dashboardRoutes.get('/problemi-tempo', auth_1.authMiddleware, async (req, res, next) => {
+    try {
+        const r = await db_1.pool.query(`SELECT prob.name AS nome, COALESCE(SUM(c.tempo_impiego)::float, 0) AS tempo_totale
+       FROM cases c
+       JOIN categories prob ON c.problem_id = prob.id
+       WHERE c.status IN ('closed', 'completato')
+       GROUP BY prob.id, prob.name
+       ORDER BY tempo_totale DESC
+       LIMIT 10`);
+        res.json({ data: r.rows });
+    }
+    catch (e) {
+        next(e);
+    }
+});

@@ -7,6 +7,7 @@ exports.pingOllama = pingOllama;
 exports.generateAiSolution = generateAiSolution;
 exports.generateCaseInsights = generateCaseInsights;
 exports.formatOllamaUnavailableMessage = formatOllamaUnavailableMessage;
+exports.generateTechnicalAnalysis = generateTechnicalAnalysis;
 const env_1 = require("../config/env");
 const logger_1 = require("../config/logger");
 let lastOllamaError = null;
@@ -195,4 +196,35 @@ function formatOllamaUnavailableMessage() {
         return `L'analisi IA ha superato il timeout (${env_1.env.AI_TIMEOUT}ms). ${err.detail}`;
     }
     return `Il servizio IA (Ollama) non è disponibile: ${err.detail}. Modello configurato: ${env_1.env.AI_MODEL}, URL: ${env_1.env.AI_API_URL}`;
+}
+async function generateTechnicalAnalysis(data) {
+    const prompt = `Analizza il seguente caso di manutenzione della macchina industriale:
+PROBLEMA: ${data.problem_name}
+
+${data.problem_description || ''}
+SOLUZIONI PROVATE (NON hanno risolto):
+${data.solutions_tried && data.solutions_tried.length ? data.solutions_tried.map(s => `- ${s}`).join('\n') : 'Nessuna'}
+
+SOLUZIONE/I APPLICATA/E (HA/HANNO risolto):
+${data.solutions_applied && data.solutions_applied.length ? data.solutions_applied.map(s => `- ${s}`).join('\n') : 'Nessuna'}
+
+PEZZI DI RICAMBIO UTILIZZATI:
+${data.spare_parts_used && data.spare_parts_used.length ? data.spare_parts_used.map(p => `- ${p}`).join('\n') : 'Nessuno'}
+
+TEMPO IMPIEGO: ${data.tempo_impiego} ore
+NOTE AGGIUNTIVE: ${data.notes || 'Nessuna'}
+TASK:
+- Analizza perché le soluzioni provate non hanno funzionato
+- Spiega il motivo del successo della/e soluzione/i applicata/e
+- Valuta se i pezzi di ricambio utilizzati erano appropriati
+- Suggerisci miglioramenti per ridurre il tempo di risoluzione in futuro
+- Identifica pattern o correlazioni con casi simili (basato su dati storici)
+
+Rispondi in modo pratico e tecnico, adatto a un tecnico di manutenzione.`;
+    if (env_1.env.AI_PROVIDER !== 'ollama')
+        return null;
+    return callOllama([
+        { role: 'system', content: 'Sei un analista di manutenzione industriale. Rispondi in modo pratico e tecnico, adatto a un tecnico di manutenzione.' },
+        { role: 'user', content: prompt }
+    ]);
 }

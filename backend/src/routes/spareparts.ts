@@ -16,11 +16,11 @@ sparepartsRoutes.get('/spare-parts', authMiddleware, async (_req, res, next) => 
               sp.name,
               sp.description,
               sp.created_at,
-              COUNT(c.id)::int AS usage_count,
+              COUNT(csp.id)::int AS usage_count,
               COALESCE(ARRAY_AGG(spt.tipologia) FILTER (WHERE spt.tipologia IS NOT NULL), '{}') AS tipologie
        FROM spare_parts sp
        LEFT JOIN spare_part_tipologie spt ON spt.spare_part_id = sp.id
-       LEFT JOIN cases c ON c.spare_part_id = sp.id
+       LEFT JOIN case_spare_parts csp ON csp.spare_part_id = sp.id
        GROUP BY sp.id
        ORDER BY sp.created_at DESC`
     );
@@ -124,7 +124,7 @@ sparepartsRoutes.delete('/spare-parts/:id', authMiddleware, async (req, res, nex
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
 
-    const usedR = await pool.query('SELECT COUNT(*)::int AS count FROM cases WHERE spare_part_id = $1', [req.params.id]);
+    const usedR = await pool.query('SELECT COUNT(*)::int AS count FROM case_spare_parts WHERE spare_part_id = $1', [req.params.id]);
     const count = usedR.rows[0]?.count ?? 0;
     if (count > 0) {
       return res.status(400).json({ error: `In uso da ${count} casi`, usage_count: count });
@@ -141,10 +141,10 @@ sparepartsRoutes.delete('/spare-parts/:id', authMiddleware, async (req, res, nex
 sparepartsRoutes.get('/solutions-applied', authMiddleware, async (_req, res, next) => {
   try {
     const r = await pool.query(
-      `SELECT sa.*, COUNT(c.id)::int AS usage_count
+      `SELECT sa.id, sa.name, sa.description, sa.created_at,
+              ((SELECT COUNT(*)::int FROM case_solutions_applied csa WHERE csa.solution_id = sa.id) +
+               (SELECT COUNT(*)::int FROM case_solutions_tried cst WHERE cst.solution_id = sa.id))::int AS usage_count
        FROM solutions_applied sa
-       LEFT JOIN cases c ON c.solution_applied_id = sa.id
-       GROUP BY sa.id
        ORDER BY sa.created_at DESC`
     );
     res.json({ items: r.rows });
@@ -174,7 +174,12 @@ sparepartsRoutes.delete('/solutions-applied/:id', authMiddleware, async (req, re
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
 
-    const usedR = await pool.query('SELECT COUNT(*)::int AS count FROM cases WHERE solution_applied_id = $1', [req.params.id]);
+    const usedR = await pool.query(
+      `SELECT
+        (SELECT COUNT(*)::int FROM case_solutions_applied WHERE solution_id = $1) +
+        (SELECT COUNT(*)::int FROM case_solutions_tried WHERE solution_id = $1) AS count`,
+      [req.params.id]
+    );
     const count = usedR.rows[0]?.count ?? 0;
     if (count > 0) {
       return res.status(400).json({ error: `In uso da ${count} casi`, usage_count: count });

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
-import { AdminCategoriesTabs } from '../components/AdminCategoriesTabs';
 import { ConfirmModal } from '../components/ConfirmModal';
 
 type Category = { id: string; type: string; name: string; description?: string };
@@ -14,12 +13,11 @@ type SolutionApplied = { id: string; name: string; description?: string; usage_c
 const API_URL = '/api';
 const TIPologie_TYPES = ['nastro', 'assemblaggio', 'controllo', 'imballaggio'];
 
+type AdminTab = 'operatori' | 'problemi' | 'cause' | 'macchine' | 'utenti' | 'ricambi' | 'soluzioni';
 
 export default function AdminPanel() {
   const { token } = useAuth();
-  const [activeTab, setActiveTab] = useState<'categories' | 'machines' | 'users' | 'spare_solutions'>('categories');
-  const [activeCategoryType, setActiveCategoryType] = useState<'operator' | 'problem' | 'cause'>('operator');
-  const [spareSolutionsSubTab, setSpareSolutionsSubTab] = useState<'spare_parts' | 'solutions'>('spare_parts');
+  const [activeTab, setActiveTab] = useState<AdminTab>('operatori');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [pendingDeleteType, setPendingDeleteType] = useState<'categories' | 'machines' | 'users' | 'spare_parts' | 'solutions' | null>(null);
@@ -38,7 +36,6 @@ export default function AdminPanel() {
   const [userForm, setUserForm] = useState({ username: '', email: '', password: '', role: 'user', operator_category_id: '' });
   const [sparePartForm, setSparePartForm] = useState({ name: '', tipologie: [] as string[], description: '' });
   const [solutionForm, setSolutionForm] = useState({ name: '', description: '' });
-
 
   const headers = useMemo(() => ({ headers: { Authorization: `Bearer ${token}` } }), [token]);
 
@@ -76,11 +73,21 @@ export default function AdminPanel() {
     loadAll();
   }, [token]);
 
+  useEffect(() => {
+    if (activeTab === 'operatori') {
+      setCategoryForm((c) => ({ ...c, type: 'operator' }));
+    } else if (activeTab === 'problemi') {
+      setCategoryForm((c) => ({ ...c, type: 'problem' }));
+    } else if (activeTab === 'cause') {
+      setCategoryForm((c) => ({ ...c, type: 'cause' }));
+    }
+  }, [activeTab]);
+
   const submitCategory = async () => {
     try {
       await axios.post(`${API_URL}/categories`, categoryForm, headers);
       setMessage('Categoria creata.');
-      setCategoryForm({ type: 'operator', name: '', description: '' });
+      setCategoryForm((prev) => ({ type: prev.type, name: '', description: '' }));
       loadAll();
     } catch (err: any) {
       setMessage(err?.response?.data?.error ?? 'Errore salvataggio categoria.');
@@ -89,7 +96,6 @@ export default function AdminPanel() {
 
   const submitMachine = async () => {
     try {
-      // back-compat BE: se manca tipologia, ma c'era type/posizione, li risolve via SQL
       await axios.post(`${API_URL}/machines`, { ...machineForm, tipologia: machineForm.tipologia || undefined }, headers);
       setMessage('Macchina aggiunta.');
       setMachineForm({ code: '', name: '', line: '', location: '', tipologia: '' });
@@ -98,7 +104,6 @@ export default function AdminPanel() {
       setMessage(err?.response?.data?.error ?? 'Errore salvataggio macchina.');
     }
   };
-
 
   const submitUser = async () => {
     try {
@@ -164,28 +169,35 @@ export default function AdminPanel() {
     await deleteItem(type, id);
   };
 
-  const tabLabels: Record<typeof activeTab, string> = {
-    categories: 'Categorie',
-    machines: 'Macchine',
-    users: 'Utenti',
-    spare_solutions: 'Ricambi e Soluzioni'
+  const tabLabels: Record<AdminTab, string> = {
+    operatori: 'Operatori',
+    problemi: 'Problemi',
+    cause: 'Cause',
+    macchine: 'Macchine',
+    utenti: 'Utenti',
+    ricambi: 'Pezzi di Ricambio',
+    soluzioni: 'Soluzioni'
   };
 
-  const listTitle = activeTab === 'spare_solutions'
-    ? (spareSolutionsSubTab === 'spare_parts' ? 'ricambi' : 'soluzioni applicate')
-    : activeTab === 'categories' ? 'categorie' : activeTab === 'machines' ? 'macchine' : 'utenti';
+  const listTitle = activeTab === 'operatori' ? 'operatori'
+    : activeTab === 'problemi' ? 'problemi'
+    : activeTab === 'cause' ? 'cause'
+    : activeTab === 'macchine' ? 'macchine'
+    : activeTab === 'utenti' ? 'utenti'
+    : activeTab === 'ricambi' ? 'pezzi di ricambio'
+    : 'soluzioni applicate';
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
       <div>
         <h1 className="text-2xl font-bold sm:text-3xl">Admin Panel</h1>
-        <p className="text-sm text-slate-400">Gestisci categorie, macchine, utenti, ricambi e soluzioni.</p>
+        <p className="text-sm text-slate-400">Gestisci operatori, problemi, cause, macchine, utenti, ricambi e soluzioni.</p>
       </div>
 
       {message && <div className="rounded-2xl border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">{message}</div>}
 
       <div className="flex flex-wrap gap-2 sm:gap-3">
-        {(['categories', 'machines', 'users', 'spare_solutions'] as const).map((tab) => (
+        {(['operatori', 'problemi', 'cause', 'macchine', 'utenti', 'ricambi', 'soluzioni'] as const).map((tab) => (
           <button
             key={tab}
             type="button"
@@ -201,27 +213,20 @@ export default function AdminPanel() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.2fr_1fr]">
         <div className="space-y-6 rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6">
-          {activeTab === 'categories' && (
+          {activeTab === 'operatori' && (
             <>
               <div>
-                <h2 className="text-xl font-semibold text-slate-100">Categorie</h2>
-                <p className="text-sm text-slate-400">Gestisci operatori, problemi e cause.</p>
+                <h2 className="text-xl font-semibold text-slate-100">Nuovo operatore</h2>
+                <p className="text-sm text-slate-400">Aggiungi una nuova categoria operatore.</p>
               </div>
 
-              <AdminCategoriesTabs
-                activeType={activeCategoryType}
-                onChange={(t) => {
-                  setActiveCategoryType(t);
-                  setCategoryForm({ type: t, name: '', description: '' });
-                }}
-              />
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4">
                 <div>
                   <label className="text-sm text-slate-300">Nome</label>
                   <input
                     value={categoryForm.name}
                     onChange={(e) => setCategoryForm((current) => ({ ...current, name: e.target.value }))}
+                    placeholder="Nome operatore"
                     className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
                   />
                 </div>
@@ -233,19 +238,91 @@ export default function AdminPanel() {
                   value={categoryForm.description}
                   onChange={(e) => setCategoryForm((current) => ({ ...current, description: e.target.value }))}
                   rows={4}
+                  placeholder="Descrizione (opzionale)"
                   className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
                 />
               </div>
 
-              <button type="button" className="w-full rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 sm:w-auto" onClick={submitCategory}>
-                Aggiungi {activeCategoryType === 'operator' ? 'operatore' : activeCategoryType === 'problem' ? 'problema' : 'causa'}
+              <button type="button" className="w-full rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 sm:w-auto hover:bg-sky-400 transition" onClick={submitCategory}>
+                Aggiungi operatore
               </button>
             </>
           )}
 
-          {activeTab === 'machines' && (
+          {activeTab === 'problemi' && (
             <>
+              <div>
+                <h2 className="text-xl font-semibold text-slate-100">Nuovo problema</h2>
+                <p className="text-sm text-slate-400">Aggiungi una nuova tipologia di problema.</p>
+              </div>
 
+              <div className="grid grid-cols-1 gap-4">
+                <div>
+                  <label className="text-sm text-slate-300">Nome</label>
+                  <input
+                    value={categoryForm.name}
+                    onChange={(e) => setCategoryForm((current) => ({ ...current, name: e.target.value }))}
+                    placeholder="Nome problema"
+                    className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm text-slate-300">Descrizione</label>
+                <textarea
+                  value={categoryForm.description}
+                  onChange={(e) => setCategoryForm((current) => ({ ...current, description: e.target.value }))}
+                  rows={4}
+                  placeholder="Descrizione (opzionale)"
+                  className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
+                />
+              </div>
+
+              <button type="button" className="w-full rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 sm:w-auto hover:bg-sky-400 transition" onClick={submitCategory}>
+                Aggiungi problema
+              </button>
+            </>
+          )}
+
+          {activeTab === 'cause' && (
+            <>
+              <div>
+                <h2 className="text-xl font-semibold text-slate-100">Nuova causa</h2>
+                <p className="text-sm text-slate-400">Aggiungi una nuova causa di guasto.</p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4">
+                <div>
+                  <label className="text-sm text-slate-300">Nome</label>
+                  <input
+                    value={categoryForm.name}
+                    onChange={(e) => setCategoryForm((current) => ({ ...current, name: e.target.value }))}
+                    placeholder="Nome causa"
+                    className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm text-slate-300">Descrizione</label>
+                <textarea
+                  value={categoryForm.description}
+                  onChange={(e) => setCategoryForm((current) => ({ ...current, description: e.target.value }))}
+                  rows={4}
+                  placeholder="Descrizione (opzionale)"
+                  className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
+                />
+              </div>
+
+              <button type="button" className="w-full rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 sm:w-auto hover:bg-sky-400 transition" onClick={submitCategory}>
+                Aggiungi causa
+              </button>
+            </>
+          )}
+
+          {activeTab === 'macchine' && (
+            <>
               <div>
                 <h2 className="text-xl font-semibold text-slate-100">Nuova macchina</h2>
                 <p className="text-sm text-slate-400">Aggiungi qui le macchine della linea.</p>
@@ -254,15 +331,15 @@ export default function AdminPanel() {
                 <input value={machineForm.code} onChange={(e) => setMachineForm((c) => ({ ...c, code: e.target.value }))} placeholder="Codice macchina" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
                 <input value={machineForm.name} onChange={(e) => setMachineForm((c) => ({ ...c, name: e.target.value }))} placeholder="Nome macchina" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
                 <input value={machineForm.line} onChange={(e) => setMachineForm((c) => ({ ...c, line: e.target.value }))} placeholder="Linea" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
-                <input value={machineForm.tipologia} onChange={(e) => setMachineForm((c) => ({ ...c, tipologia: e.target.value }))} placeholder="Tipologia" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none sm:col-span-2" />
+                <input value={machineForm.tipologia} onChange={(e) => setMachineForm((c) => ({ ...c, tipologia: e.target.value }))} placeholder="Tipologia (es. nastro, assemblaggio, controllo, imballaggio)" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none sm:col-span-2" />
               </div>
-              <button type="button" className="w-full rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 sm:w-auto" onClick={submitMachine}>
+              <button type="button" className="w-full rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 sm:w-auto hover:bg-sky-400 transition" onClick={submitMachine}>
                 Aggiungi macchina
               </button>
             </>
           )}
 
-          {activeTab === 'users' && (
+          {activeTab === 'utenti' && (
             <>
               <div>
                 <h2 className="text-xl font-semibold text-slate-100">Nuovo utente</h2>
@@ -286,84 +363,72 @@ export default function AdminPanel() {
                   ))}
                 </select>
               </div>
-              <button type="button" className="w-full rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 sm:w-auto" onClick={submitUser}>
+              <button type="button" className="w-full rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 sm:w-auto hover:bg-sky-400 transition" onClick={submitUser}>
                 Crea utente
               </button>
             </>
           )}
 
-          {activeTab === 'spare_solutions' && (
+          {activeTab === 'ricambi' && (
             <>
               <div>
-                <h2 className="text-xl font-semibold text-slate-100">Ricambi e Soluzioni</h2>
-                <p className="text-sm text-slate-400">Gestisci pezzi di ricambio e soluzioni applicate.</p>
+                <h2 className="text-xl font-semibold text-slate-100">Nuovo pezzo di ricambio</h2>
+                <p className="text-sm text-slate-400">Aggiungi pezzi di ricambio collegati alle tipologie di macchine.</p>
               </div>
 
-              <div className="flex flex-wrap gap-2">
-                {(['spare_parts', 'solutions'] as const).map((sub) => (
-                  <button
-                    key={sub}
-                    type="button"
-                    onClick={() => setSpareSolutionsSubTab(sub)}
-                    className={`rounded-full px-4 py-2 text-xs font-semibold sm:text-sm ${
-                      spareSolutionsSubTab === sub ? 'bg-sky-500 text-slate-950' : 'bg-slate-900 text-slate-300'
-                    }`}
-                  >
-                    {sub === 'spare_parts' ? 'PEZZI DI RICAMBIO' : 'SOLUZIONI APPLICATE'}
-                  </button>
-                ))}
-              </div>
-
-              {spareSolutionsSubTab === 'spare_parts' ? (
-                <>
-                  <div className="space-y-4">
-                    <input value={sparePartForm.name} onChange={(e) => setSparePartForm((c) => ({ ...c, name: e.target.value }))} placeholder="Nome ricambio" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
-                    
-                    <div>
-                      <span className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Tipologie Macchine Collegate</span>
-                      {availableTipologie.length === 0 ? (
-                        <p className="text-sm text-slate-500 bg-slate-900/50 p-3 rounded-2xl border border-slate-800">
-                          Nessuna tipologia trovata. Crea prima una macchina con una tipologia.
-                        </p>
-                      ) : (
-                        <div className="flex flex-wrap gap-2 p-3 rounded-2xl border border-slate-800 bg-slate-900/30">
-                          {availableTipologie.map((t) => {
-                            const isChecked = sparePartForm.tipologie.includes(t);
-                            return (
-                              <label key={t} className="flex items-center gap-2 cursor-pointer bg-slate-950 px-3.5 py-2 rounded-xl border border-slate-800 hover:bg-slate-800/80 transition select-none">
-                                <input
-                                  type="checkbox"
-                                  checked={isChecked}
-                                  onChange={(e) => {
-                                    const nextTipologie = e.target.checked
-                                      ? [...sparePartForm.tipologie, t]
-                                      : sparePartForm.tipologie.filter((x) => x !== t);
-                                    setSparePartForm((c) => ({ ...c, tipologie: nextTipologie }));
-                                  }}
-                                  className="accent-sky-500 h-4 w-4 cursor-pointer"
-                                />
-                                <span className="text-sm text-slate-200">{t}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      )}
+              <div className="space-y-4">
+                <input value={sparePartForm.name} onChange={(e) => setSparePartForm((c) => ({ ...c, name: e.target.value }))} placeholder="Nome ricambio" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
+                
+                <div>
+                  <span className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Tipologie Macchine Collegate</span>
+                  {availableTipologie.length === 0 ? (
+                    <p className="text-sm text-slate-500 bg-slate-900/50 p-3 rounded-2xl border border-slate-800">
+                      Nessuna tipologia trovata. Crea prima una macchina con una tipologia.
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2 p-3 rounded-2xl border border-slate-800 bg-slate-900/30">
+                      {availableTipologie.map((t) => {
+                        const isChecked = sparePartForm.tipologie.includes(t);
+                        return (
+                          <label key={t} className="flex items-center gap-2 cursor-pointer bg-slate-950 px-3.5 py-2 rounded-xl border border-slate-800 hover:bg-slate-800/80 transition select-none">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                const nextTipologie = e.target.checked
+                                  ? [...sparePartForm.tipologie, t]
+                                  : sparePartForm.tipologie.filter((x) => x !== t);
+                                setSparePartForm((c) => ({ ...c, tipologie: nextTipologie }));
+                              }}
+                              className="accent-sky-500 h-4 w-4 cursor-pointer"
+                            />
+                            <span className="text-sm text-slate-200">{t}</span>
+                          </label>
+                        );
+                      })}
                     </div>
-                  </div>
-                  <textarea value={sparePartForm.description} onChange={(e) => setSparePartForm((c) => ({ ...c, description: e.target.value }))} rows={3} placeholder="Descrizione (opzionale)" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
-                  <button type="button" className="w-full rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 sm:w-auto" onClick={submitSparePart}>
-                    Aggiungi ricambio
-                  </button>
-                </>
-              ) : (
-                <>
-                  <input value={solutionForm.name} onChange={(e) => setSolutionForm((c) => ({ ...c, name: e.target.value }))} placeholder="Nome soluzione" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
-                  <textarea value={solutionForm.description} onChange={(e) => setSolutionForm((c) => ({ ...c, description: e.target.value }))} rows={4} placeholder="Descrizione" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
-                  <button type="button" className="w-full rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 sm:w-auto" onClick={submitSolution}>
-                    Aggiungi soluzione
-                  </button>
-                </>
-              )}
+                  )}
+                </div>
+              </div>
+              <textarea value={sparePartForm.description} onChange={(e) => setSparePartForm((c) => ({ ...c, description: e.target.value }))} rows={3} placeholder="Descrizione (opzionale)" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
+              <button type="button" className="w-full rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 sm:w-auto hover:bg-sky-400 transition" onClick={submitSparePart}>
+                Aggiungi ricambio
+              </button>
+            </>
+          )}
+
+          {activeTab === 'soluzioni' && (
+            <>
+              <div>
+                <h2 className="text-xl font-semibold text-slate-100">Nuova soluzione applicata</h2>
+                <p className="text-sm text-slate-400">Aggiungi opzioni per le soluzioni applicate nei casi.</p>
+              </div>
+
+              <input value={solutionForm.name} onChange={(e) => setSolutionForm((c) => ({ ...c, name: e.target.value }))} placeholder="Nome soluzione" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
+              <textarea value={solutionForm.description} onChange={(e) => setSolutionForm((c) => ({ ...c, description: e.target.value }))} rows={4} placeholder="Descrizione (opzionale)" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
+              <button type="button" className="w-full rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 sm:w-auto hover:bg-sky-400 transition" onClick={submitSolution}>
+                Aggiungi soluzione
+              </button>
             </>
           )}
         </div>
@@ -374,39 +439,83 @@ export default function AdminPanel() {
             {loading && <span className="text-sm text-slate-500">Caricamento...</span>}
           </div>
 
-          {activeTab === 'categories' && (
+          {activeTab === 'operatori' && (
             <div className="space-y-4">
-              {categories.filter((c) => c.type === activeCategoryType).map((category) => (
+              {categories.filter((c) => c.type === 'operator').map((category) => (
                 <div key={category.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <div className="font-semibold text-slate-100">{category.name}</div>
                     <div className="text-sm text-slate-500">{category.description || 'Nessuna descrizione'}</div>
                   </div>
-                  <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950" onClick={() => requestDelete('categories', category.id)}>
+                  <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400 transition" onClick={() => requestDelete('categories', category.id)}>
                     Elimina
                   </button>
                 </div>
               ))}
+              {categories.filter((c) => c.type === 'operator').length === 0 && (
+                <p className="text-sm text-slate-500 italic text-center py-4">Nessun operatore configurato.</p>
+              )}
             </div>
           )}
 
-          {activeTab === 'machines' && (
+          {activeTab === 'problemi' && (
+            <div className="space-y-4">
+              {categories.filter((c) => c.type === 'problem').map((category) => (
+                <div key={category.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="font-semibold text-slate-100">{category.name}</div>
+                    <div className="text-sm text-slate-500">{category.description || 'Nessuna descrizione'}</div>
+                  </div>
+                  <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400 transition" onClick={() => requestDelete('categories', category.id)}>
+                    Elimina
+                  </button>
+                </div>
+              ))}
+              {categories.filter((c) => c.type === 'problem').length === 0 && (
+                <p className="text-sm text-slate-500 italic text-center py-4">Nessun problema configurato.</p>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'cause' && (
+            <div className="space-y-4">
+              {categories.filter((c) => c.type === 'cause').map((category) => (
+                <div key={category.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="font-semibold text-slate-100">{category.name}</div>
+                    <div className="text-sm text-slate-500">{category.description || 'Nessuna descrizione'}</div>
+                  </div>
+                  <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400 transition" onClick={() => requestDelete('categories', category.id)}>
+                    Elimina
+                  </button>
+                </div>
+              ))}
+              {categories.filter((c) => c.type === 'cause').length === 0 && (
+                <p className="text-sm text-slate-500 italic text-center py-4">Nessuna causa configurata.</p>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'macchine' && (
             <div className="space-y-4">
               {machines.map((machine) => (
                 <div key={machine.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <div className="font-semibold text-slate-100">{machine.code} - {machine.name}</div>
-                    <div className="text-sm text-slate-500">{machine.line || 'Linea N/D'} · {machine.type || 'tipo N/D'} · {machine.location || 'Posizione N/D'}</div>
+                    <div className="text-sm text-slate-500">{machine.line || 'Linea N/D'} · {machine.type || machine.tipologia || 'tipo N/D'} · {machine.location || 'Posizione N/D'}</div>
                   </div>
-                  <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950" onClick={() => requestDelete('machines', machine.id)}>
+                  <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400 transition" onClick={() => requestDelete('machines', machine.id)}>
                     Elimina
                   </button>
                 </div>
               ))}
+              {machines.length === 0 && (
+                <p className="text-sm text-slate-500 italic text-center py-4">Nessuna macchina configurata.</p>
+              )}
             </div>
           )}
 
-          {activeTab === 'users' && (
+          {activeTab === 'utenti' && (
             <div className="space-y-4">
               {users.map((userItem) => (
                 <div key={userItem.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -414,18 +523,21 @@ export default function AdminPanel() {
                     <div className="font-semibold text-slate-100">{userItem.username}</div>
                     <div className="text-sm text-slate-500">{userItem.email || 'Email non fornita'} · ruolo: {userItem.role}</div>
                   </div>
-                  <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950" onClick={() => requestDelete('users', userItem.id)}>
+                  <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400 transition" onClick={() => requestDelete('users', userItem.id)}>
                     Elimina
                   </button>
                 </div>
               ))}
+              {users.length === 0 && (
+                <p className="text-sm text-slate-500 italic text-center py-4">Nessun utente configurato.</p>
+              )}
             </div>
           )}
 
-          {activeTab === 'spare_solutions' && spareSolutionsSubTab === 'spare_parts' && (
+          {activeTab === 'ricambi' && (
             <div className="space-y-4">
               {spareParts.map((part) => {
-                const inUse = (part.usage_count ?? 0) > 0;
+                const danger = (part.usage_count ?? 0) > 0;
                 const partTipologie = part.tipologie && part.tipologie.length ? part.tipologie : (part.tipologia && part.tipologia.length ? part.tipologia : []);
                 return (
                   <div key={part.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -434,42 +546,48 @@ export default function AdminPanel() {
                       <div className="text-sm text-slate-500">
                         Tipologie: {partTipologie.length ? partTipologie.join(', ') : 'Nessuna'} · {part.description || 'Nessuna descrizione'}
                       </div>
-                      {inUse && <div className="text-xs text-amber-400">In uso da {part.usage_count} casi</div>}
+                      {danger && <div className="text-xs text-amber-400">In uso da {part.usage_count} casi</div>}
                     </div>
-                    {!inUse ? (
-                      <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950" onClick={() => requestDelete('spare_parts', part.id)}>
+                    {!danger ? (
+                      <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400 transition" onClick={() => requestDelete('spare_parts', part.id)}>
                         Elimina
                       </button>
                     ) : (
-                      <span className="text-xs text-slate-500">Non eliminabile</span>
+                      <span className="text-xs text-slate-500 font-semibold bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800">In uso (Non eliminabile)</span>
                     )}
                   </div>
                 );
               })}
+              {spareParts.length === 0 && (
+                <p className="text-sm text-slate-500 italic text-center py-4">Nessun pezzo di ricambio configurato.</p>
+              )}
             </div>
           )}
 
-          {activeTab === 'spare_solutions' && spareSolutionsSubTab === 'solutions' && (
+          {activeTab === 'soluzioni' && (
             <div className="space-y-4">
               {solutionsApplied.map((sol) => {
-                const inUse = (sol.usage_count ?? 0) > 0;
+                const danger = (sol.usage_count ?? 0) > 0;
                 return (
                   <div key={sol.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <div className="font-semibold text-slate-100">{sol.name}</div>
                       <div className="text-sm text-slate-500">{sol.description || 'Nessuna descrizione'}</div>
-                      {inUse && <div className="text-xs text-amber-400">In uso da {sol.usage_count} casi</div>}
+                      {danger && <div className="text-xs text-amber-400">In uso da {sol.usage_count} casi</div>}
                     </div>
-                    {!inUse ? (
-                      <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950" onClick={() => requestDelete('solutions', sol.id)}>
+                    {!danger ? (
+                      <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400 transition" onClick={() => requestDelete('solutions', sol.id)}>
                         Elimina
                       </button>
                     ) : (
-                      <span className="text-xs text-slate-500">Non eliminabile</span>
+                      <span className="text-xs text-slate-500 font-semibold bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800">In uso (Non eliminabile)</span>
                     )}
                   </div>
                 );
               })}
+              {solutionsApplied.length === 0 && (
+                <p className="text-sm text-slate-500 italic text-center py-4">Nessuna soluzione applicata configurata.</p>
+              )}
             </div>
           )}
         </div>
@@ -490,7 +608,7 @@ export default function AdminPanel() {
         onConfirm={confirmDelete}
       />
 
-      <Link to="/" className="inline-flex rounded-2xl bg-slate-800 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-700">
+      <Link to="/" className="inline-flex rounded-2xl bg-slate-800 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-700 transition">
         Torna alla dashboard
       </Link>
     </div>

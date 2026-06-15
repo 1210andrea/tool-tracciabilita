@@ -92,8 +92,6 @@ CREATE TABLE IF NOT EXISTS cases (
   machine_id uuid NOT NULL REFERENCES machines(id) ON DELETE CASCADE,
   problem_id uuid REFERENCES categories(id) ON DELETE SET NULL,
   cause_id uuid REFERENCES categories(id) ON DELETE SET NULL,
-  spare_part_id uuid REFERENCES spare_parts(id) ON DELETE SET NULL,
-  solution_applied_id uuid REFERENCES solutions_applied(id) ON DELETE SET NULL,
   category_id uuid REFERENCES categories(id) ON DELETE SET NULL,
   description TEXT,
   solution TEXT,
@@ -101,9 +99,38 @@ CREATE TABLE IF NOT EXISTS cases (
   status TEXT NOT NULL DEFAULT 'closed',
   created_by uuid REFERENCES users(id) ON DELETE SET NULL,
   assigned_to uuid REFERENCES users(id) ON DELETE SET NULL,
+  tempo_impiego DECIMAL(5,2) DEFAULT 0.5,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS case_solutions_tried (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  case_id uuid NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+  solution_id uuid NOT NULL REFERENCES solutions_applied(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(case_id, solution_id)
+);
+
+CREATE TABLE IF NOT EXISTS case_solutions_applied (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  case_id uuid NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+  solution_id uuid NOT NULL REFERENCES solutions_applied(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(case_id, solution_id)
+);
+
+CREATE TABLE IF NOT EXISTS case_spare_parts (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  case_id uuid NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+  spare_part_id uuid NOT NULL REFERENCES spare_parts(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(case_id, spare_part_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_case_solutions_tried ON case_solutions_tried(case_id);
+CREATE INDEX IF NOT EXISTS idx_case_solutions_applied ON case_solutions_applied(case_id);
+CREATE INDEX IF NOT EXISTS idx_case_spare_parts ON case_spare_parts(case_id);
 
 -- Migrazioni schema esistente
 ALTER TABLE IF EXISTS cases DROP COLUMN IF EXISTS operator_id;
