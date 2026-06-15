@@ -380,25 +380,9 @@ casesRoutes.post('/', authMiddleware, async (req, res, next) => {
       ]
     );
 
-    // Kick off async AI generation (senza bloccare la risposta)
-    generateAiSolution({
-      machine: `${machineRecord.name}`,
-      line: machineRecord.line ?? 'N/A',
-      problem: problemName,
-      cause: causeName,
-      sparePart: sparePartName,
-      description: combinedDescription,
-      notes: body.notes?.trim() || undefined
-    })
-      .then(async (ai_solution) => {
-        await pool.query('UPDATE cases SET ai_solution = $1, updated_at = now() WHERE id = $2', [ai_solution, r.rows[0].id]);
-        emitEvent('case-updated', { caseId: r.rows[0].id });
-      })
-      .catch((err) => {
-        // non blocchiamo l'utente: log/gestione errori in background
-        // eslint-disable-next-line no-console
-        console.error('AI generation failed', err);
-      });
+    // NOT trigger AI on create case.
+    // L'utente gestisce l'analisi IA in modo indipendente (vedi pagina /ai-analysis o AI live in frontend).
+
 
 
 

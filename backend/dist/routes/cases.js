@@ -5,7 +5,6 @@ const express_1 = require("express");
 const auth_1 = require("../middleware/auth");
 const db_1 = require("../db");
 const socketService_1 = require("../services/socketService");
-const aiService_1 = require("../services/aiService");
 exports.casesRoutes = (0, express_1.Router)();
 const CASE_FIELDS = `c.id, c.machine_id, c.problem_id, c.cause_id, c.spare_part_id, c.solution_applied_id, c.category_id,
   c.description, c.solution, c.ai_solution, c.status, c.created_by, c.assigned_to,
@@ -311,25 +310,8 @@ exports.casesRoutes.post('/', auth_1.authMiddleware, async (req, res, next) => {
             body.assigned_to ?? null,
             body.notes?.trim() || null
         ]);
-        // Kick off async AI generation (senza bloccare la risposta)
-        (0, aiService_1.generateAiSolution)({
-            machine: `${machineRecord.name}`,
-            line: machineRecord.line ?? 'N/A',
-            problem: problemName,
-            cause: causeName,
-            sparePart: sparePartName,
-            description: combinedDescription,
-            notes: body.notes?.trim() || undefined
-        })
-            .then(async (ai_solution) => {
-            await db_1.pool.query('UPDATE cases SET ai_solution = $1, updated_at = now() WHERE id = $2', [ai_solution, r.rows[0].id]);
-            (0, socketService_1.emitEvent)('case-updated', { caseId: r.rows[0].id });
-        })
-            .catch((err) => {
-            // non blocchiamo l'utente: log/gestione errori in background
-            // eslint-disable-next-line no-console
-            console.error('AI generation failed', err);
-        });
+        // NOT trigger AI on create case.
+        // L'utente gestisce l'analisi IA in modo indipendente (vedi pagina /ai-analysis o AI live in frontend).
         await db_1.pool.query(`INSERT INTO case_events(case_id,event_type,message,actor_id)
        VALUES($1,'system','case created',$2)`, [r.rows[0].id, req.user.id]);
         (0, socketService_1.emitEvent)('case_created', { caseId: r.rows[0].id });
