@@ -160,7 +160,6 @@ casesRoutes.get('/', authMiddleware, async (req, res, next) => {
       `SELECT ${CASE_FIELDS}, m.code as machine_code, m.name as machine_name, u.username as created_by_username,
               COALESCE(oper.name, u.username) as operator_name,
               prob.name as problem_name, cause.name as cause_name,
-              sp.name as spare_part_name, sa.name as solution_applied_name,
               COUNT(*) OVER() AS total_count
        FROM cases c
        ${CASE_JOINS}
@@ -344,8 +343,7 @@ casesRoutes.get('/:id', authMiddleware, async (req, res, next) => {
     const r = await pool.query(
       `SELECT ${CASE_FIELDS}, m.code as machine_code, m.name as machine_name, u.username as created_by_username,
               COALESCE(oper.name, u.username) as operator_name,
-              prob.name as problem_name, cause.name as cause_name,
-              sp.name as spare_part_name, sa.name as solution_applied_name
+              prob.name as problem_name, cause.name as cause_name
        FROM cases c
        ${CASE_JOINS}
        WHERE c.id = $1`,
