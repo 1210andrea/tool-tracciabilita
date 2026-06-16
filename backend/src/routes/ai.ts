@@ -367,7 +367,7 @@ aiRoutes.post('/analyze', authMiddleware, async (req, res, next) => {
 
     logger.info({ aiAnalyze: { responseLength: finalAnalysis.length } });
 
-    // Calcola statistiche (come prima)
+    // Calcola statistiche
     let machineCount = 0;
     let lineCount = 0;
 
