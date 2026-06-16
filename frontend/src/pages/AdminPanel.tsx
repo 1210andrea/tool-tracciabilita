@@ -549,7 +549,7 @@ export default function AdminPanel() {
                 <div key={machine.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <div className="font-semibold text-slate-100">{machine.code} - {machine.name}</div>
-                    <div className="text-sm text-slate-500">{machine.line || 'Linea N/D'} · {machine.type || machine.tipologia || 'tipo N/D'} · {machine.location || 'Posizione N/D'}</div>
+                    <div className="text-sm text-slate-500">{machine.line || 'Linea N/D'} · Tipologia: {machine.tipologia || 'Non specificata'}</div>
                   </div>
                   <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400 transition" onClick={() => requestDelete('machines', machine.id)}>
                     Elimina

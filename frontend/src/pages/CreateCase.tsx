@@ -47,11 +47,11 @@ function MultiSelect({
   };
 
   return (
-    <div className="relative space-y-1">
+    <div className="relative flex flex-col space-y-1.5">
       <label className="text-sm font-medium text-slate-200 flex justify-between">
-        <span>{label} {required && <span className="text-red-400">*</span>}</span>
+        <span>{label} {required && <span className="text-rose-500 ml-1">*</span>}</span>
         {selectedValues.length > 0 && (
-          <span className="text-xs text-sky-400 font-semibold">
+          <span className="text-xs text-cyan-400 font-semibold">
             {selectedValues.length} selezionat{selectedValues.length === 1 ? 'o' : 'i'}
           </span>
         )}
@@ -60,9 +60,9 @@ function MultiSelect({
         <button
           type="button"
           onClick={() => setIsOpen(!isOpen)}
-          className="w-full text-left rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none flex justify-between items-center focus:border-sky-500/40 focus:ring-2 focus:ring-sky-500/10 transition duration-150"
+          className="w-full text-left px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 text-sm flex justify-between items-center transition duration-150"
         >
-          <span className="truncate text-sm">
+          <span className="truncate">
             {selectedValues.length > 0
               ? options
                   .filter((o) => selectedValues.includes(o.id))
@@ -83,22 +83,22 @@ function MultiSelect({
         {isOpen && (
           <>
             <div className="fixed inset-0 z-30" onClick={() => setIsOpen(false)} />
-            <div className="absolute left-0 right-0 z-40 mt-2 max-h-60 overflow-y-auto rounded-2xl border border-slate-700 bg-slate-950 p-2 shadow-2xl backdrop-blur-md transition-all duration-200">
+            <div className="absolute left-0 right-0 z-40 mt-2 max-h-60 overflow-y-auto rounded-md border border-slate-600 bg-slate-800 p-2 shadow-2xl backdrop-blur-md transition-all duration-200">
               {options.length === 0 ? (
-                <div className="px-4 py-3 text-sm text-slate-500 italic text-center">Nessuna opzione disponibile</div>
+                <div className="px-4 py-3 text-sm text-slate-400 italic text-center">Nessuna opzione disponibile</div>
               ) : (
                 options.map((opt) => {
                   const isChecked = selectedValues.includes(opt.id);
                   return (
                     <label
                       key={opt.id}
-                      className="flex items-center gap-3 px-4 py-2.5 rounded-xl hover:bg-sky-500/20 hover:text-sky-300 text-slate-200 text-sm cursor-pointer transition select-none"
+                      className="flex items-center gap-3 px-4 py-2.5 rounded-md hover:bg-slate-700 hover:text-white text-slate-200 text-sm cursor-pointer transition select-none"
                     >
                       <input
                         type="checkbox"
                         checked={isChecked}
                         onChange={() => toggleValue(opt.id)}
-                        className="accent-sky-500 h-4 w-4 cursor-pointer rounded"
+                        className="accent-cyan-500 h-4 w-4 cursor-pointer rounded"
                       />
                       <span className="truncate">{opt.name}</span>
                     </label>
@@ -109,7 +109,7 @@ function MultiSelect({
           </>
         )}
       </div>
-      {helperText && <p className="text-xs text-slate-500 mt-1">{helperText}</p>}
+      {helperText && <p className="text-xs text-slate-500">{helperText}</p>}
     </div>
   );
 }
@@ -322,180 +322,191 @@ export default function CreateCase() {
       {error && <div className="rounded-2xl border border-red-500/40 bg-red-500/10 p-4 text-red-200">{error}</div>}
       {success && <div className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4 text-emerald-200">{success}</div>}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6">
-          <label className="text-sm font-medium text-slate-200">Macchina <span className="text-red-400">*</span></label>
-
-          <div className="relative mt-3">
-            <input
-              type="text"
-              value={machineSearch}
-              onChange={(e) => {
-                const val = e.target.value;
-                setMachineSearch(val);
-                const exact = machines.find(
-                  (m) =>
-                    `${m.code} - ${m.name}`.toLowerCase() === val.toLowerCase().trim() ||
-                    m.code.toLowerCase() === val.toLowerCase().trim()
-                );
-                setMachineId(exact ? exact.id : '');
-              }}
-              onFocus={() => setShowSuggestions(true)}
-              onBlur={() => {
-                setTimeout(() => setShowSuggestions(false), 200);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') {
-                  setShowSuggestions(false);
-                }
-              }}
-              placeholder="Scrivi (es. SIMM45 - Linea 1 ...)"
-              className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none placeholder:text-slate-500 focus:border-sky-500/40 focus:ring-2 focus:ring-sky-500/10 text-sm"
-            />
-            {showSuggestions && filteredMachines.length > 0 && (
-              <div className="absolute left-0 right-0 z-50 mt-2 max-h-60 overflow-y-auto rounded-2xl border border-slate-700 bg-slate-950/95 p-2 shadow-2xl backdrop-blur-md transition-all duration-200">
-                {filteredMachines.map((m) => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                    }}
-                    onClick={() => {
-                      setMachineId(m.id);
-                      setMachineSearch(`${m.code} - ${m.name}`);
-                      setShowSuggestions(false);
-                    }}
-                    className="w-full text-left px-4 py-3 rounded-xl hover:bg-sky-500/20 hover:text-sky-300 text-slate-200 text-sm transition-colors duration-150 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1"
-                  >
-                    <div className="font-semibold text-slate-100">{m.code}</div>
-                    <div className="text-xs text-slate-400">{m.name}</div>
-                  </button>
-                ))}
-              </div>
-            )}
-            {showSuggestions && machineSearch.trim() !== '' && filteredMachines.length === 0 && (
-              <div className="absolute left-0 right-0 z-50 mt-2 rounded-2xl border border-slate-700 bg-slate-950/95 p-4 shadow-2xl backdrop-blur-md text-sm text-slate-400 text-center italic">
-                Nessuna macchina trovata
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6">
-          <label className="text-sm font-medium text-slate-200">Operatore <span className="text-red-400">*</span></label>
-          <select value={operatoreId} onChange={(e) => setOperatoreId(e.target.value)} className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none text-sm">
-            <option value="">Seleziona operatore</option>
-            {operatori.map((op) => (
-              <option key={op.id} value={op.id}>{op.nome}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6">
-          <MultiSelect
-            label="Pezzi di Ricambio"
-            options={spareParts}
-            selectedValues={pezziRicambio}
-            onChange={setPezziRicambio}
-            placeholder={!machineId ? 'Seleziona prima una macchina' : loadingParts ? 'Caricamento ricambi...' : spareParts.length ? 'Seleziona pezzi di ricambio' : 'Nessun ricambio per questo tipo'}
-            helperText={selectedMachine ? `Tipo/Reparto macchina: ${selectedMachine.reparto ?? selectedMachine.type ?? ''}` : 'Seleziona i pezzi di ricambio utilizzati per questo intervento'}
-            required={false}
-          />
-        </div>
-
-        <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6">
-          <label className="text-sm font-medium text-slate-200">Problema <span className="text-red-400">*</span></label>
-          <select value={problemId} onChange={(e) => setProblemId(e.target.value)} className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none text-sm">
-            <option value="">Seleziona problema</option>
-            {problems.map((item) => (
-              <option key={item.id} value={item.id}>{item.name}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6">
-          <label className="text-sm font-medium text-slate-200">Causa <span className="text-red-400">*</span></label>
-          <select value={causeId} onChange={(e) => setCauseId(e.target.value)} className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none text-sm">
-            <option value="">Seleziona causa</option>
-            {causes.map((item) => (
-              <option key={item.id} value={item.id}>{item.name}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6 md:col-span-2">
-          <MultiSelect
-            label="Soluzioni Provate"
-            options={solutions}
-            selectedValues={soluzioniProvate}
-            onChange={setSoluzioniProvate}
-            placeholder="Seleziona soluzioni provate..."
-            helperText="Soluzioni che sono state tentate ma NON hanno risolto il problema"
-            required={false}
-          />
-        </div>
-
-        <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6 md:col-span-2">
-          <MultiSelect
-            label="Soluzione Applicata"
-            options={solutions}
-            selectedValues={soluzioniApplicate}
-            onChange={setSoluzioniApplicate}
-            placeholder="Seleziona soluzione/i applicata/e..."
-            helperText="Soluzione/i che ha/hanno effettivamente risolto il problema"
-            required={true}
-          />
-        </div>
-
-        <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6 md:col-span-2">
-          <label className="text-sm font-medium text-slate-200">Tempo Impiego <span className="text-red-400">*</span></label>
-          <div className="mt-3 flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setTempoImpiego((t) => Math.max(0.5, t - 0.5))}
-              className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-700 bg-slate-900 text-lg font-bold text-slate-300 hover:bg-slate-800 transition active:scale-95"
-            >
-              -
-            </button>
-            <div className="flex-1 h-12 rounded-2xl border border-slate-700 bg-slate-900/90 px-4 flex items-center justify-center text-slate-100 font-semibold text-sm">
-              {tempoImpiego}h ({Math.floor(tempoImpiego)}h {Math.round((tempoImpiego % 1) * 60)}m)
+      <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 lg:gap-4">
+          
+          {/* Field: Macchina */}
+          <div className="flex flex-col space-y-1.5">
+            <label className="text-sm font-medium text-slate-200">Macchina <span className="text-rose-500 ml-1">*</span></label>
+            <div className="relative">
+              <input
+                type="text"
+                value={machineSearch}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setMachineSearch(val);
+                  const exact = machines.find(
+                    (m) =>
+                      `${m.code} - ${m.name}`.toLowerCase() === val.toLowerCase().trim() ||
+                      m.code.toLowerCase() === val.toLowerCase().trim()
+                  );
+                  setMachineId(exact ? exact.id : '');
+                }}
+                onFocus={() => setShowSuggestions(true)}
+                onBlur={() => {
+                  setTimeout(() => setShowSuggestions(false), 200);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setShowSuggestions(false);
+                  }
+                }}
+                placeholder="Scrivi (es. SIMM45 - Linea 1 ...)"
+                className="w-full px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 text-sm"
+              />
+              {showSuggestions && filteredMachines.length > 0 && (
+                <div className="absolute left-0 right-0 z-50 mt-2 max-h-60 overflow-y-auto rounded-md border border-slate-600 bg-slate-800 p-2 shadow-2xl backdrop-blur-md transition-all duration-200">
+                  {filteredMachines.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                      }}
+                      onClick={() => {
+                        setMachineId(m.id);
+                        setMachineSearch(`${m.code} - ${m.name}`);
+                        setShowSuggestions(false);
+                      }}
+                      className="w-full text-left px-4 py-2.5 rounded-md hover:bg-slate-700 hover:text-white text-slate-200 text-sm transition-colors duration-150 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1"
+                    >
+                      <div className="font-semibold text-slate-100">{m.code}</div>
+                      <div className="text-xs text-slate-400">{m.name}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {showSuggestions && machineSearch.trim() !== '' && filteredMachines.length === 0 && (
+                <div className="absolute left-0 right-0 z-50 mt-2 rounded-md border border-slate-600 bg-slate-800 p-4 shadow-2xl backdrop-blur-md text-sm text-slate-400 text-center italic">
+                  Nessuna macchina trovata
+                </div>
+              )}
             </div>
-            <button
-              type="button"
-              onClick={() => setTempoImpiego((t) => Math.min(999, t + 0.5))}
-              className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-700 bg-slate-900 text-lg font-bold text-slate-300 hover:bg-slate-800 transition active:scale-95"
-            >
-              +
-            </button>
           </div>
-          <p className="text-xs text-slate-500 mt-2">Durata totale dell'intervento manutentivo in ore.</p>
-        </div>
 
-        <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6 md:col-span-2">
-          <div className="flex justify-between items-center">
-            <label className="text-sm font-medium text-slate-200">Note aggiuntive</label>
-            <span className="text-xs text-slate-400">{notes.length}/1000 caratteri</span>
+          {/* Field: Operatore */}
+          <div className="flex flex-col space-y-1.5">
+            <label className="text-sm font-medium text-slate-200">Operatore <span className="text-rose-500 ml-1">*</span></label>
+            <select value={operatoreId} onChange={(e) => setOperatoreId(e.target.value)} className="w-full px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 text-sm">
+              <option value="">Seleziona operatore</option>
+              {operatori.map((op) => (
+                <option key={op.id} value={op.id}>{op.nome}</option>
+              ))}
+            </select>
           </div>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value.slice(0, 1000))}
-            placeholder="Aggiungi dettagli aggiuntivi sull'intervento, anomalie riscontrate o altre osservazioni..."
-            className="mt-3 w-full h-28 rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none resize-none focus:border-sky-500/50 transition-colors text-sm"
-          />
+
+          {/* Field: Pezzi di Ricambio */}
+          <div className="flex flex-col space-y-1.5">
+            <MultiSelect
+              label="Pezzi di Ricambio"
+              options={spareParts}
+              selectedValues={pezziRicambio}
+              onChange={setPezziRicambio}
+              placeholder={!machineId ? 'Seleziona prima una macchina' : loadingParts ? 'Caricamento ricambi...' : spareParts.length ? 'Seleziona pezzi di ricambio' : 'Nessun ricambio per questo tipo'}
+              helperText={selectedMachine ? `Tipo/Reparto macchina: ${selectedMachine.reparto ?? selectedMachine.type ?? ''}` : 'Seleziona i pezzi di ricambio utilizzati per questo intervento'}
+              required={false}
+            />
+          </div>
+
+          {/* Field: Problema */}
+          <div className="flex flex-col space-y-1.5">
+            <label className="text-sm font-medium text-slate-200">Problema <span className="text-rose-500 ml-1">*</span></label>
+            <select value={problemId} onChange={(e) => setProblemId(e.target.value)} className="w-full px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 text-sm">
+              <option value="">Seleziona problema</option>
+              {problems.map((item) => (
+                <option key={item.id} value={item.id}>{item.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Field: Causa */}
+          <div className="flex flex-col space-y-1.5">
+            <label className="text-sm font-medium text-slate-200">Causa <span className="text-rose-500 ml-1">*</span></label>
+            <select value={causeId} onChange={(e) => setCauseId(e.target.value)} className="w-full px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 text-sm">
+              <option value="">Seleziona causa</option>
+              {causes.map((item) => (
+                <option key={item.id} value={item.id}>{item.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Field: Soluzioni Provate */}
+          <div className="col-span-1 md:col-span-2 lg:col-span-2 flex flex-col space-y-1.5">
+            <MultiSelect
+              label="Soluzioni Provate"
+              options={solutions}
+              selectedValues={soluzioniProvate}
+              onChange={setSoluzioniProvate}
+              placeholder="Seleziona soluzioni provate..."
+              helperText="Soluzioni che sono state tentate ma NON hanno risolto il problema"
+              required={false}
+            />
+          </div>
+
+          {/* Field: Soluzione Applicata */}
+          <div className="col-span-1 md:col-span-2 lg:col-span-2 flex flex-col space-y-1.5">
+            <MultiSelect
+              label="Soluzione Applicata"
+              options={solutions}
+              selectedValues={soluzioniApplicate}
+              onChange={setSoluzioniApplicate}
+              placeholder="Seleziona soluzione/i applicata/e..."
+              helperText="Soluzione/i che ha/hanno effettivamente risolto il problema"
+              required={true}
+            />
+          </div>
+
+          {/* Field: Tempo Impiego */}
+          <div className="col-span-1 md:col-span-2 lg:col-span-2 flex flex-col space-y-1.5">
+            <label className="text-sm font-medium text-slate-200">Tempo Impiego <span className="text-rose-500 ml-1">*</span></label>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setTempoImpiego((t) => Math.max(0.5, t - 0.5))}
+                className="flex h-10 w-12 items-center justify-center rounded-md border border-slate-600 bg-slate-700 text-lg font-bold text-slate-300 hover:bg-slate-650 transition active:scale-95"
+              >
+                -
+              </button>
+              <div className="flex-1 h-10 rounded-md border border-slate-600 bg-slate-700 px-4 flex items-center justify-center text-slate-100 font-semibold text-sm">
+                {tempoImpiego}h ({Math.floor(tempoImpiego)}h {Math.round((tempoImpiego % 1) * 60)}m)
+              </div>
+              <button
+                type="button"
+                onClick={() => setTempoImpiego((t) => Math.min(999, t + 0.5))}
+                className="flex h-10 w-12 items-center justify-center rounded-md border border-slate-600 bg-slate-700 text-lg font-bold text-slate-300 hover:bg-slate-650 transition active:scale-95"
+              >
+                +
+              </button>
+            </div>
+            <p className="text-xs text-slate-500">Durata totale dell'intervento manutentivo in ore.</p>
+          </div>
+
+          {/* Field: Note aggiuntive */}
+          <div className="col-span-1 md:col-span-2 lg:col-span-2 flex flex-col space-y-1.5">
+            <div className="flex justify-between items-center">
+              <label className="text-sm font-medium text-slate-200">Note aggiuntive</label>
+              <span className="text-xs text-slate-400">{notes.length}/1000 caratteri</span>
+            </div>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value.slice(0, 1000))}
+              placeholder="Aggiungi dettagli aggiuntivi sull'intervento, anomalie riscontrate o altre osservazioni..."
+              className="w-full h-28 px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 resize-none text-sm"
+            />
+          </div>
         </div>
       </div>
       
       {machineId && problemId && (
-        <div className="rounded-3xl border border-sky-500/20 bg-slate-950/80 p-5 shadow-xl shadow-sky-500/5 sm:p-6 transition-all duration-300">
+        <div className="bg-slate-800 rounded-lg p-4 border border-slate-700 transition-all duration-300">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
-              <span className="flex h-2.5 w-2.5 rounded-full bg-sky-400 animate-pulse" />
-              <h3 className="text-sm font-semibold uppercase tracking-wider text-sky-400">Analisi IA in tempo reale</h3>
+              <span className="flex h-2.5 w-2.5 rounded-full bg-cyan-400 animate-pulse" />
+              <h3 className="text-sm font-semibold uppercase tracking-wider text-cyan-400">Analisi IA in tempo reale</h3>
             </div>
             {realTimeAiStatus === 'loading' && (
               <span className="text-xs text-slate-400 flex items-center gap-1.5">
-                <span className="animate-spin h-3.5 w-3.5 border-2 border-slate-600 border-t-sky-400 rounded-full" />
+                <span className="animate-spin h-3.5 w-3.5 border-2 border-slate-600 border-t-cyan-400 rounded-full" />
                 Elaborazione...
               </span>
             )}
@@ -503,7 +514,7 @@ export default function CreateCase() {
             {realTimeAiStatus === 'failed' && <span className="text-xs text-rose-400 font-medium">Errore di connessione</span>}
           </div>
 
-          <div className="rounded-2xl bg-slate-900/50 p-4 border border-slate-800/80">
+          <div className="rounded-md bg-slate-900/50 p-4 border border-slate-700">
             {realTimeAiStatus === 'loading' && !realTimeAi && (
               <p className="text-sm text-slate-500 italic">L'intelligenza artificiale sta analizzando i parametri inseriti...</p>
             )}

@@ -72,15 +72,20 @@ async function verifyOllamaModel() {
     }
     return { ok: true };
 }
-async function callOllama(messages) {
+async function callOllama(messages, options) {
     lastOllamaError = null;
     const controller = new AbortController();
     const t = setTimeout(() => controller.abort(), env_1.env.AI_TIMEOUT);
     try {
+        const reqBody = { model: env_1.env.AI_MODEL, messages, stream: false };
+        if (options?.max_tokens) {
+            reqBody.options = { num_predict: options.max_tokens };
+            reqBody.max_tokens = options.max_tokens;
+        }
         const resp = await fetch(`${env_1.env.AI_API_URL}/api/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model: env_1.env.AI_MODEL, messages, stream: false }),
+            body: JSON.stringify(reqBody),
             signal: controller.signal
         });
         if (!resp.ok) {
@@ -118,17 +123,6 @@ async function callOllama(messages) {
         clearTimeout(t);
     }
 }
-const AI_PROMPT_TEMPLATE = ({ machine, line, problem, cause, sparePart, description, notes }) => `Genera una soluzione tecnica per un problema di manutenzione su una macchina industriale.
-
-Macchina: ${machine}
-Linea: ${line}
-Problema: ${problem}
-Causa: ${cause}
-Pezzo di ricambio: ${sparePart}
-Descrizione/Soluzione: ${description}
-${notes ? `Note aggiuntive dell'operatore: ${notes}` : ''}
-
-Fornisci una soluzione chiara e pratica, con passaggi operativi e consigli.`;
 async function pingOllama() {
     const check = await verifyOllamaModel();
     if (!check.ok)
@@ -136,14 +130,43 @@ async function pingOllama() {
     return true;
 }
 async function generateAiSolution(data) {
-    const prompt = AI_PROMPT_TEMPLATE(data);
+    const machineName = (data.machine && data.machine !== 'N/D') ? data.machine : '';
+    const problemName = (data.problem && data.problem !== 'N/D') ? data.problem : '';
+    const description = (data.description && data.description !== 'N/D') ? data.description : '';
+    const symptoms = (data.notes && data.notes !== 'N/D') ? data.notes : '';
+    const prompt = `
+Sei un assistente esperto per la manutenzione industriale.
+Analizza il seguente problema in modo professionale e fornisci una risposta strutturata.
+
+**Macchina:** ${machineName || 'Non specificata'}
+**Problema:** ${problemName || 'Non specificato'}
+**Descrizione:** ${description || 'Non fornita'}
+**Sintomi:** ${symptoms || 'Non forniti'}
+
+**Istruzioni per la risposta:**
+1. Se ci sono casi simili nel database (in base al problema e alla macchina), menzionali brevemente.
+2. Suggerisci una soluzione pratica e immediata, basata sulle soluzioni già applicate in passato (se presenti).
+3. La risposta deve essere **con**cisa (massimo 150-200 parole).
+4. Usa un formato chiaro: 
+   - **Analisi:** (1 frase sul problema)
+   - **Soluzione suggerita:** (1-2 frasi)
+   - **Note:** (se mancano dati, suggerisci cosa raccogliere)
+5. Se non ci sono dati sufficienti, dillo chiaramente e suggerisci all'operatore di raccogliere più informazioni (es. foto, sintomi dettagliati, condizioni operative).
+
+**Risposta:**
+`;
     if (env_1.env.AI_PROVIDER === 'ollama') {
         const output = await callOllama([
             { role: 'system', content: 'Sei un assistente tecnico di manutenzione industriale.' },
             { role: 'user', content: prompt }
-        ]);
-        if (output)
+        ], { max_tokens: 300 });
+        if (output) {
+            const words = output.trim().split(/\s+/);
+            if (words.length > 200) {
+                return words.slice(0, 200).join(' ') + '...';
+            }
             return output;
+        }
     }
     return `Fallback AI solution: controlla i parametri e verifica la macchina. Problema: ${data.problem}, Causa: ${data.cause}, Ricambio: ${data.sparePart}.`;
 }
