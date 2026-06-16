@@ -45,34 +45,43 @@ export default function AdminPanel() {
   const loadAll = async () => {
     if (!token) return;
     setLoading(true);
-    try {
-      const [categoriesResp, operatoriResp, machinesResp, usersResp, spareResp, solutionsResp, tipologieResp] = await Promise.all([
-        axios.get(`${API_URL}/categories`, headers),
-        axios.get(`${API_URL}/operatori?all=1`, headers),
-        axios.get(`${API_URL}/machines`, headers),
-        axios.get(`${API_URL}/users`, headers),
-        axios.get(`${API_URL}/spare-parts`, headers),
-        axios.get(`${API_URL}/solutions-applied`, headers),
-        axios.get(`${API_URL}/machines/tipologie`, headers)
-      ]);
-      setCategories(categoriesResp.data.items || []);
-      setOperatori(operatoriResp.data.items || []);
-      setMachines(machinesResp.data.items || []);
-      setUsers(usersResp.data.items || []);
-      setSpareParts(spareResp.data.items || []);
-      setSolutionsApplied(solutionsResp.data.items || []);
-      setAvailableTipologie(tipologieResp.data.items || []);
-    } catch {
-      setCategories([]);
-      setOperatori([]);
-      setMachines([]);
-      setUsers([]);
-      setSpareParts([]);
-      setSolutionsApplied([]);
-      setAvailableTipologie([]);
-    } finally {
-      setLoading(false);
+    setMessage(null);
+
+    const requests = [
+      { key: 'categories' as const, promise: axios.get(`${API_URL}/categories`, headers) },
+      { key: 'operatori' as const, promise: axios.get(`${API_URL}/operatori?all=1`, headers) },
+      { key: 'machines' as const, promise: axios.get(`${API_URL}/machines`, headers) },
+      { key: 'users' as const, promise: axios.get(`${API_URL}/users`, headers) },
+      { key: 'spareParts' as const, promise: axios.get(`${API_URL}/spare-parts`, headers) },
+      { key: 'solutionsApplied' as const, promise: axios.get(`${API_URL}/solutions-applied`, headers) },
+      { key: 'tipologie' as const, promise: axios.get(`${API_URL}/machines/tipologie`, headers) }
+    ];
+
+    const results = await Promise.allSettled(requests.map((r) => r.promise));
+    const errors: string[] = [];
+
+    results.forEach((result, index) => {
+      const key = requests[index].key;
+      if (result.status === 'fulfilled') {
+        const items = result.value.data.items || [];
+        if (key === 'categories') setCategories(items);
+        if (key === 'operatori') setOperatori(items);
+        if (key === 'machines') setMachines(items);
+        if (key === 'users') setUsers(items);
+        if (key === 'spareParts') setSpareParts(items);
+        if (key === 'solutionsApplied') setSolutionsApplied(items);
+        if (key === 'tipologie') setAvailableTipologie(items);
+      } else {
+        const errMsg = (result.reason as any)?.response?.data?.error;
+        errors.push(errMsg ?? `Errore caricamento ${key}`);
+      }
+    });
+
+    if (errors.length) {
+      setMessage(`Alcuni dati non sono stati caricati: ${errors.join(' · ')}`);
     }
+
+    setLoading(false);
   };
 
   useEffect(() => {

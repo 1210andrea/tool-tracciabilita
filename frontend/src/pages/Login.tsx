@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 export default function Login() {
-  const { login, user } = useAuth();
+  const { login, user, initializing } = useAuth();
   const nav = useNavigate();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -14,6 +14,17 @@ export default function Login() {
     if (!user) return;
     nav('/');
   }, [user, nav]);
+
+  if (initializing) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-300">
+        <div className="flex items-center gap-3 text-sm">
+          <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
+          Verifica sessione...
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">

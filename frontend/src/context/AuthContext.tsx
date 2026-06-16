@@ -6,6 +6,7 @@ type User = { id: string; role: string; username?: string };
 type AuthContextValue = {
   user: User | null;
   token: string | null;
+  initializing: boolean;
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
 };
@@ -16,13 +17,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const api = useApi();
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'));
   const [user, setUser] = useState<User | null>(null);
+  const [initializing, setInitializing] = useState(() => Boolean(localStorage.getItem('token')));
 
   useEffect(() => {
-    if (!token) return;
-    api.me().then((u) => setUser(u)).catch(() => {
-      setToken(null);
-      localStorage.removeItem('token');
-    });
+    if (!token) {
+      setUser(null);
+      setInitializing(false);
+      return;
+    }
+
+    let cancelled = false;
+    setInitializing(true);
+
+    api.me()
+      .then((u) => {
+        if (!cancelled) setUser(u);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setToken(null);
+          setUser(null);
+          localStorage.removeItem('token');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setInitializing(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
@@ -30,6 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     () => ({
       user,
       token,
+      initializing,
       login: async (username, password) => {
         const t = await api.login(username, password);
         setToken(t);
@@ -41,7 +66,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         localStorage.removeItem('token');
       }
     }),
-    [api, user, token]
+    [api, user, token, initializing]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

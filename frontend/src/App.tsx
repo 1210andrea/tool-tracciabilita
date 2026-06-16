@@ -8,8 +8,20 @@ import CreateCase from './pages/CreateCase';
 import AdminPanel from './pages/AdminPanel';
 import AiAnalysis from './pages/AiAnalysis';
 
+function AuthLoading() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-300">
+      <div className="flex items-center gap-3 text-sm">
+        <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
+        Verifica sessione...
+      </div>
+    </div>
+  );
+}
+
 function Protected({ children, role }: { children: ReactNode; role?: string }) {
-  const { user } = useAuth();
+  const { user, initializing } = useAuth();
+  if (initializing) return <AuthLoading />;
   if (!user) return <Navigate to="/login" replace />;
   if (role && user.role !== role) return <Navigate to="/" replace />;
   return <>{children}</>;
