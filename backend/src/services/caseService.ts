@@ -46,15 +46,14 @@ export const getHistoricalDataForMachine = async (machineId: string, problemId?:
     }
   }
 
-  // 4. Struttura i dati con conteggi (restituisce stringhe già formattate)
-  const structureDataWithCounts = (rows: any[]) => {
+  // 4. Struttura i dati RESTITUENDO string[] già formattate
+  const structureData = (rows: any[]) => {
     const successMap = new Map<string, { count: number; operator: string }>();
     const failedMap = new Map<string, number>();
     const partsMap = new Map<string, number>();
     const notesList: string[] = [];
 
     rows.forEach(row => {
-      // Soluzioni funzionanti
       if (row.resolved && row.solution_applied) {
         const key = row.solution_applied;
         const existing = successMap.get(key) || { count: 0, operator: 'N.D.' };
@@ -65,13 +64,11 @@ export const getHistoricalDataForMachine = async (machineId: string, problemId?:
         successMap.set(key, existing);
       }
 
-      // Soluzioni fallite
       if (!row.resolved && row.solution_applied) {
         const key = row.solution_applied;
         failedMap.set(key, (failedMap.get(key) || 0) + 1);
       }
 
-      // Pezzi di ricambio
       if (row.spare_parts) {
         row.spare_parts.forEach((part: string) => {
           if (part && part !== 'N.D.') {
@@ -80,13 +77,12 @@ export const getHistoricalDataForMachine = async (machineId: string, problemId?:
         });
       }
 
-      // Note
       if (row.notes && row.notes.trim()) {
         notesList.push(row.notes.trim());
       }
     });
 
-    // 🔥 Restituisce stringhe formattate con conteggio
+    // 🔥 Restituisce array di stringhe già formattate (il tipo atteso da buildAIPrompt)
     return {
       solutionsSuccess: Array.from(successMap.entries()).map(([name, data]) => {
         const op = data.operator && data.operator !== 'N.D.' ? ` - operatore ${data.operator}` : '';
@@ -103,7 +99,7 @@ export const getHistoricalDataForMachine = async (machineId: string, problemId?:
   };
 
   return {
-    machine: structureDataWithCounts(machineCases.rows),
-    line: lineCases ? structureDataWithCounts(lineCases.rows) : null,
+    machine: structureData(machineCases.rows),
+    line: lineCases ? structureData(lineCases.rows) : null,
   };
 };
