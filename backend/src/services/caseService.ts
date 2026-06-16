@@ -6,7 +6,6 @@ export const getHistoricalDataForMachine = async (machineId: string, problemId?:
   const line = machine.rows[0]?.line;
 
   // 2. Recupera i casi per questa macchina (con operatore)
-  //    Se problemId è presente, filtra per quel problema
   const machineCases = await db.query(`
     SELECT 
       c.solution_applied,
@@ -47,9 +46,8 @@ export const getHistoricalDataForMachine = async (machineId: string, problemId?:
     }
   }
 
-  // 4. Struttura i dati con conteggi (raggruppa e conta)
+  // 4. Struttura i dati con conteggi (restituisce stringhe già formattate)
   const structureDataWithCounts = (rows: any[]) => {
-    // Mappe per raggruppare
     const successMap = new Map<string, { count: number; operator: string }>();
     const failedMap = new Map<string, number>();
     const partsMap = new Map<string, number>();
@@ -61,7 +59,6 @@ export const getHistoricalDataForMachine = async (machineId: string, problemId?:
         const key = row.solution_applied;
         const existing = successMap.get(key) || { count: 0, operator: 'N.D.' };
         existing.count++;
-        // Se l'operatore è valorizzato e diverso da 'N.D.', prendilo
         if (row.operator_name && row.operator_name !== 'N.D.' && existing.operator === 'N.D.') {
           existing.operator = row.operator_name;
         }
@@ -83,26 +80,24 @@ export const getHistoricalDataForMachine = async (machineId: string, problemId?:
         });
       }
 
-      // Note (solo se non vuote)
+      // Note
       if (row.notes && row.notes.trim()) {
         notesList.push(row.notes.trim());
       }
     });
 
+    // 🔥 Restituisce stringhe formattate con conteggio
     return {
-      solutionsSuccess: Array.from(successMap.entries()).map(([name, data]) => ({
-        name,
-        count: data.count,
-        operator: data.operator !== 'N.D.' ? data.operator : undefined,
-      })),
-      solutionsFailed: Array.from(failedMap.entries()).map(([name, count]) => ({
-        name,
-        count,
-      })),
-      spareParts: Array.from(partsMap.entries()).map(([name, count]) => ({
-        name,
-        count,
-      })),
+      solutionsSuccess: Array.from(successMap.entries()).map(([name, data]) => {
+        const op = data.operator && data.operator !== 'N.D.' ? ` - operatore ${data.operator}` : '';
+        return `${name} (${data.count}x)${op}`;
+      }),
+      solutionsFailed: Array.from(failedMap.entries()).map(([name, count]) => {
+        return `${name} (${count}x)`;
+      }),
+      spareParts: Array.from(partsMap.entries()).map(([name, count]) => {
+        return `${name} (${count}x)`;
+      }),
       notes: notesList,
     };
   };
