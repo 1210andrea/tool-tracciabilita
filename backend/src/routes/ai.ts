@@ -311,7 +311,11 @@ aiRoutes.post('/analyze', authMiddleware, async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'machine_id è obbligatorio' });
     }
 
-    const machineR = await pool.query('SELECT code, name, line FROM machines WHERE id = $1', [machine_id]);
+    // 🔥 Recupera dati storici con conteggi (da caseService)
+    const historicalData = await getHistoricalDataForMachine(machine_id, problem_id);
+
+    // Recupera machine, problem e cause names
+    const machineR = await pool.query('SELECT name, line FROM machines WHERE id = $1', [machine_id]);
     const machine = machineR.rows[0];
     if (!machine) {
       return res.status(400).json({
@@ -328,52 +332,19 @@ aiRoutes.post('/analyze', authMiddleware, async (req, res, next) => {
       ? (await pool.query('SELECT name FROM categories WHERE id = $1', [cause_id])).rows[0]?.name ?? 'N/D'
       : 'N/D';
 
-    let historicalCases = await fetchHistoricalCases(machine_id, problem_id ?? null, machine.line, 'machine');
-    let searchScope: 'machine' | 'line' | 'all' = 'machine';
-
-    if (!historicalCases.length && machine.line) {
-      historicalCases = await fetchHistoricalCases(machine_id, problem_id ?? null, machine.line, 'line');
-      searchScope = 'line';
-    }
-
-    if (!historicalCases.length) {
-      const r = await pool.query(
-        `${HISTORICAL_CASES_SQL}
-         ORDER BY c.created_at DESC
-         LIMIT 20`
-      );
-      historicalCases = r.rows as HistoricalCaseRow[];
-      searchScope = 'all';
-    }
-
-    if (!historicalCases.length) {
-      return res.json({
-        success: false,
-        insufficient: true,
-        error: 'Nessun storico trovato',
-        message: 'Non ho abbastanza dati storici nel database.',
-        details: { machine_id, problem_id, searchScope }
-      });
-    }
-
-    const sparePartsHistory = await fetchSparePartsHistory(
-      machine_id,
-      machine.line,
-      searchScope === 'all' ? 'line' : searchScope
-    );
-
-    const context = buildHistoricalAnalysisContext({
-      machineName: `${machine.code} - ${machine.name}`,
-      machineLine: machine.line ?? 'N/D',
-      problem: problemName,
-      cause: causeName,
-      cases: historicalCases,
-      sparePartsHistory
+    // 🔥 Usa lo stesso prompt ultra-sintetico di /suggest-solution
+    const prompt = buildAIPrompt({
+      machineName: machine.name || 'Sconosciuta',
+      lineName: machine.line || 'Sconosciuta',
+      problemName: problemName,
+      causeName: causeName,
+      description: payload.description || '',
+      symptoms: payload.symptoms || '',
+      historicalData,
     });
 
-    logger.info({ aiAnalyze: { contextPreview: context.slice(0, 500), casesFound: historicalCases.length, searchScope } });
-
-    const analysis = await generateHistoricalAnalysis(context);
+    // Chiamata a Ollama (con timeout 15s)
+    const analysis = await callOllama(prompt, 15_000);
 
     if (!analysis) {
       const ollamaErr = getLastOllamaError();
@@ -383,12 +354,20 @@ aiRoutes.post('/analyze', authMiddleware, async (req, res, next) => {
         insufficient: true,
         error: getOllamaErrorMessage(),
         message: formatOllamaUnavailableMessage(),
-        details: { ollama: ollamaErr, casesFound: historicalCases.length, searchScope }
+        details: { ollama: ollamaErr }
       });
     }
 
-    logger.info({ aiAnalyze: { responseLength: analysis.length } });
+    // 🔥 Troncamento a 100 parole
+    let finalAnalysis = analysis;
+    const words = finalAnalysis.trim().split(/\s+/);
+    if (words.length > 100) {
+      finalAnalysis = words.slice(0, 100).join(' ') + '...';
+    }
 
+    logger.info({ aiAnalyze: { responseLength: finalAnalysis.length } });
+
+    // Calcola statistiche (come prima)
     let machineCount = 0;
     let lineCount = 0;
 
@@ -456,9 +435,9 @@ aiRoutes.post('/analyze', authMiddleware, async (req, res, next) => {
         same_problem_line: lineCount,
         total_similar: totalCount
       },
-      analysis,
-      solution: analysis,
-      details: { searchScope }
+      analysis: finalAnalysis,
+      solution: finalAnalysis,
+      details: { searchScope: machineCount > 0 ? 'machine' : 'line' }
     });
   } catch (e) {
     logger.error({ aiAnalyze: { error: e instanceof Error ? e.message : String(e) } });
