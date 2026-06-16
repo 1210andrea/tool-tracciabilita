@@ -55,8 +55,8 @@ export default function AiAnalysis() {
 
   const runAnalysis = async () => {
     if (!token) return;
-    if (!machineId) {
-      setError('Seleziona una macchina.');
+    if (!machineId || !problemId) {
+      setError('Seleziona sia la macchina che il problema per avviare l\'analisi IA.');
       return;
     }
 
@@ -106,9 +106,9 @@ export default function AiAnalysis() {
             </select>
           </div>
           <div>
-            <label className="text-xs text-slate-400">Problema</label>
+            <label className="text-xs text-slate-400">Problema <span className="text-red-400">*</span></label>
             <select value={problemId} onChange={(e) => setProblemId(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none">
-              <option value="">Opzionale</option>
+              <option value="">Seleziona problema</option>
               {problems.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </div>
