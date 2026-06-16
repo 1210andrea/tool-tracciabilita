@@ -278,26 +278,38 @@ aiRoutes.post('/analyze', authMiddleware, async (req, res, next) => {
       : 'N/D';
 
     let historicalCases = await fetchHistoricalCases(machine_id, problem_id ?? null, machine.line, 'machine');
-    let searchScope: 'machine' | 'line' = 'machine';
+    let searchScope: 'machine' | 'line' | 'all' = 'machine';
 
-    if (!historicalCases.length && problem_id && machine.line) {
-      historicalCases = await fetchHistoricalCases(machine_id, problem_id, machine.line, 'line');
+    if (!historicalCases.length && machine.line) {
+      historicalCases = await fetchHistoricalCases(machine_id, problem_id ?? null, machine.line, 'line');
       searchScope = 'line';
+    }
+
+    if (!historicalCases.length) {
+      const r = await pool.query(
+        `${HISTORICAL_CASES_SQL}
+         ORDER BY c.created_at DESC
+         LIMIT 20`
+      );
+      historicalCases = r.rows as HistoricalCaseRow[];
+      searchScope = 'all';
     }
 
     if (!historicalCases.length) {
       return res.json({
         success: false,
         insufficient: true,
-        error: 'Nessun storico trovato per questa macchina',
-        message: problem_id
-          ? `Non ho abbastanza dati storici per la macchina ${machine.code} e il problema "${problemName}".`
-          : `Non ho abbastanza dati storici per la macchina ${machine.code}.`,
+        error: 'Nessun storico trovato',
+        message: 'Non ho abbastanza dati storici nel database.',
         details: { machine_id, problem_id, searchScope }
       });
     }
 
-    const sparePartsHistory = await fetchSparePartsHistory(machine_id, machine.line, searchScope);
+    const sparePartsHistory = await fetchSparePartsHistory(
+      machine_id,
+      machine.line,
+      searchScope === 'all' ? 'line' : searchScope
+    );
 
     const context = buildHistoricalAnalysisContext({
       machineName: `${machine.code} - ${machine.name}`,
@@ -326,20 +338,75 @@ aiRoutes.post('/analyze', authMiddleware, async (req, res, next) => {
 
     logger.info({ aiAnalyze: { responseLength: analysis.length } });
 
-    const sameMachineProblem = historicalCases.filter(
-      (c) => c.machine_code === machine.code && (!problem_id || c.problem_name === problemName)
-    ).length;
-    const sameProblemLine = searchScope === 'line' ? historicalCases.length : 0;
+    let machineCount = 0;
+    let lineCount = 0;
+
+    if (problem_id) {
+      const mc = await pool.query(
+        'SELECT COUNT(*)::int FROM cases WHERE machine_id = $1 AND problem_id = $2',
+        [machine_id, problem_id]
+      );
+      machineCount = mc.rows[0]?.count ?? 0;
+
+      if (machine.line) {
+        const lc = await pool.query(
+          `SELECT COUNT(*)::int FROM cases c
+           JOIN machines m ON c.machine_id = m.id
+           WHERE m.line = $1 AND c.machine_id != $2 AND c.problem_id = $3`,
+          [machine.line, machine_id, problem_id]
+        );
+        lineCount = lc.rows[0]?.count ?? 0;
+      }
+    } else {
+      const mc = await pool.query(
+        'SELECT COUNT(*)::int FROM cases WHERE machine_id = $1',
+        [machine_id]
+      );
+      machineCount = mc.rows[0]?.count ?? 0;
+
+      if (machine.line) {
+        const lc = await pool.query(
+          `SELECT COUNT(*)::int FROM cases c
+           JOIN machines m ON c.machine_id = m.id
+           WHERE m.line = $1 AND c.machine_id != $2`,
+          [machine.line, machine_id]
+        );
+        lineCount = lc.rows[0]?.count ?? 0;
+      }
+    }
+
+    const totalCount = machineCount + lineCount;
+
+    const machineLabel = problem_id
+      ? "Casi con stesso problema su questa macchina"
+      : "Casi su questa macchina";
+    const lineLabel = problem_id
+      ? "Casi con stesso problema sulla linea"
+      : "Casi sulla linea";
+    const totalLabel = "Casi simili totali";
 
     res.json({
       success: true,
       insufficient: false,
       stats: {
-        same_machine_problem: sameMachineProblem,
-        same_problem_line: sameProblemLine,
-        total_similar: historicalCases.length
+        machine: {
+          count: machineCount,
+          label: machineLabel
+        },
+        line: {
+          count: lineCount,
+          label: lineLabel
+        },
+        total: {
+          count: totalCount,
+          label: totalLabel
+        },
+        same_machine_problem: machineCount,
+        same_problem_line: lineCount,
+        total_similar: totalCount
       },
       analysis,
+      solution: analysis,
       details: { searchScope }
     });
   } catch (e) {

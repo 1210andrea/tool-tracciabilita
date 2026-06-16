@@ -18,6 +18,9 @@ type AiResult = {
     same_machine_problem: number;
     same_problem_line: number;
     total_similar: number;
+    machine?: { count: number; label: string };
+    line?: { count: number; label: string };
+    total?: { count: number; label: string };
   };
 };
 
@@ -152,16 +155,28 @@ export default function AiAnalysis() {
           {result.stats && (
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="rounded-2xl bg-slate-900/80 p-4 text-center">
-                <div className="text-2xl font-semibold text-violet-300">{result.stats.same_machine_problem}</div>
-                <div className="mt-1 text-xs text-slate-400">Stessa macchina + problema</div>
+                <div className="text-2xl font-semibold text-violet-300">
+                  {result.stats.machine ? result.stats.machine.count : result.stats.same_machine_problem}
+                </div>
+                <div className="mt-1 text-xs text-slate-400">
+                  {result.stats.machine ? result.stats.machine.label : (problemId ? "Casi con stesso problema su questa macchina" : "Casi su questa macchina")}
+                </div>
               </div>
               <div className="rounded-2xl bg-slate-900/80 p-4 text-center">
-                <div className="text-2xl font-semibold text-violet-300">{result.stats.same_problem_line}</div>
-                <div className="mt-1 text-xs text-slate-400">Stesso problema in linea</div>
+                <div className="text-2xl font-semibold text-violet-300">
+                  {result.stats.line ? result.stats.line.count : result.stats.same_problem_line}
+                </div>
+                <div className="mt-1 text-xs text-slate-400">
+                  {result.stats.line ? result.stats.line.label : (problemId ? "Casi con stesso problema sulla linea" : "Casi sulla linea")}
+                </div>
               </div>
               <div className="rounded-2xl bg-slate-900/80 p-4 text-center">
-                <div className="text-2xl font-semibold text-violet-300">{result.stats.total_similar}</div>
-                <div className="mt-1 text-xs text-slate-400">Casi simili totali</div>
+                <div className="text-2xl font-semibold text-violet-300">
+                  {result.stats.total ? result.stats.total.count : result.stats.total_similar}
+                </div>
+                <div className="mt-1 text-xs text-slate-400">
+                  {result.stats.total ? result.stats.total.label : "Casi simili totali"}
+                </div>
               </div>
             </div>
           )}
