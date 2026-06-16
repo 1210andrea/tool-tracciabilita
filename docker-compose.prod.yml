@@ -45,6 +45,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3001
+      AI_API_URL: http://machines_ollama:11434
     restart: always
     networks:
       - machines_network
