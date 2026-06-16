@@ -1,17 +1,16 @@
 import { pool as db } from '../db';
 
 export const getHistoricalDataForMachine = async (machineId: string, problemId?: string) => {
-  // 1. Recupera la macchina per ottenere la linea
   const machine = await db.query('SELECT line, name FROM machines WHERE id = $1', [machineId]);
   const line = machine.rows[0]?.line;
 
-  // 2. Recupera i casi per questa macchina (con operatore)
+  // Query per i casi della macchina (usa solution e status)
   const machineCases = await db.query(`
     SELECT 
-      c.solution_applied,
+      c.solution,
       c.notes,
-      c.resolved,
-      COALESCE(oper.nome, 'N.D.') as operator_name,
+      c.status,
+      oper.nome as operator_name,
       array_agg(DISTINCT sp.name) as spare_parts
     FROM cases c
     LEFT JOIN case_spare_parts csp ON c.id = csp.case_id
@@ -19,10 +18,9 @@ export const getHistoricalDataForMachine = async (machineId: string, problemId?:
     LEFT JOIN operatori oper ON oper.id = c.operatore_id
     WHERE c.machine_id = $1
     ${problemId ? 'AND c.problem_id = $2' : ''}
-    GROUP BY c.id, c.solution_applied, c.notes, c.resolved, oper.nome
+    GROUP BY c.id, c.solution, c.notes, c.status, oper.nome
   `, problemId ? [machineId, problemId] : [machineId]);
 
-  // 3. Se non ci sono casi per la macchina, cerca sulla linea
   let lineCases = null;
   if (machineCases.rows.length === 0 && line) {
     const lineMachines = await db.query('SELECT id FROM machines WHERE line = $1 AND id != $2', [line, machineId]);
@@ -30,10 +28,10 @@ export const getHistoricalDataForMachine = async (machineId: string, problemId?:
     if (lineMachineIds.length > 0) {
       lineCases = await db.query(`
         SELECT 
-          c.solution_applied,
+          c.solution,
           c.notes,
-          c.resolved,
-          COALESCE(oper.nome, 'N.D.') as operator_name,
+          c.status,
+          oper.nome as operator_name,
           array_agg(DISTINCT sp.name) as spare_parts
         FROM cases c
         LEFT JOIN case_spare_parts csp ON c.id = csp.case_id
@@ -41,12 +39,11 @@ export const getHistoricalDataForMachine = async (machineId: string, problemId?:
         LEFT JOIN operatori oper ON oper.id = c.operatore_id
         WHERE c.machine_id = ANY($1)
         ${problemId ? 'AND c.problem_id = $2' : ''}
-        GROUP BY c.id, c.solution_applied, c.notes, c.resolved, oper.nome
+        GROUP BY c.id, c.solution, c.notes, c.status, oper.nome
       `, problemId ? [lineMachineIds, problemId] : [lineMachineIds]);
     }
   }
 
-  // 4. Struttura i dati (restituisce array di stringhe formattate)
   const structureData = (rows: any[]) => {
     const successMap = new Map<string, { count: number; operator: string }>();
     const failedMap = new Map<string, number>();
@@ -54,24 +51,24 @@ export const getHistoricalDataForMachine = async (machineId: string, problemId?:
     const notesList: string[] = [];
 
     rows.forEach(row => {
-      // Soluzioni funzionanti
-      if (row.resolved && row.solution_applied) {
-        const key = row.solution_applied;
-        const existing = successMap.get(key) || { count: 0, operator: 'N.D.' };
+      const solutionName = row.solution;
+      if (!solutionName) return;
+
+      // 'closed' = risolto, altri status = fallito
+      const resolved = row.status === 'closed';
+      const operator = row.operator_name || 'N.D.';
+
+      if (resolved) {
+        const existing = successMap.get(solutionName) || { count: 0, operator: 'N.D.' };
         existing.count++;
-        if (row.operator_name && row.operator_name !== 'N.D.' && existing.operator === 'N.D.') {
-          existing.operator = row.operator_name;
+        if (operator !== 'N.D.' && existing.operator === 'N.D.') {
+          existing.operator = operator;
         }
-        successMap.set(key, existing);
+        successMap.set(solutionName, existing);
+      } else {
+        failedMap.set(solutionName, (failedMap.get(solutionName) || 0) + 1);
       }
 
-      // Soluzioni fallite
-      if (!row.resolved && row.solution_applied) {
-        const key = row.solution_applied;
-        failedMap.set(key, (failedMap.get(key) || 0) + 1);
-      }
-
-      // Pezzi di ricambio
       if (row.spare_parts) {
         row.spare_parts.forEach((part: string) => {
           if (part && part !== 'N.D.') {
@@ -80,7 +77,6 @@ export const getHistoricalDataForMachine = async (machineId: string, problemId?:
         });
       }
 
-      // Note
       if (row.notes && row.notes.trim()) {
         notesList.push(row.notes.trim());
       }
@@ -91,12 +87,8 @@ export const getHistoricalDataForMachine = async (machineId: string, problemId?:
         const op = data.operator && data.operator !== 'N.D.' ? ` - operatore ${data.operator}` : '';
         return `${name} (${data.count}x)${op}`;
       }),
-      solutionsFailed: Array.from(failedMap.entries()).map(([name, count]) => {
-        return `${name} (${count}x)`;
-      }),
-      spareParts: Array.from(partsMap.entries()).map(([name, count]) => {
-        return `${name} (${count}x)`;
-      }),
+      solutionsFailed: Array.from(failedMap.entries()).map(([name, count]) => `${name} (${count}x)`),
+      spareParts: Array.from(partsMap.entries()).map(([name, count]) => `${name} (${count}x)`),
       notes: notesList,
     };
   };
