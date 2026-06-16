@@ -100,6 +100,9 @@ async function fetchSparePartsHistory(
   return r.rows as SparePartHistoryRow[];
 }
 
+// ============================================================
+// NUOVA FUNZIONE buildAIPrompt - OTTIMIZZATA PER RISPOSTE PRATICHE
+// ============================================================
 const buildAIPrompt = (data: {
   machineName: string;
   lineName: string;
@@ -124,68 +127,163 @@ const buildAIPrompt = (data: {
 }) => {
   const { machineName, lineName, problemName, causeName, description, symptoms, historicalData } = data;
 
-  let machineSection = '';
-  if (historicalData.machine.solutionsSuccess.length > 0) {
-    machineSection += `\n**Soluzioni che hanno FUNZIONATO su questa macchina:**\n- ${historicalData.machine.solutionsSuccess.join('\n- ')}`;
-  }
-  if (historicalData.machine.solutionsFailed.length > 0) {
-    machineSection += `\n\n**Soluzioni che NON hanno funzionato su questa macchina:**\n- ${historicalData.machine.solutionsFailed.join('\n- ')}`;
-  }
-  if (historicalData.machine.spareParts.length > 0) {
-    machineSection += `\n\n**Pezzi di ricambio cambiati su questa macchina:**\n- ${historicalData.machine.spareParts.join('\n- ')}`;
-  }
-  if (historicalData.machine.notes.length > 0) {
-    machineSection += `\n\n**Note degli operatori su questa macchina:**\n- ${historicalData.machine.notes.join('\n- ')}`;
+  // Conta le occorrenze delle soluzioni (raggruppa e conta duplicati)
+  const countOccurrences = (arr: string[]): { name: string; count: number; operator?: string }[] => {
+    const map = new Map<string, { count: number; operator?: string }>();
+    arr.forEach(item => {
+      // Estrae eventuale operatore dal testo (formato: "Soluzione (operatore: Nome)")
+      const match = item.match(/^(.*?)\s*\(operatore:\s*([^)]+)\)$/);
+      const key = match ? match[1].trim() : item.trim();
+      const operator = match ? match[2].trim() : undefined;
+      if (map.has(key)) {
+        const existing = map.get(key)!;
+        existing.count++;
+        if (operator && !existing.operator) {
+          existing.operator = operator;
+        }
+      } else {
+        map.set(key, { count: 1, operator });
+      }
+    });
+    return Array.from(map.entries()).map(([name, data]) => ({ name, count: data.count, operator: data.operator }));
+  };
+
+  // Formatta i dati storici in modo leggibile per l'IA
+  let historicalText = '';
+
+  // Dati sulla macchina
+  const machine = historicalData.machine;
+  const machineSuccessCounts = countOccurrences(machine.solutionsSuccess);
+  const machineFailedCounts = countOccurrences(machine.solutionsFailed);
+  const sparePartsCounts = countOccurrences(machine.spareParts);
+
+  const hasMachineData = machineSuccessCounts.length > 0 || machineFailedCounts.length > 0 || sparePartsCounts.length > 0 || machine.notes.length > 0;
+
+  if (hasMachineData) {
+    historicalText += `\n**SU QUESTA MACCHINA (${machineName}):**\n`;
+    
+    if (machineSuccessCounts.length > 0) {
+      historicalText += `- Soluzioni che hanno FUNZIONATO:\n`;
+      machineSuccessCounts.forEach(s => {
+        const op = s.operator ? ` - operatore ${s.operator}` : '';
+        historicalText += `  ✅ ${s.name} (${s.count} volta${s.count > 1 ? 'e' : ''})${op}\n`;
+      });
+    }
+    
+    if (machineFailedCounts.length > 0) {
+      historicalText += `- Soluzioni che NON hanno funzionato:\n`;
+      machineFailedCounts.forEach(s => {
+        historicalText += `  ❌ ${s.name} (${s.count} volta${s.count > 1 ? 'e' : ''})\n`;
+      });
+    }
+    
+    if (sparePartsCounts.length > 0) {
+      historicalText += `- Pezzi di ricambio usati:\n`;
+      sparePartsCounts.forEach(p => {
+        historicalText += `  🔧 ${p.name} (usato ${p.count} volta${p.count > 1 ? 'e' : ''})\n`;
+      });
+    }
+    
+    if (machine.notes.length > 0) {
+      historicalText += `- Note importanti:\n`;
+      machine.notes.forEach(n => {
+        historicalText += `  📝 ${n}\n`;
+      });
+    }
   }
 
-  let lineSection = '';
+  // Dati sulla linea (se disponibili)
   if (historicalData.line) {
-    lineSection = `\n\n--- DATI DELLA LINEA (${lineName}) ---`;
-    if (historicalData.line.solutionsSuccess.length > 0) {
-      lineSection += `\n**Soluzioni che hanno FUNZIONATO sulla linea:**\n- ${historicalData.line.solutionsSuccess.join('\n- ')}`;
+    const line = historicalData.line;
+    const lineSuccessCounts = countOccurrences(line.solutionsSuccess);
+    const lineFailedCounts = countOccurrences(line.solutionsFailed);
+    const lineSparePartsCounts = countOccurrences(line.spareParts);
+
+    const hasLineData = lineSuccessCounts.length > 0 || lineFailedCounts.length > 0 || lineSparePartsCounts.length > 0 || line.notes.length > 0;
+
+    if (hasLineData) {
+      historicalText += `\n**SULLA LINEA (${lineName}):**\n`;
+      
+      if (lineSuccessCounts.length > 0) {
+        historicalText += `- Soluzioni che hanno FUNZIONATO:\n`;
+        lineSuccessCounts.forEach(s => {
+          const op = s.operator ? ` - operatore ${s.operator}` : '';
+          historicalText += `  ✅ ${s.name} (${s.count} volta${s.count > 1 ? 'e' : ''})${op}\n`;
+        });
+      }
+      
+      if (lineFailedCounts.length > 0) {
+        historicalText += `- Soluzioni che NON hanno funzionato:\n`;
+        lineFailedCounts.forEach(s => {
+          historicalText += `  ❌ ${s.name} (${s.count} volta${s.count > 1 ? 'e' : ''})\n`;
+        });
+      }
+      
+      if (lineSparePartsCounts.length > 0) {
+        historicalText += `- Pezzi di ricambio usati:\n`;
+        lineSparePartsCounts.forEach(p => {
+          historicalText += `  🔧 ${p.name} (usato ${p.count} volta${p.count > 1 ? 'e' : ''})\n`;
+        });
+      }
+      
+      if (line.notes.length > 0) {
+        historicalText += `- Note importanti:\n`;
+        line.notes.forEach(n => {
+          historicalText += `  📝 ${n}\n`;
+        });
+      }
     }
-    if (historicalData.line.solutionsFailed.length > 0) {
-      lineSection += `\n\n**Soluzioni che NON hanno funzionato sulla linea:**\n- ${historicalData.line.solutionsFailed.join('\n- ')}`;
-    }
-    if (historicalData.line.spareParts.length > 0) {
-      lineSection += `\n\n**Pezzi di ricambio cambiati sulla linea:**\n- ${historicalData.line.spareParts.join('\n- ')}`;
-    }
-    if (historicalData.line.notes.length > 0) {
-      lineSection += `\n\n**Note degli operatori sulla linea:**\n- ${historicalData.line.notes.join('\n- ')}`;
-    }
+  }
+
+  // Se non ci sono dati
+  if (!historicalText) {
+    historicalText = `\n**NESSUN DATO STORICO DISPONIBILE** per ${machineName} o per la linea ${lineName}.\n`;
   }
 
   return `
-Sei un assistente esperto per la manutenzione industriale.
-Analizza il seguente problema e fornisci una risposta strutturata e pratica.
+Sei un assistente per la manutenzione industriale. Devi analizzare i dati storici e fornire un consiglio pratico.
 
+**Problema:** ${problemName || 'Non specificato'}
 **Macchina:** ${machineName}
 **Linea:** ${lineName}
-**Problema:** ${problemName || 'Non specificato'}
 **Causa:** ${causeName || 'Non specificata'}
 **Descrizione:** ${description || 'Non fornita'}
-**Sintomi:** ${symptoms || 'Non forniti'}
 
 --- DATI STORICI ---
-${machineSection || 'Nessun dato storico disponibile per questa macchina.'}
-${lineSection || 'Nessun dato storico disponibile per questa linea.'}
+${historicalText}
 
-**Istruzioni per la risposta:**
-1. Analizza i dati storici della macchina e della linea (se disponibili).
-2. Suggerisci una soluzione basata su quelle che hanno funzionato in passato.
-3. Se ci sono soluzioni che hanno fallito, menzionale come "da evitare".
-4. Se sono stati cambiati pezzi di ricambio, segnalalo.
-5. Se ci sono note degli operatori, tienile in considerazione.
-6. Confronta i dati della macchina con quelli della linea (se disponibili).
-7. La risposta deve essere **con**cisa (massimo 200 parole) e strutturata in:
-   - **Analisi:** (cosa emerge dai dati storici)
-   - **Soluzione suggerita:** (basata sui dati)
-   - **Pezzi di ricambio consigliati:** (se applicabile)
-   - **Note:** (eventuali avvertenze)
+--- ISTRUZIONI ---
+Rispondi in modo **pratico e strutturato** seguendo questo formato:
+
+### ✅ CONSIGLIO PRATICO
+
+**Prima scelta:** [la soluzione che ha funzionato più volte, o la più recente]
+- Azione: [cosa fare concretamente]
+- Attenzione a: [eventuali note/avvertenze]
+
+**Seconda scelta:** [soluzione alternativa, se disponibile]
+- Azione: [cosa fare]
+
+**Da evitare:** [soluzioni che hanno fallito, se presenti]
+
+### 📊 RIEPILOGO DATI
+- Soluzioni funzionanti: [elenco con conteggio]
+- Soluzioni fallite: [elenco con conteggio]
+- Pezzi di ricambio usati: [elenco con conteggio]
+- Note: [eventuali]
+
+**Regole:**
+1. Massimo 150 parole.
+2. Usa solo i dati forniti.
+3. Se non ci sono dati: "Problema mai verificato su questa macchina o sulla linea. Consiglio di raccogliere più informazioni."
 
 **Risposta:**
 `;
 };
+
+// ============================================================
+// ROTTE
+// ============================================================
 
 aiRoutes.post('/suggest-solution', authMiddleware, async (req, res, next) => {
   try {
