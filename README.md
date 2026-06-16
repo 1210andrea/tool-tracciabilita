@@ -182,3 +182,61 @@ La cartella `scripts/` contiene strumenti automatizzati per gestire l'applicazio
 *   `restore.sh`: Ripristina il database a partire da un file di dump precedentemente creato.
 *   `diagnose-502.sh`: Effettua una scansione dello stato di salute dei container e della rete Docker per diagnosticare eventuali errori 502 (Bad Gateway).
 *   `deploy.sh`: Script rapido per eseguire il pull dell'ultima versione del codice da git e riavviare i servizi.
+
+---
+
+## 🩺 Risoluzione dei Problemi Noti (Troubleshooting)
+
+### 1. 502 Bad Gateway (Errore di connessione al sito)
+L'errore 502 si verifica tipicamente quando Nginx (il proxy inverso) è attivo, ma non riesce ad inoltrare le richieste al frontend (porta `3000`) o al backend (porta `3001`). 
+
+**Soluzione:**
+1.  **Attendi la build e l'healthcheck**: Durante il deploy, il container `machines_frontend` compila i sorgenti e impiega fino a 40 secondi prima di essere marcato come "healthy". Attendi e ricarica la pagina.
+2.  **Esegui lo script di diagnostica**:
+    ```bash
+    bash scripts/diagnose-502.sh
+    ```
+3.  **Riavvia il container Nginx**: Se l'upstream si è spento/riavviato, Nginx può aver bisogno di riavviare la risoluzione DNS interna:
+    ```bash
+    docker compose -f docker-compose.prod.yml restart nginx
+    ```
+4.  **Ricrea e riavvia l'intera infrastruttura**:
+    ```bash
+    docker compose -f docker-compose.prod.yml up -d
+    ```
+
+### 2. L'analisi IA restituisce errori o risponde "IA non disponibile"
+Se i suggerimenti in tempo reale o l'analisi storica mostrano messaggi di errore o indicano che Ollama è offline.
+
+**Soluzione:**
+1.  **Controlla lo stato del container Ollama**:
+    ```bash
+    docker compose -f docker-compose.prod.yml ps ollama
+    ```
+2.  **Verifica che il modello sia caricato**: Assicurati che il modello configurato nel file `.env` (variabile `AI_MODEL`) sia presente all'interno del container:
+    ```bash
+    docker exec -it machines_ollama ollama list
+    ```
+3.  **Scarica il modello (se assente)**:
+    ```bash
+    docker exec -it machines_ollama ollama pull llama3.1:8b
+    ```
+4.  **Verifica il timeout**: Se i log indicano un errore di *timeout*, puoi aumentare il valore della variabile `AI_TIMEOUT` (in millisecondi) all'interno del file `.env` e riavviare il backend:
+    ```bash
+    docker compose -f docker-compose.prod.yml up -d backend
+    ```
+
+### 3. Errore di connessione al Database (Winston / DB Errors)
+Se il backend crasha ripetutamente indicando problemi di connessione al database PostgreSQL.
+
+**Soluzione:**
+1.  **Controlla i log di Postgres**:
+    ```bash
+    docker logs machines_postgres
+    ```
+2.  **Attendi l'inizializzazione**: Se è il primo avvio del database, PostgreSQL esegue lo script `init.sql` e le migrazioni, e può richiedere diversi secondi prima di accettare nuove connessioni.
+3.  **Ricrea il volume del DB (ATTENZIONE: cancella tutti i dati)**:
+    ```bash
+    docker compose -f docker-compose.prod.yml down -v
+    docker compose -f docker-compose.prod.yml up -d
+    ```
