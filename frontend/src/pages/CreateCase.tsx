@@ -322,8 +322,7 @@ export default function CreateCase() {
       {error && <div className="rounded-2xl border border-red-500/40 bg-red-500/10 p-4 text-red-200">{error}</div>}
       {success && <div className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4 text-emerald-200">{success}</div>}
 
-      <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 lg:gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 lg:gap-4">
           
           {/* Field: Macchina */}
           <div className="flex flex-col space-y-1.5">
@@ -495,11 +494,10 @@ export default function CreateCase() {
             />
           </div>
         </div>
-      </div>
       
       {machineId && problemId && (
-        <div className="bg-slate-800 rounded-lg p-4 border border-slate-700 transition-all duration-300">
-          <div className="flex items-center justify-between mb-4">
+        <div className="transition-all duration-300 space-y-3">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="flex h-2.5 w-2.5 rounded-full bg-cyan-400 animate-pulse" />
               <h3 className="text-sm font-semibold uppercase tracking-wider text-cyan-400">Analisi IA in tempo reale</h3>
@@ -514,7 +512,7 @@ export default function CreateCase() {
             {realTimeAiStatus === 'failed' && <span className="text-xs text-rose-400 font-medium">Errore di connessione</span>}
           </div>
 
-          <div className="rounded-md bg-slate-900/50 p-4 border border-slate-700">
+          <div className="rounded-md bg-slate-800 p-4 border border-slate-700">
             {realTimeAiStatus === 'loading' && !realTimeAi && (
               <p className="text-sm text-slate-500 italic">L'intelligenza artificiale sta analizzando i parametri inseriti...</p>
             )}

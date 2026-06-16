@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { authMiddleware } from '../middleware/auth';
-import { pool } from '../db';
+import { pool as db, pool } from '../db';
 import { logger } from '../config/logger';
 import {
+  callOllama,
   buildHistoricalAnalysisContext,
   formatOllamaUnavailableMessage,
   generateHistoricalAnalysis,
@@ -11,6 +12,7 @@ import {
   type HistoricalCaseRow,
   type SparePartHistoryRow
 } from '../services/aiService';
+import { getHistoricalDataForMachine } from '../services/caseService';
 
 export const aiRoutes = Router();
 
@@ -98,48 +100,148 @@ async function fetchSparePartsHistory(
   return r.rows as SparePartHistoryRow[];
 }
 
+const buildAIPrompt = (data: {
+  machineName: string;
+  lineName: string;
+  problemName: string;
+  causeName: string;
+  description: string;
+  symptoms: string;
+  historicalData: {
+    machine: {
+      solutionsSuccess: string[];
+      solutionsFailed: string[];
+      spareParts: string[];
+      notes: string[];
+    };
+    line: {
+      solutionsSuccess: string[];
+      solutionsFailed: string[];
+      spareParts: string[];
+      notes: string[];
+    } | null;
+  };
+}) => {
+  const { machineName, lineName, problemName, causeName, description, symptoms, historicalData } = data;
+
+  let machineSection = '';
+  if (historicalData.machine.solutionsSuccess.length > 0) {
+    machineSection += `\n**Soluzioni che hanno FUNZIONATO su questa macchina:**\n- ${historicalData.machine.solutionsSuccess.join('\n- ')}`;
+  }
+  if (historicalData.machine.solutionsFailed.length > 0) {
+    machineSection += `\n\n**Soluzioni che NON hanno funzionato su questa macchina:**\n- ${historicalData.machine.solutionsFailed.join('\n- ')}`;
+  }
+  if (historicalData.machine.spareParts.length > 0) {
+    machineSection += `\n\n**Pezzi di ricambio cambiati su questa macchina:**\n- ${historicalData.machine.spareParts.join('\n- ')}`;
+  }
+  if (historicalData.machine.notes.length > 0) {
+    machineSection += `\n\n**Note degli operatori su questa macchina:**\n- ${historicalData.machine.notes.join('\n- ')}`;
+  }
+
+  let lineSection = '';
+  if (historicalData.line) {
+    lineSection = `\n\n--- DATI DELLA LINEA (${lineName}) ---`;
+    if (historicalData.line.solutionsSuccess.length > 0) {
+      lineSection += `\n**Soluzioni che hanno FUNZIONATO sulla linea:**\n- ${historicalData.line.solutionsSuccess.join('\n- ')}`;
+    }
+    if (historicalData.line.solutionsFailed.length > 0) {
+      lineSection += `\n\n**Soluzioni che NON hanno funzionato sulla linea:**\n- ${historicalData.line.solutionsFailed.join('\n- ')}`;
+    }
+    if (historicalData.line.spareParts.length > 0) {
+      lineSection += `\n\n**Pezzi di ricambio cambiati sulla linea:**\n- ${historicalData.line.spareParts.join('\n- ')}`;
+    }
+    if (historicalData.line.notes.length > 0) {
+      lineSection += `\n\n**Note degli operatori sulla linea:**\n- ${historicalData.line.notes.join('\n- ')}`;
+    }
+  }
+
+  return `
+Sei un assistente esperto per la manutenzione industriale.
+Analizza il seguente problema e fornisci una risposta strutturata e pratica.
+
+**Macchina:** ${machineName}
+**Linea:** ${lineName}
+**Problema:** ${problemName || 'Non specificato'}
+**Causa:** ${causeName || 'Non specificata'}
+**Descrizione:** ${description || 'Non fornita'}
+**Sintomi:** ${symptoms || 'Non forniti'}
+
+--- DATI STORICI ---
+${machineSection || 'Nessun dato storico disponibile per questa macchina.'}
+${lineSection || 'Nessun dato storico disponibile per questa linea.'}
+
+**Istruzioni per la risposta:**
+1. Analizza i dati storici della macchina e della linea (se disponibili).
+2. Suggerisci una soluzione basata su quelle che hanno funzionato in passato.
+3. Se ci sono soluzioni che hanno fallito, menzionale come "da evitare".
+4. Se sono stati cambiati pezzi di ricambio, segnalalo.
+5. Se ci sono note degli operatori, tienile in considerazione.
+6. Confronta i dati della macchina con quelli della linea (se disponibili).
+7. La risposta deve essere **con**cisa (massimo 200 parole) e strutturata in:
+   - **Analisi:** (cosa emerge dai dati storici)
+   - **Soluzione suggerita:** (basata sui dati)
+   - **Pezzi di ricambio consigliati:** (se applicabile)
+   - **Note:** (eventuali avvertenze)
+
+**Risposta:**
+`;
+};
+
 aiRoutes.post('/suggest-solution', authMiddleware, async (req, res, next) => {
   try {
-    const { machine_id, problem_id, cause_id, description, spare_part_id, notes } = req.body as {
-      machine_id?: string;
-      problem_id?: string | null;
-      cause_id?: string | null;
-      description?: string;
-      spare_part_id?: string | null;
-      notes?: string;
-    };
+    const machineId = req.body.machineId || req.body.machine_id;
+    const problemId = req.body.problemId || req.body.problem_id;
+    const causeId = req.body.causeId || req.body.cause_id;
+    const description = req.body.description;
+    const symptoms = req.body.symptoms || req.body.notes;
 
-    if (!machine_id) return res.status(400).json({ error: 'machine_id è obbligatorio' });
+    // Verifica che machineId sia presente (obbligatorio)
+    if (!machineId) {
+      return res.status(400).json({ 
+        solution: '⚠️ Seleziona una macchina per l\'analisi IA.',
+        suggestion: '⚠️ Seleziona una macchina per l\'analisi IA.'
+      });
+    }
 
-    const [machineR, problemR, causeR, spareR] = await Promise.all([
-      pool.query('SELECT code, name, line, tipologia FROM machines WHERE id = $1', [machine_id]),
-      problem_id ? pool.query('SELECT name FROM categories WHERE id = $1', [problem_id]) : Promise.resolve({ rows: [] }),
-      cause_id ? pool.query('SELECT name FROM categories WHERE id = $1', [cause_id]) : Promise.resolve({ rows: [] }),
-      spare_part_id ? pool.query('SELECT name FROM spare_parts WHERE id = $1', [spare_part_id]) : Promise.resolve({ rows: [] })
-    ]);
+    // Recupera dati storici (problemId può essere undefined)
+    const historicalData = await getHistoricalDataForMachine(machineId, problemId);
 
-    const machine = machineR.rows[0];
-    if (!machine) return res.status(400).json({ error: 'Macchina non trovata' });
+    // Recupera machine, problem e cause names
+    const machine = await db.query('SELECT name, line FROM machines WHERE id = $1', [machineId]);
+    const problem = problemId ? await db.query('SELECT name FROM categories WHERE id = $1', [problemId]) : null;
+    const cause = causeId ? await db.query('SELECT name FROM categories WHERE id = $1', [causeId]) : null;
 
-    const problemName = problemR.rows[0]?.name ?? 'N/D';
-    const causeName = causeR.rows[0]?.name ?? 'N/D';
-    const sparePartName = spareR.rows[0]?.name ?? 'N/D';
-    const desc = description?.trim() ? description.trim() : 'N/D';
-
-    const { generateAiSolution } = await import('../services/aiService');
-    const suggestion = await generateAiSolution({
-      machine: `${machine.name}`,
-      line: machine.line ?? 'N/A',
-      problem: problemName,
-      cause: causeName,
-      sparePart: sparePartName,
-      description: desc,
-      notes: notes?.trim() || undefined
+    // Costruisci il prompt
+    const prompt = buildAIPrompt({
+      machineName: machine.rows[0]?.name || 'Sconosciuta',
+      lineName: machine.rows[0]?.line || 'Sconosciuta',
+      problemName: problem?.rows[0]?.name || '',
+      causeName: cause?.rows[0]?.name || '',
+      description: description || '',
+      symptoms: symptoms || '',
+      historicalData,
     });
 
-    res.json({ suggestion, insufficient: false });
-  } catch (e) {
-    next(e);
+    // Chiamata a Ollama (con timeout 15s)
+    const response = await callOllama(prompt, 15_000);
+
+    let finalResponse = response || '⚠️ Analisi IA non disponibile al momento.';
+    const words = finalResponse.trim().split(/\s+/);
+    if (words.length > 200) {
+      finalResponse = words.slice(0, 200).join(' ') + '...';
+    }
+
+    res.json({
+      solution: finalResponse,
+      suggestion: finalResponse,
+      insufficient: false
+    });
+  } catch (error) {
+    console.error('AI suggest error:', error);
+    res.status(500).json({ 
+      solution: '⚠️ Analisi IA non disponibile al momento. Riprova più tardi.',
+      suggestion: '⚠️ Analisi IA non disponibile al momento. Riprova più tardi.'
+    });
   }
 });
 

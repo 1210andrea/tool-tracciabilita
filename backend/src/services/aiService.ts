@@ -63,15 +63,28 @@ export async function verifyOllamaModel(): Promise<{ ok: true } | { ok: false; r
   return { ok: true };
 }
 
-async function callOllama(messages: ChatMessage[], options?: { max_tokens?: number }): Promise<string | null> {
+export async function callOllama(
+  promptOrMessages: string | ChatMessage[],
+  timeoutOrOptions?: number | { max_tokens?: number }
+): Promise<string | null> {
   lastOllamaError = null;
   const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), env.AI_TIMEOUT);
+  
+  let timeoutMs = env.AI_TIMEOUT;
+  if (typeof timeoutOrOptions === 'number') {
+    timeoutMs = timeoutOrOptions;
+  }
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+
   try {
+    const messages = typeof promptOrMessages === 'string'
+      ? [{ role: 'user', content: promptOrMessages }]
+      : promptOrMessages;
+
     const reqBody: any = { model: env.AI_MODEL, messages, stream: false };
-    if (options?.max_tokens) {
-      reqBody.options = { num_predict: options.max_tokens };
-      reqBody.max_tokens = options.max_tokens;
+    if (timeoutOrOptions && typeof timeoutOrOptions === 'object' && timeoutOrOptions.max_tokens) {
+      reqBody.options = { num_predict: timeoutOrOptions.max_tokens };
+      reqBody.max_tokens = timeoutOrOptions.max_tokens;
     }
     const resp = await fetch(`${env.AI_API_URL}/api/chat`, {
       method: 'POST',

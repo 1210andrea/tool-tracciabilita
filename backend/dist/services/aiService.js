@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getLastOllamaError = getLastOllamaError;
 exports.listOllamaModels = listOllamaModels;
 exports.verifyOllamaModel = verifyOllamaModel;
+exports.callOllama = callOllama;
 exports.pingOllama = pingOllama;
 exports.generateAiSolution = generateAiSolution;
 exports.buildHistoricalAnalysisContext = buildHistoricalAnalysisContext;
@@ -72,15 +73,22 @@ async function verifyOllamaModel() {
     }
     return { ok: true };
 }
-async function callOllama(messages, options) {
+async function callOllama(promptOrMessages, timeoutOrOptions) {
     lastOllamaError = null;
     const controller = new AbortController();
-    const t = setTimeout(() => controller.abort(), env_1.env.AI_TIMEOUT);
+    let timeoutMs = env_1.env.AI_TIMEOUT;
+    if (typeof timeoutOrOptions === 'number') {
+        timeoutMs = timeoutOrOptions;
+    }
+    const t = setTimeout(() => controller.abort(), timeoutMs);
     try {
+        const messages = typeof promptOrMessages === 'string'
+            ? [{ role: 'user', content: promptOrMessages }]
+            : promptOrMessages;
         const reqBody = { model: env_1.env.AI_MODEL, messages, stream: false };
-        if (options?.max_tokens) {
-            reqBody.options = { num_predict: options.max_tokens };
-            reqBody.max_tokens = options.max_tokens;
+        if (timeoutOrOptions && typeof timeoutOrOptions === 'object' && timeoutOrOptions.max_tokens) {
+            reqBody.options = { num_predict: timeoutOrOptions.max_tokens };
+            reqBody.max_tokens = timeoutOrOptions.max_tokens;
         }
         const resp = await fetch(`${env_1.env.AI_API_URL}/api/chat`, {
             method: 'POST',
