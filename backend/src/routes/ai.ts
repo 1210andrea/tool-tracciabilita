@@ -101,7 +101,7 @@ async function fetchSparePartsHistory(
 }
 
 // ============================================================
-// NUOVA FUNZIONE buildAIPrompt - OTTIMIZZATA PER RISPOSTE PRATICHE
+// buildAIPrompt - ULTRA-SINTETICA per risposte pratiche (max 100 parole)
 // ============================================================
 const buildAIPrompt = (data: {
   machineName: string;
@@ -131,7 +131,6 @@ const buildAIPrompt = (data: {
   const countOccurrences = (arr: string[]): { name: string; count: number; operator?: string }[] => {
     const map = new Map<string, { count: number; operator?: string }>();
     arr.forEach(item => {
-      // Estrae eventuale operatore dal testo (formato: "Soluzione (operatore: Nome)")
       const match = item.match(/^(.*?)\s*\(operatore:\s*([^)]+)\)$/);
       const key = match ? match[1].trim() : item.trim();
       const operator = match ? match[2].trim() : undefined;
@@ -148,10 +147,9 @@ const buildAIPrompt = (data: {
     return Array.from(map.entries()).map(([name, data]) => ({ name, count: data.count, operator: data.operator }));
   };
 
-  // Formatta i dati storici in modo leggibile per l'IA
+  // Formatta i dati storici in modo ultra-compatto per l'IA
   let historicalText = '';
 
-  // Dati sulla macchina
   const machine = historicalData.machine;
   const machineSuccessCounts = countOccurrences(machine.solutionsSuccess);
   const machineFailedCounts = countOccurrences(machine.solutionsFailed);
@@ -160,40 +158,23 @@ const buildAIPrompt = (data: {
   const hasMachineData = machineSuccessCounts.length > 0 || machineFailedCounts.length > 0 || sparePartsCounts.length > 0 || machine.notes.length > 0;
 
   if (hasMachineData) {
-    historicalText += `\n**SU QUESTA MACCHINA (${machineName}):**\n`;
-    
+    historicalText += `\nSU QUESTA MACCHINA (${machineName}):\n`;
     if (machineSuccessCounts.length > 0) {
-      historicalText += `- Soluzioni che hanno FUNZIONATO:\n`;
-      machineSuccessCounts.forEach(s => {
-        const op = s.operator ? ` - operatore ${s.operator}` : '';
-        historicalText += `  ✅ ${s.name} (${s.count} volta${s.count > 1 ? 'e' : ''})${op}\n`;
-      });
+      historicalText += `✅ FUNZIONATE: ${machineSuccessCounts.map(s => `${s.name} (${s.count}x)${s.operator ? ` - ${s.operator}` : ''}`).join(', ')}\n`;
     }
-    
     if (machineFailedCounts.length > 0) {
-      historicalText += `- Soluzioni che NON hanno funzionato:\n`;
-      machineFailedCounts.forEach(s => {
-        historicalText += `  ❌ ${s.name} (${s.count} volta${s.count > 1 ? 'e' : ''})\n`;
-      });
+      historicalText += `❌ FALLITE: ${machineFailedCounts.map(s => `${s.name} (${s.count}x)`).join(', ')}\n`;
     }
-    
     if (sparePartsCounts.length > 0) {
-      historicalText += `- Pezzi di ricambio usati:\n`;
-      sparePartsCounts.forEach(p => {
-        historicalText += `  🔧 ${p.name} (usato ${p.count} volta${p.count > 1 ? 'e' : ''})\n`;
-      });
+      historicalText += `🔧 PEZZI USATI: ${sparePartsCounts.map(p => `${p.name} (${p.count}x)`).join(', ')}\n`;
     }
-    
     if (machine.notes.length > 0) {
-      historicalText += `- Note importanti:\n`;
-      machine.notes.forEach(n => {
-        historicalText += `  📝 ${n}\n`;
-      });
+      historicalText += `📝 NOTE: ${machine.notes.join('; ')}\n`;
     }
   }
 
-  // Dati sulla linea (se disponibili)
-  if (historicalData.line) {
+  // Dati sulla linea (se disponibili e se non ci sono dati sulla macchina)
+  if (!hasMachineData && historicalData.line) {
     const line = historicalData.line;
     const lineSuccessCounts = countOccurrences(line.solutionsSuccess);
     const lineFailedCounts = countOccurrences(line.solutionsFailed);
@@ -202,82 +183,52 @@ const buildAIPrompt = (data: {
     const hasLineData = lineSuccessCounts.length > 0 || lineFailedCounts.length > 0 || lineSparePartsCounts.length > 0 || line.notes.length > 0;
 
     if (hasLineData) {
-      historicalText += `\n**SULLA LINEA (${lineName}):**\n`;
-      
+      historicalText += `\nSULLA LINEA (${lineName}):\n`;
       if (lineSuccessCounts.length > 0) {
-        historicalText += `- Soluzioni che hanno FUNZIONATO:\n`;
-        lineSuccessCounts.forEach(s => {
-          const op = s.operator ? ` - operatore ${s.operator}` : '';
-          historicalText += `  ✅ ${s.name} (${s.count} volta${s.count > 1 ? 'e' : ''})${op}\n`;
-        });
+        historicalText += `✅ FUNZIONATE: ${lineSuccessCounts.map(s => `${s.name} (${s.count}x)${s.operator ? ` - ${s.operator}` : ''}`).join(', ')}\n`;
       }
-      
       if (lineFailedCounts.length > 0) {
-        historicalText += `- Soluzioni che NON hanno funzionato:\n`;
-        lineFailedCounts.forEach(s => {
-          historicalText += `  ❌ ${s.name} (${s.count} volta${s.count > 1 ? 'e' : ''})\n`;
-        });
+        historicalText += `❌ FALLITE: ${lineFailedCounts.map(s => `${s.name} (${s.count}x)`).join(', ')}\n`;
       }
-      
       if (lineSparePartsCounts.length > 0) {
-        historicalText += `- Pezzi di ricambio usati:\n`;
-        lineSparePartsCounts.forEach(p => {
-          historicalText += `  🔧 ${p.name} (usato ${p.count} volta${p.count > 1 ? 'e' : ''})\n`;
-        });
+        historicalText += `🔧 PEZZI USATI: ${lineSparePartsCounts.map(p => `${p.name} (${p.count}x)`).join(', ')}\n`;
       }
-      
       if (line.notes.length > 0) {
-        historicalText += `- Note importanti:\n`;
-        line.notes.forEach(n => {
-          historicalText += `  📝 ${n}\n`;
-        });
+        historicalText += `📝 NOTE: ${line.notes.join('; ')}\n`;
       }
     }
   }
 
   // Se non ci sono dati
   if (!historicalText) {
-    historicalText = `\n**NESSUN DATO STORICO DISPONIBILE** per ${machineName} o per la linea ${lineName}.\n`;
+    historicalText = `\nNESSUN DATO STORICO per ${machineName} o linea ${lineName}.\n`;
   }
 
   return `
-Sei un assistente per la manutenzione industriale. Devi analizzare i dati storici e fornire un consiglio pratico.
+Sei un assistente per la manutenzione industriale. Dai un consiglio pratico.
 
 **Problema:** ${problemName || 'Non specificato'}
 **Macchina:** ${machineName}
-**Linea:** ${lineName}
-**Causa:** ${causeName || 'Non specificata'}
-**Descrizione:** ${description || 'Non fornita'}
 
 --- DATI STORICI ---
 ${historicalText}
 
 --- ISTRUZIONI ---
-Rispondi in modo **pratico e strutturato** seguendo questo formato:
+Rispondi SOLO in questo formato, senza introduzioni o conclusioni:
 
-### ✅ CONSIGLIO PRATICO
+**Consiglio pratico:**
+- Prima scelta: [soluzione che ha funzionato più volte]
+  - Azione: [cosa fare]
+  - Attenzione: [note se presenti]
+- Seconda scelta: [alternativa se disponibile]
+- Da evitare: [soluzioni fallite se presenti]
 
-**Prima scelta:** [la soluzione che ha funzionato più volte, o la più recente]
-- Azione: [cosa fare concretamente]
-- Attenzione a: [eventuali note/avvertenze]
-
-**Seconda scelta:** [soluzione alternativa, se disponibile]
-- Azione: [cosa fare]
-
-**Da evitare:** [soluzioni che hanno fallito, se presenti]
-
-### 📊 RIEPILOGO DATI
-- Soluzioni funzionanti: [elenco con conteggio]
-- Soluzioni fallite: [elenco con conteggio]
-- Pezzi di ricambio usati: [elenco con conteggio]
-- Note: [eventuali]
+**Pezzi di ricambio usati:** [elenco se presenti]
 
 **Regole:**
-1. Massimo 150 parole.
-2. Usa solo i dati forniti.
-3. Se non ci sono dati: "Problema mai verificato su questa macchina o sulla linea. Consiglio di raccogliere più informazioni."
-
-**Risposta:**
+- Massimo 100 parole.
+- Usa solo i dati forniti.
+- Se non ci sono dati: "Nessun dato storico disponibile."
 `;
 };
 
@@ -324,9 +275,11 @@ aiRoutes.post('/suggest-solution', authMiddleware, async (req, res, next) => {
     const response = await callOllama(prompt, 15_000);
 
     let finalResponse = response || '⚠️ Analisi IA non disponibile al momento.';
+    
+    // 🔥 Troncamento a 100 parole (non 200)
     const words = finalResponse.trim().split(/\s+/);
-    if (words.length > 200) {
-      finalResponse = words.slice(0, 200).join(' ') + '...';
+    if (words.length > 100) {
+      finalResponse = words.slice(0, 100).join(' ') + '...';
     }
 
     res.json({
