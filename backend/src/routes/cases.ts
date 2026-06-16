@@ -538,13 +538,15 @@ casesRoutes.put('/:id', authMiddleware, async (req, res, next) => {
     const finalMachineId = body.machine_id || body.macchina_id;
     const finalNotes = body.notes || body.note_aggiuntive;
 
+    // 🟢 Campi obbligatori per l'UPDATE (operatore_id NON è obbligatorio)
     const missing: string[] = [];
     if (!finalMachineId) missing.push('macchina');
     if (!body.problem_id) missing.push('problema');
     if (!body.cause_id) missing.push('causa');
     if (!body.soluzioni_applicate || !body.soluzioni_applicate.length) missing.push('soluzione applicata');
-    if (!body.operatore_id) missing.push('operatore');
-    if (body.tempo_impiego === undefined || body.tempo_impiego < 0.5) {
+    
+    // 🟢 tempo_impiego è opzionale: se viene passato, deve essere >= 0.5, altrimenti lo ignoriamo
+    if (body.tempo_impiego !== undefined && body.tempo_impiego < 0.5) {
       return res.status(400).json({ error: 'Tempo impiego deve essere maggiore o uguale a 0.5 ore' });
     }
 
@@ -560,10 +562,13 @@ casesRoutes.put('/:id', authMiddleware, async (req, res, next) => {
     try {
       await client.query('BEGIN');
 
-      const operatoreError = await validateOperatoreId(client, body.operatore_id!);
-      if (operatoreError) {
-        await client.query('ROLLBACK');
-        return res.status(400).json({ error: operatoreError });
+      // 🟢 Valida operatore SOLO SE viene passato
+      if (body.operatore_id) {
+        const operatoreError = await validateOperatoreId(client, body.operatore_id);
+        if (operatoreError) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ error: operatoreError });
+        }
       }
 
       let solutionAppliedDesc = '';
@@ -578,24 +583,56 @@ casesRoutes.put('/:id', authMiddleware, async (req, res, next) => {
           .join(', ');
       }
 
-      const r = await client.query(
-        `UPDATE cases
-         SET machine_id = $1, problem_id = $2, cause_id = $3, description = $4, solution = $5,
-             notes = $6, tempo_impiego = $7, operatore_id = $8, updated_at = now()
-         WHERE id = $9
-         RETURNING *`,
-        [
-          finalMachineId,
-          body.problem_id ?? null,
-          body.cause_id ?? null,
-          solutionAppliedDesc || null,
-          solutionAppliedDesc || null,
-          finalNotes?.trim() || null,
-          body.tempo_impiego,
-          body.operatore_id,
-          req.params.id
-        ]
-      );
+      // 🟢 Costruisci la query di UPDATE dinamicamente (operatore_id e tempo_impiego opzionali)
+      const updates: string[] = [];
+      const values: any[] = [];
+      let paramIndex = 1;
+
+      // Campi sempre aggiornati
+      updates.push(`machine_id = $${paramIndex++}`);
+      values.push(finalMachineId);
+      
+      updates.push(`problem_id = $${paramIndex++}`);
+      values.push(body.problem_id ?? null);
+      
+      updates.push(`cause_id = $${paramIndex++}`);
+      values.push(body.cause_id ?? null);
+      
+      updates.push(`description = $${paramIndex++}`);
+      values.push(solutionAppliedDesc || null);
+      
+      updates.push(`solution = $${paramIndex++}`);
+      values.push(solutionAppliedDesc || null);
+      
+      if (finalNotes !== undefined) {
+        updates.push(`notes = $${paramIndex++}`);
+        values.push(finalNotes?.trim() || null);
+      }
+      
+      // 🟢 tempo_impiego: opzionale
+      if (body.tempo_impiego !== undefined) {
+        updates.push(`tempo_impiego = $${paramIndex++}`);
+        values.push(body.tempo_impiego);
+      }
+      
+      // 🟢 operatore_id: opzionale (se non passato, non lo aggiorna)
+      if (body.operatore_id !== undefined) {
+        updates.push(`operatore_id = $${paramIndex++}`);
+        values.push(body.operatore_id);
+      }
+
+      updates.push(`updated_at = now()`);
+
+      values.push(req.params.id);
+      
+      const query = `
+        UPDATE cases
+        SET ${updates.join(', ')}
+        WHERE id = $${paramIndex}
+        RETURNING *
+      `;
+
+      const r = await client.query(query, values);
 
       // Update solutions tried
       await client.query(`DELETE FROM case_solutions_tried WHERE case_id = $1`, [req.params.id]);
