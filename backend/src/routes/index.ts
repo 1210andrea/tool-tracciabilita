@@ -9,6 +9,7 @@ import { dashboardRoutes } from './dashboard';
 import { statsRoutes } from './stats';
 import { aiRoutes } from './ai';
 import { sparepartsRoutes } from './spareparts';
+import { operatoriRoutes } from './operatori';
 import { problemTimeRoutes } from './problem_time';
 
 import { authMiddleware } from '../middleware/auth';
@@ -17,6 +18,7 @@ import { generateTechnicalAnalysis, formatOllamaUnavailableMessage } from '../se
 export function registerRoutes(app: Express) {
   app.use('/api', authRoutes);
   app.use('/api/ai', aiRoutes);
+  app.use('/api/operatori', operatoriRoutes);
   app.use('/api/cases', casesRoutes);
   app.use('/api/machines', machinesRoutes);
   app.use('/api/categories', categoriesRoutes);

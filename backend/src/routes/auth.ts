@@ -96,37 +96,16 @@ authRoutes.post('/auth/login', async (req, res, next) => {
 authRoutes.get('/auth/me', authMiddleware, async (req, res, next) => {
   try {
     const r = await pool.query(
-      `SELECT u.id, u.role, u.username, u.operator_category_id, c.name AS operator_name
-       FROM users u
-       LEFT JOIN categories c ON c.id = u.operator_category_id
-       WHERE u.id = $1`,
+      `SELECT id, role, username FROM users WHERE id = $1`,
       [req.user!.id]
     );
     if (!r.rows.length) return res.status(404).json({ error: 'User not found' });
-
-    let operator_category_id = r.rows[0].operator_category_id as string | null;
-    let operator_name = r.rows[0].operator_name as string | null;
-
-    if (!operator_category_id) {
-      const match = await pool.query(
-        `SELECT id, name FROM categories
-         WHERE type = 'operator' AND LOWER(name) = LOWER($1)
-         LIMIT 1`,
-        [r.rows[0].username]
-      );
-      if (match.rows[0]) {
-        operator_category_id = match.rows[0].id;
-        operator_name = match.rows[0].name;
-      }
-    }
 
     res.json({
       user: {
         id: r.rows[0].id,
         role: r.rows[0].role,
-        username: r.rows[0].username,
-        operator_category_id,
-        operator_name
+        username: r.rows[0].username
       }
     });
   } catch (e) {

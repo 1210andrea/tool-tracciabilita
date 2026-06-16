@@ -41,7 +41,14 @@ CREATE TABLE IF NOT EXISTS categories (
   UNIQUE(type, name)
 );
 ALTER TABLE IF EXISTS categories ADD COLUMN IF NOT EXISTS type TEXT NOT NULL DEFAULT 'general';
-ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS operator_category_id uuid REFERENCES categories(id) ON DELETE SET NULL;
+
+CREATE TABLE IF NOT EXISTS operatori (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  nome VARCHAR(255) NOT NULL UNIQUE,
+  attivo BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
 -- Tabella pezzi di ricambio
 CREATE TABLE IF NOT EXISTS spare_parts (
@@ -134,6 +141,8 @@ CREATE INDEX IF NOT EXISTS idx_case_spare_parts ON case_spare_parts(case_id);
 
 -- Migrazioni schema esistente
 ALTER TABLE IF EXISTS cases DROP COLUMN IF EXISTS operator_id;
+ALTER TABLE IF EXISTS cases ADD COLUMN IF NOT EXISTS operatore_id uuid REFERENCES operatori(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_cases_operatore_id ON cases(operatore_id);
 ALTER TABLE IF EXISTS cases DROP COLUMN IF EXISTS title;
 ALTER TABLE IF EXISTS cases ADD COLUMN IF NOT EXISTS problem_id uuid REFERENCES categories(id) ON DELETE SET NULL;
 ALTER TABLE IF EXISTS cases ADD COLUMN IF NOT EXISTS cause_id uuid REFERENCES categories(id) ON DELETE SET NULL;
@@ -173,12 +182,15 @@ BEGIN
 END $$;
 
 -- Seed data
-INSERT INTO categories(type,name,description) VALUES
-('operator','Luigi','Operatore in linea'),
-('operator','Mario','Operatore in linea'),
-('operator','Andrea','Operatore in linea'),
-('operator','Paolo','Operatore in linea')
-ON CONFLICT(type,name) DO NOTHING;
+INSERT INTO operatori (nome, attivo) VALUES
+('Operatore 1', true),
+('Operatore 2', true),
+('Operatore 3', true),
+('Luigi', true),
+('Mario', true),
+('Andrea', true),
+('Paolo', true)
+ON CONFLICT (nome) DO NOTHING;
 
 INSERT INTO categories(type,name,description) VALUES
 ('problem','Fettuccia inceppata','Problema tipico di nastro'),
@@ -271,10 +283,6 @@ ON CONFLICT(username) DO NOTHING;
 INSERT INTO users(username,email,password_hash,role) VALUES
 ('user','user@machines.local','$2a$10$c2iqxNmnCJcg0YQVu.wFAuMRIk.wl008naVCAboQt3790bjEWQ8Gu','user')
 ON CONFLICT(username) DO NOTHING;
-
-UPDATE users u SET operator_category_id = c.id
-FROM categories c
-WHERE c.type = 'operator' AND LOWER(c.name) = LOWER(u.username) AND u.operator_category_id IS NULL;
 
 -- reparto: compatibilità (oggi usiamo machines.type come reparto)
 ALTER TABLE IF EXISTS machines ADD COLUMN IF NOT EXISTS reparto VARCHAR(100);

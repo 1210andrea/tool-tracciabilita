@@ -69,18 +69,15 @@ categoriesRoutes.delete('/:id', authMiddleware, async (req, res, next) => {
     // 1) Verifica referenzialità in cases
     const probCountR = await pool.query('SELECT COUNT(*)::int as count FROM cases WHERE problem_id = $1', [id]);
     const causeCountR = await pool.query('SELECT COUNT(*)::int as count FROM cases WHERE cause_id = $1', [id]);
-    const userCountR = await pool.query('SELECT COUNT(*)::int as count FROM users WHERE operator_category_id = $1', [id]);
 
     const problemCount = probCountR.rows[0]?.count ?? 0;
     const causeCount = causeCountR.rows[0]?.count ?? 0;
-    const userCount = userCountR.rows[0]?.count ?? 0;
-    const totalUsed = problemCount + causeCount + userCount;
+    const totalUsed = problemCount + causeCount;
 
     if (totalUsed > 0) {
       const parts: string[] = [];
       if (problemCount) parts.push(`${problemCount} casi come problema`);
       if (causeCount) parts.push(`${causeCount} casi come causa`);
-      if (userCount) parts.push(`${userCount} utenti collegati`);
       return res.status(400).json({ error: `Non eliminabile: in uso (${parts.join(', ')})` });
     }
 

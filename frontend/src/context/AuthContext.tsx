@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { useApi } from '../hooks/useAuth';
 
-type User = { id: string; role: string; username?: string; operator_category_id?: string | null; operator_name?: string | null };
+type User = { id: string; role: string; username?: string };
 
 type AuthContextValue = {
   user: User | null;

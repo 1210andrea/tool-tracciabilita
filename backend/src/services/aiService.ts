@@ -153,6 +153,117 @@ export type SimilarCaseRow = {
   notes?: string | null;
 };
 
+export type HistoricalCaseRow = {
+  solution: string | null;
+  status: string;
+  created_at: string;
+  machine_code: string;
+  machine_name: string;
+  line: string | null;
+  problem_name: string | null;
+  cause_name: string | null;
+  operator_name: string | null;
+  notes?: string | null;
+  solutions_tried: string | null;
+  solutions_applied: string | null;
+  spare_parts: string | null;
+};
+
+export type SparePartHistoryRow = {
+  name: string;
+  description: string | null;
+  usage_count: number;
+};
+
+export function buildHistoricalAnalysisContext(data: {
+  machineName: string;
+  machineLine: string;
+  problem: string;
+  cause: string;
+  cases: HistoricalCaseRow[];
+  sparePartsHistory: SparePartHistoryRow[];
+}): string {
+  const solutionsLines = data.cases.flatMap((c) => {
+    const applied = c.solutions_applied?.split(', ').filter(Boolean) ?? [];
+    const tried = c.solutions_tried?.split(', ').filter(Boolean) ?? [];
+    const lines: string[] = [];
+    for (const sol of applied) {
+      const resolved = c.status === 'closed' ? 'sì' : 'no';
+      lines.push(`- ${sol} (Operatore: ${c.operator_name ?? 'N/D'}) → RISOLTIVA? ${resolved}`);
+    }
+    for (const sol of tried) {
+      lines.push(`- ${sol} (Operatore: ${c.operator_name ?? 'N/D'}) → RISOLTIVA? no (provata senza successo)`);
+    }
+    if (!lines.length && c.solution?.trim()) {
+      const resolved = c.status === 'closed' ? 'sì' : 'no';
+      lines.push(`- ${c.solution.trim()} (Operatore: ${c.operator_name ?? 'N/D'}) → RISOLTIVA? ${resolved}`);
+    }
+    return lines;
+  });
+
+  const uniqueSolutions = [...new Set(solutionsLines)];
+
+  const sparePartsLines = data.sparePartsHistory.map(
+    (sp) => `- ${sp.name}${sp.description ? ` - Note: ${sp.description}` : ''} (usato ${sp.usage_count} volte)`
+  );
+
+  const technicalNotes = data.cases
+    .map((c) => c.notes?.trim())
+    .filter(Boolean)
+    .join('\n');
+
+  return `Database Context per Analisi IA:
+Macchina: ${data.machineName} (Linea: ${data.machineLine})
+Problema Riportato: ${data.problem}
+${data.cause !== 'N/D' ? `Causa: ${data.cause}` : ''}
+
+STORICO SOLUZIONI APPLICATE:
+${uniqueSolutions.length ? uniqueSolutions.join('\n') : 'Nessuna soluzione documentata'}
+
+PEZZI DI RICAMBIO USATI STORICAMENTE:
+${sparePartsLines.length ? sparePartsLines.join('\n') : 'Nessun pezzo di ricambio documentato'}
+
+NOTE TECNICHE ACCUMULATE:
+${technicalNotes || 'Nessuna nota tecnica disponibile'}
+
+ISTRUZIONI: Analizza il problema alla luce di questo storico. Proponi soluzioni basate su
+quello che ha funzionato prima. Se una soluzione non ha funzionato, spiega perché potrebbe
+non funzionare di nuovo.`;
+}
+
+export async function generateHistoricalAnalysis(context: string): Promise<string | null> {
+  if (env.AI_PROVIDER !== 'ollama') return null;
+
+  logger.info({ aiAnalysis: { contextLength: context.length } });
+
+  return callOllama([
+    {
+      role: 'system',
+      content: 'Sei un analista di manutenzione industriale. Usi solo i dati forniti nel contesto storico, senza inventare statistiche.'
+    },
+    {
+      role: 'user',
+      content: `${context}
+
+Compito:
+1. Indica quante volte si è verificato un problema simile e riassumi lo storico.
+2. Riassumi come è stato risolto in passato, citando soluzioni e operatori.
+3. Suggerisci un approccio pratico basato sulla storia.
+4. Se i dati sono insufficienti, dillo chiaramente.
+
+Rispondi in italiano con titoli brevi.`
+    }
+  ]);
+}
+
+export function getOllamaErrorMessage(): string {
+  const err = getLastOllamaError();
+  if (!err) return 'Ollama non risponde, verifica il servizio';
+  if (err.reason === 'timeout') return 'Ollama non risponde, verifica il servizio';
+  if (err.reason === 'empty_response') return 'Errore nel parsing della risposta IA';
+  return formatOllamaUnavailableMessage();
+}
+
 export async function generateCaseInsights(data: {
   machine: string;
   line: string;

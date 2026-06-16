@@ -11,12 +11,14 @@ const dashboard_1 = require("./dashboard");
 const stats_1 = require("./stats");
 const ai_1 = require("./ai");
 const spareparts_1 = require("./spareparts");
+const operatori_1 = require("./operatori");
 const problem_time_1 = require("./problem_time");
 const auth_2 = require("../middleware/auth");
 const aiService_1 = require("../services/aiService");
 function registerRoutes(app) {
     app.use('/api', auth_1.authRoutes);
     app.use('/api/ai', ai_1.aiRoutes);
+    app.use('/api/operatori', operatori_1.operatoriRoutes);
     app.use('/api/cases', cases_1.casesRoutes);
     app.use('/api/machines', machines_1.machinesRoutes);
     app.use('/api/categories', categories_1.categoriesRoutes);

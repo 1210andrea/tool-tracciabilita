@@ -8,9 +8,12 @@ type MachineItem = { id: string; code: string; name: string; line?: string };
 type CategoryItem = { id: string; type: string; name: string };
 
 type AiResult = {
+  success?: boolean;
   insufficient: boolean;
+  error?: string;
   message?: string;
   analysis?: string;
+  details?: Record<string, unknown>;
   stats?: {
     same_machine_problem: number;
     same_problem_line: number;
@@ -68,8 +71,13 @@ export default function AiAnalysis() {
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      setResult(resp.data);
+      const data = resp.data as AiResult;
+      if (data.error && data.insufficient) {
+        setError(data.error);
+      }
+      setResult(data);
     } catch (err: any) {
+      console.error('Analisi IA fallita:', err?.response?.data?.details ?? err);
       setError(err?.response?.data?.error ?? 'Errore durante l\'analisi IA.');
     } finally {
       setLoading(false);
@@ -135,7 +143,7 @@ export default function AiAnalysis() {
 
       {result?.insufficient && !loading && (
         <div className="rounded-3xl border border-amber-500/30 bg-amber-500/10 px-5 py-4 text-sm text-amber-100">
-          {result.message}
+          {result.error || result.message}
         </div>
       )}
 

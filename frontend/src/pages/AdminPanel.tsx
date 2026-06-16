@@ -4,7 +4,7 @@ import axios from 'axios';
 import { Link } from 'react-router-dom';
 import { ConfirmModal } from '../components/ConfirmModal';
 
-type Category = { id: string; type: string; name: string; description?: string };
+type Operatore = { id: string; nome: string; attivo: boolean; created_at?: string; updated_at?: string };
 type Machine = { id: string; code: string; name: string; line?: string; location?: string; tipologia?: string; type?: string; posizione?: string };
 type User = { id: string; username: string; email?: string; role: string };
 type SparePart = { id: string; name: string; tipologia?: string[]; tipologie?: string[]; type?: string; description?: string; usage_count?: number };
@@ -20,9 +20,10 @@ export default function AdminPanel() {
   const [activeTab, setActiveTab] = useState<AdminTab>('operatori');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-  const [pendingDeleteType, setPendingDeleteType] = useState<'categories' | 'machines' | 'users' | 'spare_parts' | 'solutions' | null>(null);
+  const [pendingDeleteType, setPendingDeleteType] = useState<'categories' | 'machines' | 'users' | 'spare_parts' | 'solutions' | 'operatori' | null>(null);
 
   const [categories, setCategories] = useState<Category[]>([]);
+  const [operatori, setOperatori] = useState<Operatore[]>([]);
   const [machines, setMachines] = useState<Machine[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [spareParts, setSpareParts] = useState<SparePart[]>([]);
@@ -31,9 +32,11 @@ export default function AdminPanel() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
 
-  const [categoryForm, setCategoryForm] = useState({ type: 'operator', name: '', description: '' });
+  const [categoryForm, setCategoryForm] = useState({ type: 'problem', name: '', description: '' });
+  const [operatoreForm, setOperatoreForm] = useState({ nome: '', attivo: true });
+  const [editingOperatoreId, setEditingOperatoreId] = useState<string | null>(null);
   const [machineForm, setMachineForm] = useState({ code: '', name: '', line: '', location: '', tipologia: '' });
-  const [userForm, setUserForm] = useState({ username: '', email: '', password: '', role: 'user', operator_category_id: '' });
+  const [userForm, setUserForm] = useState({ username: '', email: '', password: '', role: 'user' });
   const [sparePartForm, setSparePartForm] = useState({ name: '', tipologie: [] as string[], description: '' });
   const [solutionForm, setSolutionForm] = useState({ name: '', description: '' });
 
@@ -43,8 +46,9 @@ export default function AdminPanel() {
     if (!token) return;
     setLoading(true);
     try {
-      const [categoriesResp, machinesResp, usersResp, spareResp, solutionsResp, tipologieResp] = await Promise.all([
+      const [categoriesResp, operatoriResp, machinesResp, usersResp, spareResp, solutionsResp, tipologieResp] = await Promise.all([
         axios.get(`${API_URL}/categories`, headers),
+        axios.get(`${API_URL}/operatori?all=1`, headers),
         axios.get(`${API_URL}/machines`, headers),
         axios.get(`${API_URL}/users`, headers),
         axios.get(`${API_URL}/spare-parts`, headers),
@@ -52,6 +56,7 @@ export default function AdminPanel() {
         axios.get(`${API_URL}/machines/tipologie`, headers)
       ]);
       setCategories(categoriesResp.data.items || []);
+      setOperatori(operatoriResp.data.items || []);
       setMachines(machinesResp.data.items || []);
       setUsers(usersResp.data.items || []);
       setSpareParts(spareResp.data.items || []);
@@ -59,6 +64,7 @@ export default function AdminPanel() {
       setAvailableTipologie(tipologieResp.data.items || []);
     } catch {
       setCategories([]);
+      setOperatori([]);
       setMachines([]);
       setUsers([]);
       setSpareParts([]);
@@ -74,14 +80,43 @@ export default function AdminPanel() {
   }, [token]);
 
   useEffect(() => {
-    if (activeTab === 'operatori') {
-      setCategoryForm((c) => ({ ...c, type: 'operator' }));
-    } else if (activeTab === 'problemi') {
+    if (activeTab === 'problemi') {
       setCategoryForm((c) => ({ ...c, type: 'problem' }));
     } else if (activeTab === 'cause') {
       setCategoryForm((c) => ({ ...c, type: 'cause' }));
     }
   }, [activeTab]);
+
+  const submitOperatore = async () => {
+    try {
+      if (!operatoreForm.nome.trim()) {
+        setMessage('Il nome operatore è obbligatorio.');
+        return;
+      }
+      if (editingOperatoreId) {
+        await axios.put(`${API_URL}/operatori/${editingOperatoreId}`, operatoreForm, headers);
+        setMessage('Operatore aggiornato.');
+      } else {
+        await axios.post(`${API_URL}/operatori`, operatoreForm, headers);
+        setMessage('Operatore creato.');
+      }
+      setOperatoreForm({ nome: '', attivo: true });
+      setEditingOperatoreId(null);
+      loadAll();
+    } catch (err: any) {
+      setMessage(err?.response?.data?.error ?? 'Errore salvataggio operatore.');
+    }
+  };
+
+  const startEditOperatore = (op: Operatore) => {
+    setEditingOperatoreId(op.id);
+    setOperatoreForm({ nome: op.nome, attivo: op.attivo });
+  };
+
+  const cancelEditOperatore = () => {
+    setEditingOperatoreId(null);
+    setOperatoreForm({ nome: '', attivo: true });
+  };
 
   const submitCategory = async () => {
     try {
@@ -107,12 +142,9 @@ export default function AdminPanel() {
 
   const submitUser = async () => {
     try {
-      await axios.post(`${API_URL}/users`, {
-        ...userForm,
-        operator_category_id: userForm.operator_category_id || null
-      }, headers);
+      await axios.post(`${API_URL}/users`, userForm, headers);
       setMessage('Utente creato.');
-      setUserForm({ username: '', email: '', password: '', role: 'user', operator_category_id: '' });
+      setUserForm({ username: '', email: '', password: '', role: 'user' });
       loadAll();
     } catch (err: any) {
       setMessage(err?.response?.data?.error ?? 'Errore salvataggio utente.');
@@ -141,9 +173,12 @@ export default function AdminPanel() {
     }
   };
 
-  const deleteItem = async (type: 'categories' | 'machines' | 'users' | 'spare_parts' | 'solutions', id: string) => {
+  const deleteItem = async (type: 'categories' | 'machines' | 'users' | 'spare_parts' | 'solutions' | 'operatori', id: string) => {
     try {
-      const path = type === 'spare_parts' ? 'spare-parts' : type === 'solutions' ? 'solutions-applied' : type;
+      const path = type === 'spare_parts' ? 'spare-parts'
+        : type === 'solutions' ? 'solutions-applied'
+        : type === 'operatori' ? 'operatori'
+        : type;
       await axios.delete(`${API_URL}/${path}/${id}`, headers);
       setMessage('Elemento eliminato.');
       loadAll();
@@ -153,7 +188,7 @@ export default function AdminPanel() {
     }
   };
 
-  const requestDelete = (type: 'categories' | 'machines' | 'users' | 'spare_parts' | 'solutions', id: string) => {
+  const requestDelete = (type: 'categories' | 'machines' | 'users' | 'spare_parts' | 'solutions' | 'operatori', id: string) => {
     setPendingDeleteType(type);
     setPendingDeleteId(id);
     setConfirmOpen(true);
@@ -216,36 +251,41 @@ export default function AdminPanel() {
           {activeTab === 'operatori' && (
             <>
               <div>
-                <h2 className="text-xl font-semibold text-slate-100">Nuovo operatore</h2>
-                <p className="text-sm text-slate-400">Aggiungi una nuova categoria operatore.</p>
+                <h2 className="text-xl font-semibold text-slate-100">{editingOperatoreId ? 'Modifica operatore' : 'Nuovo operatore'}</h2>
+                <p className="text-sm text-slate-400">Gestisci gli operatori indipendentemente dagli utenti.</p>
               </div>
 
               <div className="grid grid-cols-1 gap-4">
                 <div>
-                  <label className="text-sm text-slate-300">Nome</label>
+                  <label className="text-sm text-slate-300">Nome operatore</label>
                   <input
-                    value={categoryForm.name}
-                    onChange={(e) => setCategoryForm((current) => ({ ...current, name: e.target.value }))}
+                    value={operatoreForm.nome}
+                    onChange={(e) => setOperatoreForm((current) => ({ ...current, nome: e.target.value }))}
                     placeholder="Nome operatore"
                     className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
                   />
                 </div>
+                <label className="flex items-center gap-3 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={operatoreForm.attivo}
+                    onChange={(e) => setOperatoreForm((current) => ({ ...current, attivo: e.target.checked }))}
+                    className="accent-sky-500 h-4 w-4 cursor-pointer rounded"
+                  />
+                  <span className="text-sm text-slate-300">Attivo</span>
+                </label>
               </div>
 
-              <div>
-                <label className="text-sm text-slate-300">Descrizione</label>
-                <textarea
-                  value={categoryForm.description}
-                  onChange={(e) => setCategoryForm((current) => ({ ...current, description: e.target.value }))}
-                  rows={4}
-                  placeholder="Descrizione (opzionale)"
-                  className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
-                />
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className="rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-sky-400 transition" onClick={submitOperatore}>
+                  {editingOperatoreId ? 'Salva modifiche' : 'Aggiungi operatore'}
+                </button>
+                {editingOperatoreId && (
+                  <button type="button" className="rounded-2xl border border-slate-700 bg-slate-900 px-5 py-3 text-sm font-semibold text-slate-200 hover:bg-slate-800 transition" onClick={cancelEditOperatore}>
+                    Annulla
+                  </button>
+                )}
               </div>
-
-              <button type="button" className="w-full rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 sm:w-auto hover:bg-sky-400 transition" onClick={submitCategory}>
-                Aggiungi operatore
-              </button>
             </>
           )}
 
@@ -354,15 +394,6 @@ export default function AdminPanel() {
                   <option value="admin">Admin</option>
                 </select>
               </div>
-              <div>
-                <label className="text-sm text-slate-300">Operatore collegato</label>
-                <select value={userForm.operator_category_id} onChange={(e) => setUserForm((c) => ({ ...c, operator_category_id: e.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none">
-                  <option value="">Nessuno / auto da username</option>
-                  {categories.filter((c) => c.type === 'operator').map((op) => (
-                    <option key={op.id} value={op.id}>{op.name}</option>
-                  ))}
-                </select>
-              </div>
               <button type="button" className="w-full rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 sm:w-auto hover:bg-sky-400 transition" onClick={submitUser}>
                 Crea utente
               </button>
@@ -441,18 +472,25 @@ export default function AdminPanel() {
 
           {activeTab === 'operatori' && (
             <div className="space-y-4">
-              {categories.filter((c) => c.type === 'operator').map((category) => (
-                <div key={category.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
+              {operatori.map((op) => (
+                <div key={op.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <div className="font-semibold text-slate-100">{category.name}</div>
-                    <div className="text-sm text-slate-500">{category.description || 'Nessuna descrizione'}</div>
+                    <div className="font-semibold text-slate-100">{op.nome}</div>
+                    <div className={`text-sm ${op.attivo ? 'text-emerald-400' : 'text-slate-500'}`}>
+                      {op.attivo ? 'Attivo' : 'Inattivo'}
+                    </div>
                   </div>
-                  <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400 transition" onClick={() => requestDelete('categories', category.id)}>
-                    Elimina
-                  </button>
+                  <div className="flex gap-2">
+                    <button type="button" className="rounded-2xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition" onClick={() => startEditOperatore(op)}>
+                      Modifica
+                    </button>
+                    <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400 transition" onClick={() => requestDelete('operatori', op.id)}>
+                      Elimina
+                    </button>
+                  </div>
                 </div>
               ))}
-              {categories.filter((c) => c.type === 'operator').length === 0 && (
+              {operatori.length === 0 && (
                 <p className="text-sm text-slate-500 italic text-center py-4">Nessun operatore configurato.</p>
               )}
             </div>

@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 
 const API_URL = '/api';
 
+type OperatoreItem = { id: string; nome: string; attivo: boolean };
 type CategoryItem = { id: string; type: string; name: string };
 type MachineItem = { id: string; code: string; name: string; tipologia?: string; type?: string; reparto?: string };
 type SparePartItem = { id: string; name: string; tipologie?: string[]; types?: string[] };
@@ -118,12 +119,14 @@ export default function CreateCase() {
   const navigate = useNavigate();
 
   const [machines, setMachines] = useState<MachineItem[]>([]);
+  const [operatori, setOperatori] = useState<OperatoreItem[]>([]);
   const [problems, setProblems] = useState<CategoryItem[]>([]);
   const [causes, setCauses] = useState<CategoryItem[]>([]);
   const [spareParts, setSpareParts] = useState<SparePartItem[]>([]);
   const [solutions, setSolutions] = useState<SolutionItem[]>([]);
 
   const [machineId, setMachineId] = useState('');
+  const [operatoreId, setOperatoreId] = useState('');
   const [machineSearch, setMachineSearch] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [problemId, setProblemId] = useState('');
@@ -154,19 +157,22 @@ export default function CreateCase() {
 
     const loadLookups = async () => {
       try {
-        const [machinesResp, categoriesResp, solutionsResp] = await Promise.all([
+        const [machinesResp, operatoriResp, categoriesResp, solutionsResp] = await Promise.all([
           axios.get(`${API_URL}/machines`, { headers: { Authorization: `Bearer ${token}` } }),
+          axios.get(`${API_URL}/operatori`, { headers: { Authorization: `Bearer ${token}` } }),
           axios.get(`${API_URL}/categories`, { headers: { Authorization: `Bearer ${token}` } }),
           axios.get(`${API_URL}/solutions-applied`, { headers: { Authorization: `Bearer ${token}` } })
         ]);
 
         setMachines(machinesResp.data.items || []);
+        setOperatori(operatoriResp.data.items || []);
         const items: CategoryItem[] = categoriesResp.data.items || [];
         setProblems(items.filter((item) => item.type === 'problem'));
         setCauses(items.filter((item) => item.type === 'cause'));
         setSolutions(solutionsResp.data.items || []);
       } catch {
         setMachines([]);
+        setOperatori([]);
         setProblems([]);
         setCauses([]);
         setSolutions([]);
@@ -255,8 +261,8 @@ export default function CreateCase() {
   const handleCreate = async () => {
     if (!token) return;
 
-    if (!machineId || !problemId || !causeId || !soluzioniApplicate.length) {
-      setError('Compila tutti i campi obbligatori: macchina, problema, causa e almeno una soluzione applicata.');
+    if (!machineId || !operatoreId || !problemId || !causeId || !soluzioniApplicate.length) {
+      setError('Compila tutti i campi obbligatori: operatore, macchina, problema, causa e almeno una soluzione applicata.');
       return;
     }
 
@@ -269,6 +275,7 @@ export default function CreateCase() {
         `${API_URL}/cases`,
         {
           machine_id: machineId,
+          operatore_id: operatoreId,
           problem_id: problemId,
           cause_id: causeId,
           soluzioni_provate: soluzioniProvate,
@@ -373,6 +380,16 @@ export default function CreateCase() {
               </div>
             )}
           </div>
+        </div>
+
+        <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6">
+          <label className="text-sm font-medium text-slate-200">Operatore <span className="text-red-400">*</span></label>
+          <select value={operatoreId} onChange={(e) => setOperatoreId(e.target.value)} className="mt-3 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none text-sm">
+            <option value="">Seleziona operatore</option>
+            {operatori.map((op) => (
+              <option key={op.id} value={op.id}>{op.nome}</option>
+            ))}
+          </select>
         </div>
 
         <div className="rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6">

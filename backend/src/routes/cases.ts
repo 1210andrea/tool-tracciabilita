@@ -6,7 +6,7 @@ import { generateAiSolution } from '../services/aiService';
 
 export const casesRoutes = Router();
 
-const CASE_FIELDS = `c.id, c.machine_id, c.problem_id, c.cause_id, c.category_id,
+const CASE_FIELDS = `c.id, c.machine_id, c.problem_id, c.cause_id, c.category_id, c.operatore_id,
   c.description, c.solution, c.ai_solution, c.status, c.created_by, c.assigned_to,
   c.notes, c.created_at, c.updated_at, c.tempo_impiego,
   COALESCE(
@@ -51,7 +51,7 @@ const CASE_JOINS = `
   LEFT JOIN users u ON u.id = c.created_by
   LEFT JOIN categories prob ON prob.id = c.problem_id
   LEFT JOIN categories cause ON cause.id = c.cause_id
-  LEFT JOIN categories oper ON oper.id = (SELECT operator_category_id FROM users uu WHERE uu.id = c.created_by)`;
+  LEFT JOIN operatori oper ON oper.id = c.operatore_id`;
 
 
 
@@ -158,7 +158,7 @@ casesRoutes.get('/', authMiddleware, async (req, res, next) => {
 
     const r = await pool.query(
       `SELECT ${CASE_FIELDS}, m.code as machine_code, m.name as machine_name, u.username as created_by_username,
-              COALESCE(oper.name, u.username) as operator_name,
+              COALESCE(oper.nome, 'N.D.') as operator_name,
               prob.name as problem_name, cause.name as cause_name,
               COUNT(*) OVER() AS total_count
        FROM cases c
@@ -258,7 +258,7 @@ casesRoutes.get('/export-csv', authMiddleware, async (req, res, next) => {
 
     const r = await pool.query(
       `SELECT c.id, m.code as machine_code, m.name as machine_name, u.username as created_by_username,
-              COALESCE(oper.name, u.username) as operator_name,
+              COALESCE(oper.nome, 'N.D.') as operator_name,
               prob.name as problem_name, cause.name as cause_name,
               COALESCE(
                 (SELECT string_agg(sp.name, ', ')
@@ -342,7 +342,7 @@ casesRoutes.get('/:id', authMiddleware, async (req, res, next) => {
 
     const r = await pool.query(
       `SELECT ${CASE_FIELDS}, m.code as machine_code, m.name as machine_name, u.username as created_by_username,
-              COALESCE(oper.name, u.username) as operator_name,
+              COALESCE(oper.nome, 'N.D.') as operator_name,
               prob.name as problem_name, cause.name as cause_name
        FROM cases c
        ${CASE_JOINS}
@@ -356,6 +356,15 @@ casesRoutes.get('/:id', authMiddleware, async (req, res, next) => {
   }
 });
 
+async function validateOperatoreId(client: { query: typeof pool.query }, operatoreId: string): Promise<string | null> {
+  const r = await client.query(
+    'SELECT id FROM operatori WHERE id = $1 AND attivo = true',
+    [operatoreId]
+  );
+  if (!r.rows.length) return 'Operatore non valido o non attivo';
+  return null;
+}
+
 casesRoutes.post('/', authMiddleware, async (req, res, next) => {
   try {
     const body = req.body as {
@@ -368,6 +377,7 @@ casesRoutes.post('/', authMiddleware, async (req, res, next) => {
       pezzi_ricambio?: string[];
       tempo_impiego?: number;
       utente_id?: string;
+      operatore_id?: string;
       notes?: string | null;
       note_aggiuntive?: string | null;
     };
@@ -381,6 +391,7 @@ casesRoutes.post('/', authMiddleware, async (req, res, next) => {
     if (!body.problem_id) missing.push('problema');
     if (!body.cause_id) missing.push('causa');
     if (!body.soluzioni_applicate || !body.soluzioni_applicate.length) missing.push('soluzione applicata');
+    if (!body.operatore_id) missing.push('operatore');
     if (body.tempo_impiego === undefined || body.tempo_impiego < 0.5) {
       return res.status(400).json({ error: 'Tempo impiego deve essere maggiore o uguale a 0.5 ore' });
     }
@@ -404,6 +415,12 @@ casesRoutes.post('/', authMiddleware, async (req, res, next) => {
         return res.status(400).json({ error: 'Macchina non trovata' });
       }
 
+      const operatoreError = await validateOperatoreId(client, body.operatore_id!);
+      if (operatoreError) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: operatoreError });
+      }
+
       let solutionAppliedDesc = '';
       if (body.soluzioni_applicate && body.soluzioni_applicate.length > 0) {
         const saR = await client.query(
@@ -418,8 +435,8 @@ casesRoutes.post('/', authMiddleware, async (req, res, next) => {
 
       const r = await client.query(
         `INSERT INTO cases(machine_id, problem_id, cause_id, description, solution, ai_solution,
-                          status, created_by, assigned_to, notes, tempo_impiego)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+                          status, created_by, assigned_to, notes, tempo_impiego, operatore_id)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
          RETURNING *`,
         [
           finalMachineId,
@@ -432,7 +449,8 @@ casesRoutes.post('/', authMiddleware, async (req, res, next) => {
           finalUtenteId,
           null,
           finalNotes?.trim() || null,
-          body.tempo_impiego
+          body.tempo_impiego,
+          body.operatore_id
         ]
       );
 
@@ -512,6 +530,7 @@ casesRoutes.put('/:id', authMiddleware, async (req, res, next) => {
       soluzioni_applicate?: string[];
       pezzi_ricambio?: string[];
       tempo_impiego?: number;
+      operatore_id?: string;
       notes?: string | null;
       note_aggiuntive?: string | null;
     };
@@ -524,6 +543,7 @@ casesRoutes.put('/:id', authMiddleware, async (req, res, next) => {
     if (!body.problem_id) missing.push('problema');
     if (!body.cause_id) missing.push('causa');
     if (!body.soluzioni_applicate || !body.soluzioni_applicate.length) missing.push('soluzione applicata');
+    if (!body.operatore_id) missing.push('operatore');
     if (body.tempo_impiego === undefined || body.tempo_impiego < 0.5) {
       return res.status(400).json({ error: 'Tempo impiego deve essere maggiore o uguale a 0.5 ore' });
     }
@@ -540,6 +560,12 @@ casesRoutes.put('/:id', authMiddleware, async (req, res, next) => {
     try {
       await client.query('BEGIN');
 
+      const operatoreError = await validateOperatoreId(client, body.operatore_id!);
+      if (operatoreError) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: operatoreError });
+      }
+
       let solutionAppliedDesc = '';
       if (body.soluzioni_applicate && body.soluzioni_applicate.length > 0) {
         const saR = await client.query(
@@ -555,8 +581,8 @@ casesRoutes.put('/:id', authMiddleware, async (req, res, next) => {
       const r = await client.query(
         `UPDATE cases
          SET machine_id = $1, problem_id = $2, cause_id = $3, description = $4, solution = $5,
-             notes = $6, tempo_impiego = $7, updated_at = now()
-         WHERE id = $8
+             notes = $6, tempo_impiego = $7, operatore_id = $8, updated_at = now()
+         WHERE id = $9
          RETURNING *`,
         [
           finalMachineId,
@@ -566,6 +592,7 @@ casesRoutes.put('/:id', authMiddleware, async (req, res, next) => {
           solutionAppliedDesc || null,
           finalNotes?.trim() || null,
           body.tempo_impiego,
+          body.operatore_id,
           req.params.id
         ]
       );
