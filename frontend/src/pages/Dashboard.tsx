@@ -91,6 +91,7 @@ export default function Dashboard() {
 
   const [topMachinesLimit, setTopMachinesLimit] = useState(5);
   const [topSparePartsLimit, setTopSparePartsLimit] = useState(5);
+  const [topProblemiTempoLimit, setTopProblemiTempoLimit] = useState(5);
 
 
   const [categories, setCategories] = useState<Category[]>([]);
@@ -134,7 +135,7 @@ export default function Dashboard() {
         axios.get(`${API_URL}/stats/top-causes`, { headers, params: { ...filterParams, limit: topCausesLimit } }),
         axios.get(`${API_URL}/stats/top-machines`, { headers, params: { ...filterParams, limit: topMachinesLimit } }),
         axios.get(`${API_URL}/stats/top-spare-parts`, { headers, params: { ...filterParams, limit: topSparePartsLimit } }),
-        axios.get(`${API_URL}/dashboard/problemi-tempo`, { headers })
+        axios.get(`${API_URL}/dashboard/problemi-tempo`, { headers, params: { ...filterParams, limit: topProblemiTempoLimit } })
       ]);
 
       setCases(casesResp.data.items || []);
@@ -189,7 +190,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadData();
-  }, [token, caseParams, filterParams, topProblemsLimit, topProblemsByLineLimit, topCausesLimit, topMachinesLimit, topSparePartsLimit]);
+  }, [token, caseParams, filterParams, topProblemsLimit, topProblemsByLineLimit, topCausesLimit, topMachinesLimit, topSparePartsLimit, topProblemiTempoLimit]);
 
 
   useEffect(() => {
@@ -528,7 +529,10 @@ export default function Dashboard() {
         </div>
 
         <div className="rounded-3xl bg-slate-900/80 p-4 shadow-lg shadow-slate-950/20 sm:p-6 md:col-span-2">
-          <h3 className="mb-4 text-lg font-semibold text-slate-100">Problemi che Occupano Più Tempo (Ore)</h3>
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <h3 className="text-lg font-semibold text-slate-100">Problemi che occupano più tempo (Top {topProblemiTempoLimit})</h3>
+            <TopSelector value={topProblemiTempoLimit} onChange={setTopProblemiTempoLimit} />
+          </div>
           <div className="w-full font-sans" style={{ minHeight: 340 }}>
             {problemiTempo.length === 0 ? (
               <div className="flex h-[340px] items-center justify-center text-sm text-slate-500">Nessun dato relativo al tempo impiegato per i problemi chiusi.</div>

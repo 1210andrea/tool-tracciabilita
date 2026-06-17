@@ -33,15 +33,39 @@ dashboardRoutes.get('/', authMiddleware, async (req, res, next) => {
 
 dashboardRoutes.get('/problemi-tempo', authMiddleware, async (req, res, next) => {
   try {
-    const r = await pool.query(
-      `SELECT prob.name AS nome, COALESCE(SUM(c.tempo_impiego)::float, 0) AS tempo_totale
+    const { startDate, endDate, machineId, limit = '10' } = req.query;
+    const limitNum = Math.min(Math.max(parseInt(String(limit), 10) || 10, 1), 50);
+
+    let whereConditions = ["c.status IN ('closed', 'completato')"];
+    const params: any[] = [];
+
+    if (startDate) {
+      whereConditions.push(`c.created_at >= $${params.length + 1}`);
+      params.push(startDate);
+    }
+
+    if (endDate) {
+      whereConditions.push(`c.created_at <= $${params.length + 1}`);
+      params.push(endDate);
+    }
+
+    if (machineId) {
+      whereConditions.push(`c.machine_id = $${params.length + 1}`);
+      params.push(machineId);
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    params.push(limitNum);
+    const query = `SELECT prob.name AS nome, COALESCE(SUM(c.tempo_impiego)::float, 0) AS tempo_totale
        FROM cases c
        JOIN categories prob ON c.problem_id = prob.id
-       WHERE c.status IN ('closed', 'completato')
+       ${whereClause}
        GROUP BY prob.id, prob.name
        ORDER BY tempo_totale DESC
-       LIMIT 10`
-    );
+       LIMIT $${params.length}`;
+
+    const r = await pool.query(query, params);
     res.json({ data: r.rows });
   } catch (e) {
     next(e);

@@ -102,7 +102,7 @@ function MultiSelect({
         {isOpen && !disabled && (
           <>
             <div className="fixed inset-0 z-30" onClick={() => setIsOpen(false)} />
-            <div className="absolute left-0 right-0 z-45 mt-2 max-h-48 overflow-y-auto rounded-2xl border border-slate-700 bg-slate-950 p-2 shadow-2xl backdrop-blur-md transition-all duration-200">
+            <div className="absolute left-0 right-0 z-[9999] mt-2 max-h-48 overflow-y-auto rounded-2xl border border-slate-700 bg-slate-950 p-2 shadow-2xl backdrop-blur-md transition-all duration-200">
               {options.length === 0 ? (
                 <div className="px-4 py-3 text-xs text-slate-500 italic text-center">Nessuna opzione disponibile</div>
               ) : (
@@ -153,7 +153,7 @@ export function CaseDetailModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [editing, setEditing] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   const [machineId, setMachineId] = useState('');
   const [problemId, setProblemId] = useState('');
   const [causeId, setCauseId] = useState('');
@@ -177,7 +177,7 @@ export function CaseDetailModal({
 
   useEffect(() => {
     if (!caseItem) return;
-    setEditing(false);
+    setIsEditing(false);
     setMachineId(caseItem.machine_id);
     setProblemId(caseItem.problem_id ?? '');
     setCauseId(caseItem.cause_id ?? '');
@@ -409,14 +409,14 @@ export function CaseDetailModal({
 
         <div className="mt-6 flex flex-wrap justify-end gap-3">
           <button type="button" onClick={onClose} className="rounded-2xl border border-slate-700 px-4 py-2 text-xs text-slate-100 hover:bg-slate-800">Chiudi</button>
-          {canEdit && !editing && (
-            <button type="button" onClick={() => setEditing(true)} className="rounded-2xl bg-sky-500 px-4 py-2 text-xs font-semibold text-slate-950 hover:bg-sky-400">
+          {canEdit && !isEditing && (
+            <button type="button" onClick={() => setIsEditing(true)} className="rounded-2xl bg-sky-500 px-4 py-2 text-xs font-semibold text-slate-950 hover:bg-sky-400">
               Modifica
             </button>
           )}
           {isEditing && (
             <>
-              <button type="button" onClick={() => setEditing(false)} className="rounded-2xl border border-slate-700 px-4 py-2 text-xs text-slate-100 hover:bg-slate-800">Annulla</button>
+              <button type="button" onClick={() => setIsEditing(false)} className="rounded-2xl border border-slate-700 px-4 py-2 text-xs text-slate-100 hover:bg-slate-800">Annulla</button>
               <button type="button" onClick={handleSave} disabled={loading} className="rounded-2xl bg-sky-500 px-4 py-2 text-xs font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-60">
                 {loading ? 'Salvataggio...' : 'Salva modifiche'}
               </button>
