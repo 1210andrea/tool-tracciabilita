@@ -3,8 +3,9 @@ import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import { ConfirmModal } from '../components/ConfirmModal';
 
-type Operatore = { id: string; nome: string; attivo: boolean; created_at?: string; updated_at?: string };
-type Machine = { id: string; code: string; name: string; line?: string; location?: string; tipologia?: string; type?: string; posizione?: string };
+type Category = { id: string; type: string; name: string; description?: string; usage_count?: number };
+type Operatore = { id: string; nome: string; attivo: boolean; created_at?: string; updated_at?: string; usage_count?: number };
+type Machine = { id: string; code: string; name: string; line?: string; location?: string; tipologia?: string; type?: string; posizione?: string; usage_count?: number };
 type User = { id: string; username: string; email?: string; role: string };
 type SparePart = { id: string; name: string; tipologia?: string[]; tipologie?: string[]; type?: string; description?: string; usage_count?: number };
 type SolutionApplied = { id: string; name: string; description?: string; usage_count?: number };
@@ -13,6 +14,54 @@ const API_URL = '/api';
 const TIPologie_TYPES = ['nastro', 'assemblaggio', 'controllo', 'imballaggio'];
 
 type AdminTab = 'operatori' | 'problemi' | 'cause' | 'macchine' | 'utenti' | 'ricambi' | 'soluzioni';
+
+// ============================================================
+// COMPONENTE PULSANTE ELIMINA UNIFORMATO
+// ============================================================
+function DeleteButton({ 
+  itemId, 
+  usageCount, 
+  type, 
+  onDelete 
+}: { 
+  itemId: string; 
+  usageCount?: number; 
+  type: 'categories' | 'machines' | 'users' | 'spare_parts' | 'solutions' | 'operatori'; 
+  onDelete: (type: 'categories' | 'machines' | 'users' | 'spare_parts' | 'solutions' | 'operatori', id: string) => void;
+}) {
+  // Gli utenti sono sempre eliminabili (senza restrizioni)
+  if (type === 'users') {
+    return (
+      <button 
+        type="button" 
+        className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400 transition" 
+        onClick={() => onDelete(type, itemId)}
+      >
+        Elimina
+      </button>
+    );
+  }
+
+  const isInUse = (usageCount ?? 0) > 0;
+
+  if (isInUse) {
+    return (
+      <span className="text-xs text-slate-500 font-semibold bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800">
+        In uso (Non eliminabile)
+      </span>
+    );
+  }
+
+  return (
+    <button 
+      type="button" 
+      className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400 transition" 
+      onClick={() => onDelete(type, itemId)}
+    >
+      Elimina
+    </button>
+  );
+}
 
 export default function AdminPanel() {
   const { token } = useAuth();
@@ -492,9 +541,12 @@ export default function AdminPanel() {
                     <button type="button" className="rounded-2xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition" onClick={() => startEditOperatore(op)}>
                       Modifica
                     </button>
-                    <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400 transition" onClick={() => requestDelete('operatori', op.id)}>
-                      Elimina
-                    </button>
+                    <DeleteButton 
+                      itemId={op.id} 
+                      usageCount={op.usage_count} 
+                      type="operatori" 
+                      onDelete={requestDelete} 
+                    />
                   </div>
                 </div>
               ))}
@@ -512,9 +564,12 @@ export default function AdminPanel() {
                     <div className="font-semibold text-slate-100">{category.name}</div>
                     <div className="text-sm text-slate-500">{category.description || 'Nessuna descrizione'}</div>
                   </div>
-                  <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400 transition" onClick={() => requestDelete('categories', category.id)}>
-                    Elimina
-                  </button>
+                  <DeleteButton 
+                    itemId={category.id} 
+                    usageCount={category.usage_count} 
+                    type="categories" 
+                    onDelete={requestDelete} 
+                  />
                 </div>
               ))}
               {categories.filter((c) => c.type === 'problem').length === 0 && (
@@ -531,9 +586,12 @@ export default function AdminPanel() {
                     <div className="font-semibold text-slate-100">{category.name}</div>
                     <div className="text-sm text-slate-500">{category.description || 'Nessuna descrizione'}</div>
                   </div>
-                  <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400 transition" onClick={() => requestDelete('categories', category.id)}>
-                    Elimina
-                  </button>
+                  <DeleteButton 
+                    itemId={category.id} 
+                    usageCount={category.usage_count} 
+                    type="categories" 
+                    onDelete={requestDelete} 
+                  />
                 </div>
               ))}
               {categories.filter((c) => c.type === 'cause').length === 0 && (
@@ -550,9 +608,12 @@ export default function AdminPanel() {
                     <div className="font-semibold text-slate-100">{machine.code} - {machine.name}</div>
                     <div className="text-sm text-slate-500">{machine.line || 'Linea N/D'} · Tipologia: {machine.tipologia || 'Non specificata'}</div>
                   </div>
-                  <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400 transition" onClick={() => requestDelete('machines', machine.id)}>
-                    Elimina
-                  </button>
+                  <DeleteButton 
+                    itemId={machine.id} 
+                    usageCount={machine.usage_count} 
+                    type="machines" 
+                    onDelete={requestDelete} 
+                  />
                 </div>
               ))}
               {machines.length === 0 && (
@@ -583,7 +644,6 @@ export default function AdminPanel() {
           {activeTab === 'ricambi' && (
             <div className="space-y-4">
               {spareParts.map((part) => {
-                const danger = (part.usage_count ?? 0) > 0;
                 const partTipologie = part.tipologie && part.tipologie.length ? part.tipologie : (part.tipologia && part.tipologia.length ? part.tipologia : []);
                 return (
                   <div key={part.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -592,15 +652,13 @@ export default function AdminPanel() {
                       <div className="text-sm text-slate-500">
                         Tipologie: {partTipologie.length ? partTipologie.join(', ') : 'Nessuna'} · {part.description || 'Nessuna descrizione'}
                       </div>
-                      {danger && <div className="text-xs text-amber-400">In uso da {part.usage_count} casi</div>}
                     </div>
-                    {!danger ? (
-                      <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400 transition" onClick={() => requestDelete('spare_parts', part.id)}>
-                        Elimina
-                      </button>
-                    ) : (
-                      <span className="text-xs text-slate-500 font-semibold bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800">In uso (Non eliminabile)</span>
-                    )}
+                    <DeleteButton 
+                      itemId={part.id} 
+                      usageCount={part.usage_count} 
+                      type="spare_parts" 
+                      onDelete={requestDelete} 
+                    />
                   </div>
                 );
               })}
@@ -612,25 +670,20 @@ export default function AdminPanel() {
 
           {activeTab === 'soluzioni' && (
             <div className="space-y-4">
-              {solutionsApplied.map((sol) => {
-                const danger = (sol.usage_count ?? 0) > 0;
-                return (
-                  <div key={sol.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <div className="font-semibold text-slate-100">{sol.name}</div>
-                      <div className="text-sm text-slate-500">{sol.description || 'Nessuna descrizione'}</div>
-                      {danger && <div className="text-xs text-amber-400">In uso da {sol.usage_count} casi</div>}
-                    </div>
-                    {!danger ? (
-                      <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400 transition" onClick={() => requestDelete('solutions', sol.id)}>
-                        Elimina
-                      </button>
-                    ) : (
-                      <span className="text-xs text-slate-500 font-semibold bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800">In uso (Non eliminabile)</span>
-                    )}
+              {solutionsApplied.map((sol) => (
+                <div key={sol.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="font-semibold text-slate-100">{sol.name}</div>
+                    <div className="text-sm text-slate-500">{sol.description || 'Nessuna descrizione'}</div>
                   </div>
-                );
-              })}
+                  <DeleteButton 
+                    itemId={sol.id} 
+                    usageCount={sol.usage_count} 
+                    type="solutions" 
+                    onDelete={requestDelete} 
+                  />
+                </div>
+              ))}
               {solutionsApplied.length === 0 && (
                 <p className="text-sm text-slate-500 italic text-center py-4">Nessuna soluzione applicata configurata.</p>
               )}

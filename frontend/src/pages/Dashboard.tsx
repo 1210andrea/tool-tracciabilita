@@ -135,7 +135,13 @@ export default function Dashboard() {
         axios.get(`${API_URL}/stats/top-causes`, { headers, params: { ...filterParams, limit: topCausesLimit } }),
         axios.get(`${API_URL}/stats/top-machines`, { headers, params: { ...filterParams, limit: topMachinesLimit } }),
         axios.get(`${API_URL}/stats/top-spare-parts`, { headers, params: { ...filterParams, limit: topSparePartsLimit } }),
-        axios.get(`${API_URL}/dashboard/problemi-tempo`, { headers, params: { ...filterParams, limit: topProblemiTempoLimit } })
+        axios.get(`${API_URL}/dashboard/problemi-tempo`, {
+  headers,
+  params: {
+    ...filterParams,        // Passa TUTTI i filtri (mese, anno, data, ora, macchina, linea, problema, causa)
+    limit: topProblemiTempoLimit
+  }
+})
       ]);
 
       setCases(casesResp.data.items || []);

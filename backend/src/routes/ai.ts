@@ -71,6 +71,18 @@ async function fetchCasesByProblem(problemId: string): Promise<HistoricalCaseRow
   return r.rows as HistoricalCaseRow[];
 }
 
+// 🔥 MODIFICA: Nuova funzione per ricerca per linea + problema
+async function fetchCasesByLineAndProblem(line: string, problemId: string): Promise<HistoricalCaseRow[]> {
+  const r = await pool.query(
+    `${HISTORICAL_CASES_SQL}
+     WHERE m.line = $1 AND c.problem_id = $2
+     ORDER BY c.created_at DESC
+     LIMIT 15`,
+    [line, problemId]
+  );
+  return r.rows as HistoricalCaseRow[];
+}
+
 function uniqueFromCases(cases: HistoricalCaseRow[], field: 'solutions_tried' | 'solutions_applied' | 'spare_parts'): string[] {
   const values = cases.flatMap((c) => (c[field] ?? '').split(', ').filter((v) => v && v !== 'N.D.'));
   return [...new Set(values)];
@@ -81,7 +93,7 @@ function buildSyntheticAnalysisPrompt(data: {
   line: string;
   problem: string;
   cause: string;
-  searchLevel: 'machine_problem' | 'problem_only';
+  searchLevel: 'machine_problem' | 'line_problem' | 'none'; // 🔥 MODIFICA: aggiunto 'line_problem' e 'none'
   cases: HistoricalCaseRow[];
 }): string {
   const tried = uniqueFromCases(data.cases, 'solutions_tried');
@@ -91,6 +103,13 @@ function buildSyntheticAnalysisPrompt(data: {
     .map((c) => c.notes?.trim())
     .filter(Boolean)
     .slice(0, 5);
+
+  // 🔥 MODIFICA: testo descrittivo del livello di ricerca
+  const searchLabel = data.searchLevel === 'machine_problem' 
+    ? 'stessa macchina + stesso problema' 
+    : data.searchLevel === 'line_problem'
+    ? 'stessa linea + stesso problema'
+    : 'nessun caso simile trovato';
 
   const historyText = data.cases
     .map((c, i) => {
@@ -111,7 +130,7 @@ CASO ATTUALE:
 - Linea: ${data.line}
 - Problema: ${data.problem}
 - Causa: ${data.cause}
-- Livello ricerca: ${data.searchLevel === 'machine_problem' ? 'stessa macchina + stesso problema' : 'solo stesso problema'}
+- Livello ricerca: ${searchLabel}
 
 DATI AGGREGATI (${data.cases.length} casi):
 - Soluzioni provate: ${tried.join(', ') || 'nessuna documentata'}
@@ -404,19 +423,25 @@ aiRoutes.post('/analyze', authMiddleware, async (req, res, next) => {
       ? (await pool.query('SELECT name FROM categories WHERE id = $1', [cause_id])).rows[0]?.name ?? 'N/D'
       : 'N/D';
 
-    let searchLevel: 'machine_problem' | 'problem_only' = 'machine_problem';
+    // 🔥 MODIFICA: logica di ricerca a 3 livelli
+    let searchLevel: 'machine_problem' | 'line_problem' | 'none' = 'machine_problem';
     let similarCases = await fetchCasesByMachineAndProblem(machine_id, problem_id);
 
-    if (!similarCases.length) {
-      searchLevel = 'problem_only';
-      similarCases = await fetchCasesByProblem(problem_id);
+    if (!similarCases.length && machine.line) {
+      searchLevel = 'line_problem';
+      similarCases = await fetchCasesByLineAndProblem(machine.line, problem_id);
     }
 
+    if (!similarCases.length) {
+      searchLevel = 'none';
+    }
+
+    // 🔥 MODIFICA: se non ci sono casi, restituisci messaggio di fallback
     if (!similarCases.length) {
       return res.json({
         success: false,
         insufficient: true,
-        message: 'Nessun caso storico trovato per questo problema. Ti consiglio di documentare accuratamente la soluzione che adotterai.'
+        message: 'Nessun caso storico trovato per questo problema sulla macchina o sulla linea. Ti consiglio di documentare accuratamente la soluzione che adotterai.'
       });
     }
 
@@ -454,6 +479,7 @@ aiRoutes.post('/analyze', authMiddleware, async (req, res, next) => {
       });
     }
 
+    // 🔥 MODIFICA: statistiche aggiornate per includere linea
     res.json({
       success: true,
       insufficient: false,
@@ -463,15 +489,15 @@ aiRoutes.post('/analyze', authMiddleware, async (req, res, next) => {
           label: 'Stessa macchina + problema'
         },
         line: {
-          count: searchLevel === 'problem_only' ? similarCases.length : 0,
-          label: 'Solo stesso problema'
+          count: searchLevel === 'line_problem' ? similarCases.length : 0,
+          label: 'Stessa linea + problema'
         },
         total: {
           count: similarCases.length,
           label: 'Casi simili totali'
         },
         same_machine_problem: searchLevel === 'machine_problem' ? similarCases.length : 0,
-        same_problem_line: searchLevel === 'problem_only' ? similarCases.length : 0,
+        same_problem_line: searchLevel === 'line_problem' ? similarCases.length : 0,
         total_similar: similarCases.length
       },
       analysis,

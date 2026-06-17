@@ -33,37 +33,87 @@ dashboardRoutes.get('/', authMiddleware, async (req, res, next) => {
 
 dashboardRoutes.get('/problemi-tempo', authMiddleware, async (req, res, next) => {
   try {
-    const { startDate, endDate, machineId, limit = '10' } = req.query;
+    const {
+      startDate,
+      endDate,
+      date_from,
+      date_to,
+      month,
+      year,
+      machine_id,
+      line,
+      problem_id,
+      cause_id,
+      limit = '10'
+    } = req.query;
+
     const limitNum = Math.min(Math.max(parseInt(String(limit), 10) || 10, 1), 50);
 
-    let whereConditions = ["c.status IN ('closed', 'completato')"];
+    // Costruisci le condizioni WHERE
+    const conditions: string[] = ["c.status IN ('closed', 'completato')"];
     const params: any[] = [];
 
-    if (startDate) {
-      whereConditions.push(`c.created_at >= $${params.length + 1}`);
-      params.push(startDate);
+    // Gestione date (supporta sia date_from che startDate)
+    const effectiveStartDate = startDate || date_from;
+    const effectiveEndDate = endDate || date_to;
+
+    if (effectiveStartDate) {
+      conditions.push(`c.created_at >= $${params.length + 1}`);
+      params.push(effectiveStartDate);
+    }
+    if (effectiveEndDate) {
+      conditions.push(`c.created_at <= $${params.length + 1}`);
+      params.push(effectiveEndDate);
     }
 
-    if (endDate) {
-      whereConditions.push(`c.created_at <= $${params.length + 1}`);
-      params.push(endDate);
+    // Filtro mese/anno (se presenti)
+    if (month) {
+      conditions.push(`EXTRACT(MONTH FROM c.created_at) = $${params.length + 1}`);
+      params.push(parseInt(String(month), 10));
+    }
+    if (year) {
+      conditions.push(`EXTRACT(YEAR FROM c.created_at) = $${params.length + 1}`);
+      params.push(parseInt(String(year), 10));
     }
 
-    if (machineId) {
-      whereConditions.push(`c.machine_id = $${params.length + 1}`);
-      params.push(machineId);
+    // Filtro macchina
+    if (machine_id) {
+      conditions.push(`c.machine_id = $${params.length + 1}`);
+      params.push(machine_id);
     }
 
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+    // Filtro linea
+    if (line) {
+      conditions.push(`m.line = $${params.length + 1}`);
+      params.push(line);
+    }
 
+    // Filtro problema
+    if (problem_id) {
+      conditions.push(`c.problem_id = $${params.length + 1}`);
+      params.push(problem_id);
+    }
+
+    // Filtro causa
+    if (cause_id) {
+      conditions.push(`c.cause_id = $${params.length + 1}`);
+      params.push(cause_id);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    // Query con join a machines per il filtro linea
     params.push(limitNum);
-    const query = `SELECT prob.name AS nome, COALESCE(SUM(c.tempo_impiego)::float, 0) AS tempo_totale
-       FROM cases c
-       JOIN categories prob ON c.problem_id = prob.id
-       ${whereClause}
-       GROUP BY prob.id, prob.name
-       ORDER BY tempo_totale DESC
-       LIMIT $${params.length}`;
+    const query = `
+      SELECT prob.name AS nome, COALESCE(SUM(c.tempo_impiego)::float, 0) AS tempo_totale
+      FROM cases c
+      JOIN categories prob ON c.problem_id = prob.id
+      LEFT JOIN machines m ON c.machine_id = m.id
+      ${whereClause}
+      GROUP BY prob.id, prob.name
+      ORDER BY tempo_totale DESC
+      LIMIT $${params.length}
+    `;
 
     const r = await pool.query(query, params);
     res.json({ data: r.rows });
@@ -71,4 +121,3 @@ dashboardRoutes.get('/problemi-tempo', authMiddleware, async (req, res, next) =>
     next(e);
   }
 });
-
