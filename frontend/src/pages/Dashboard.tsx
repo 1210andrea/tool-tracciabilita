@@ -595,11 +595,9 @@ export default function Dashboard() {
                       </td>
                       <td className="px-3 py-3 sm:px-4 sm:py-4">
                         <div className="flex flex-wrap gap-2">
-                          {canEditCase(item) && (
-                            <button type="button" className="rounded-xl border border-slate-600 px-2.5 py-1 text-xs text-slate-100 hover:bg-slate-800" onClick={() => setEditingCase(item)}>
-                              Apri
-                            </button>
-                          )}
+                          <button type="button" className="rounded-xl border border-slate-600 px-2.5 py-1 text-xs text-slate-100 hover:bg-slate-800" onClick={() => setEditingCase(item)}>
+                            Apri
+                          </button>
                           {canDeleteCase && (
                             <button type="button" className="rounded-xl border border-rose-500/40 px-2.5 py-1 text-xs text-rose-300 hover:bg-rose-500/10" onClick={() => setDeletingCase(item)}>
                               Elimina

@@ -137,9 +137,6 @@ export default function CreateCase() {
   const [pezziRicambio, setPezziRicambio] = useState<string[]>([]);
   const [tempoImpiego, setTempoImpiego] = useState(0.5);
 
-  const [realTimeAi, setRealTimeAi] = useState<string | null>(null);
-  const [realTimeAiStatus, setRealTimeAiStatus] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle');
-
   const filteredMachines = machineSearch.trim() === ''
     ? machines
     : machines.filter((m) =>
@@ -215,48 +212,6 @@ export default function CreateCase() {
 
     loadSpareParts();
   }, [token, machineId, machines]);
-
-  // Real-time AI suggestions with debounce
-  useEffect(() => {
-    if (!token || !machineId || !problemId) {
-      setRealTimeAi(null);
-      setRealTimeAiStatus('idle');
-      return;
-    }
-
-    setRealTimeAiStatus('loading');
-    const timer = setTimeout(async () => {
-      try {
-        const descText = soluzioniApplicate
-          .map((id) => {
-            const sol = solutions.find((s) => s.id === id);
-            return sol ? `${sol.name}: ${sol.description || ''}`.trim() : '';
-          })
-          .filter(Boolean)
-          .join(', ');
-
-        const resp = await axios.post(
-          `${API_URL}/ai/suggest-solution`,
-          {
-            machine_id: machineId,
-            problem_id: problemId || null,
-            cause_id: causeId || null,
-            spare_part_id: pezziRicambio[0] || null,
-            description: descText || 'N/D',
-            notes: notes.trim() || null
-          },
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        setRealTimeAi(resp.data.suggestion);
-        setRealTimeAiStatus('ready');
-      } catch (err) {
-        console.error(err);
-        setRealTimeAiStatus('failed');
-      }
-    }, 1000); // 1-second debounce
-
-    return () => clearTimeout(timer);
-  }, [token, machineId, problemId, causeId, pezziRicambio, soluzioniApplicate, solutions, notes]);
 
   const handleCreate = async () => {
     if (!token) return;
@@ -494,42 +449,6 @@ export default function CreateCase() {
             />
           </div>
         </div>
-      
-      {machineId && problemId && (
-        <div className="transition-all duration-300 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="flex h-2.5 w-2.5 rounded-full bg-cyan-400 animate-pulse" />
-              <h3 className="text-sm font-semibold uppercase tracking-wider text-cyan-400">Analisi IA in tempo reale</h3>
-            </div>
-            {realTimeAiStatus === 'loading' && (
-              <span className="text-xs text-slate-400 flex items-center gap-1.5">
-                <span className="animate-spin h-3.5 w-3.5 border-2 border-slate-600 border-t-cyan-400 rounded-full" />
-                Elaborazione...
-              </span>
-            )}
-            {realTimeAiStatus === 'ready' && <span className="text-xs text-emerald-400 font-medium">Aggiornato</span>}
-            {realTimeAiStatus === 'failed' && <span className="text-xs text-rose-400 font-medium">Errore di connessione</span>}
-          </div>
-
-          <div className="rounded-md bg-slate-800 p-4 border border-slate-700">
-            {realTimeAiStatus === 'loading' && !realTimeAi && (
-              <p className="text-sm text-slate-500 italic">L'intelligenza artificiale sta analizzando i parametri inseriti...</p>
-            )}
-            {realTimeAiStatus === 'idle' && (
-              <p className="text-sm text-slate-500 italic">Inserisci la macchina e il problema per ottenere suggerimenti immediati.</p>
-            )}
-            {realTimeAiStatus === 'failed' && (
-              <p className="text-sm text-rose-300/80">Impossibile generare suggerimenti in tempo reale. Riprova più tardi.</p>
-            )}
-            {realTimeAi && (
-              <div className="prose prose-invert max-w-none text-slate-200 text-sm whitespace-pre-wrap leading-relaxed">
-                {realTimeAi}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <button type="button" className="inline-flex items-center justify-center rounded-2xl bg-sky-500 px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-60" onClick={handleCreate} disabled={!token || loading}>

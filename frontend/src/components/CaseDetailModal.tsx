@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
+import { MachineSearchSelect } from './MachineSearchSelect';
 
 const API_URL = '/api';
 
 type CategoryItem = { id: string; type: string; name: string };
-type MachineItem = { id: string; code: string; name: string; type?: string };
+type MachineItem = { id: string; code: string; name: string; type?: string; tipologia?: string };
 type SparePartItem = { id: string; name: string };
 type SolutionItem = { id: string; name: string };
 
@@ -152,6 +153,7 @@ export function CaseDetailModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const [editing, setEditing] = useState(false);
   const [machineId, setMachineId] = useState('');
   const [problemId, setProblemId] = useState('');
   const [causeId, setCauseId] = useState('');
@@ -175,6 +177,7 @@ export function CaseDetailModal({
 
   useEffect(() => {
     if (!caseItem) return;
+    setEditing(false);
     setMachineId(caseItem.machine_id);
     setProblemId(caseItem.problem_id ?? '');
     setCauseId(caseItem.cause_id ?? '');
@@ -206,6 +209,7 @@ export function CaseDetailModal({
 
   const problems = categories.filter((c) => c.type === 'problem');
   const causes = categories.filter((c) => c.type === 'cause');
+  const isEditing = canEdit && editing;
 
   const handleSave = async () => {
     if (!canEdit) return;
@@ -247,7 +251,7 @@ export function CaseDetailModal({
       <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-slate-700 bg-slate-900 p-5 shadow-xl sm:p-6">
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-xl font-semibold text-slate-100">{canEdit ? 'Modifica caso' : 'Dettaglio caso'}</h2>
+            <h2 className="text-xl font-semibold text-slate-100">{isEditing ? 'Modifica caso' : 'Dettaglio caso'}</h2>
             <p className="text-sm text-slate-400">{caseItem.machine_code} · {caseItem.problem_name ?? 'N.D.'}</p>
           </div>
           <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-200">✕</button>
@@ -256,14 +260,13 @@ export function CaseDetailModal({
         {error && <div className="mb-4 rounded-xl bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</div>}
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {canEdit ? (
+          {isEditing ? (
             <>
               <div className="sm:col-span-2">
                 <label className="text-xs text-slate-400">Macchina</label>
-                <select value={machineId} onChange={(e) => setMachineId(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-xs text-slate-100 outline-none">
-                  <option value="">Seleziona</option>
-                  {machines.map((m) => <option key={m.id} value={m.id}>{m.code} - {m.name}</option>)}
-                </select>
+                <div className="mt-1">
+                  <MachineSearchSelect machines={machines} value={machineId} onChange={setMachineId} />
+                </div>
               </div>
 
               <div>
@@ -356,7 +359,9 @@ export function CaseDetailModal({
 
               <div className="sm:col-span-2">
                 <span className="text-xs text-slate-500">Pezzi di Ricambio</span>
-                <div className="text-sm font-medium text-slate-200 mt-1">{caseItem.spare_part_name || 'Nessuno'}</div>
+                <div className="text-sm font-medium text-slate-200 mt-1">
+                  {(caseItem.pezzi_ricambio || []).map((p) => p.name).join(', ') || caseItem.spare_part_name || 'Nessuno'}
+                </div>
               </div>
 
               <div className="sm:col-span-2">
@@ -367,8 +372,10 @@ export function CaseDetailModal({
               </div>
 
               <div className="sm:col-span-2">
-                <span className="text-xs text-slate-500">Soluzione Applicata</span>
-                <div className="text-sm font-medium text-slate-200 mt-1">{caseItem.solution_applied_name || 'Nessuna'}</div>
+                <span className="text-xs text-slate-500">Soluzioni Applicate</span>
+                <div className="text-sm font-medium text-slate-200 mt-1">
+                  {(caseItem.soluzioni_applicate || []).map((s) => s.name).join(', ') || caseItem.solution_applied_name || 'Nessuna'}
+                </div>
               </div>
 
               <div className="sm:col-span-2">
@@ -385,7 +392,7 @@ export function CaseDetailModal({
               <label className="text-xs text-slate-400">Note aggiuntive</label>
               {canEdit && <span className="text-[10px] text-slate-500">{notes.length}/1000 caratteri</span>}
             </div>
-            {canEdit ? (
+            {isEditing ? (
               <textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value.slice(0, 1000))}
@@ -402,10 +409,18 @@ export function CaseDetailModal({
 
         <div className="mt-6 flex flex-wrap justify-end gap-3">
           <button type="button" onClick={onClose} className="rounded-2xl border border-slate-700 px-4 py-2 text-xs text-slate-100 hover:bg-slate-800">Chiudi</button>
-          {canEdit && (
-            <button type="button" onClick={handleSave} disabled={loading} className="rounded-2xl bg-sky-500 px-4 py-2 text-xs font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-60">
-              {loading ? 'Salvataggio...' : 'Salva modifiche'}
+          {canEdit && !editing && (
+            <button type="button" onClick={() => setEditing(true)} className="rounded-2xl bg-sky-500 px-4 py-2 text-xs font-semibold text-slate-950 hover:bg-sky-400">
+              Modifica
             </button>
+          )}
+          {isEditing && (
+            <>
+              <button type="button" onClick={() => setEditing(false)} className="rounded-2xl border border-slate-700 px-4 py-2 text-xs text-slate-100 hover:bg-slate-800">Annulla</button>
+              <button type="button" onClick={handleSave} disabled={loading} className="rounded-2xl bg-sky-500 px-4 py-2 text-xs font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-60">
+                {loading ? 'Salvataggio...' : 'Salva modifiche'}
+              </button>
+            </>
           )}
         </div>
       </div>

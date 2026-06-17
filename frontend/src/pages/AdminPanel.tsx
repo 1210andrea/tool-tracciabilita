@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
-import { Link } from 'react-router-dom';
 import { ConfirmModal } from '../components/ConfirmModal';
 
 type Operatore = { id: string; nome: string; attivo: boolean; created_at?: string; updated_at?: string };
@@ -655,9 +654,6 @@ export default function AdminPanel() {
         onConfirm={confirmDelete}
       />
 
-      <Link to="/" className="inline-flex rounded-2xl bg-slate-800 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-700 transition">
-        Torna alla dashboard
-      </Link>
     </div>
   );
 }

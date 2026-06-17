@@ -2,7 +2,6 @@ import { Router } from 'express';
 import { authMiddleware } from '../middleware/auth';
 import { pool } from '../db';
 import { emitEvent } from '../services/socketService';
-import { generateAiSolution } from '../services/aiService';
 
 export const casesRoutes = Router();
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import { MachineSearchSelect } from '../components/MachineSearchSelect';
 
 const API_URL = '/api';
 
@@ -69,10 +70,13 @@ export default function AiAnalysis() {
         `${API_URL}/ai/analyze`,
         {
           machine_id: machineId,
-          problem_id: problemId || undefined,
+          problem_id: problemId,
           cause_id: causeId || undefined
         },
-        { headers: { Authorization: `Bearer ${token}` } }
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          timeout: 120000
+        }
       );
       const data = resp.data as AiResult;
       if (data.error && data.insufficient) {
@@ -80,8 +84,12 @@ export default function AiAnalysis() {
       }
       setResult(data);
     } catch (err: any) {
-      console.error('Analisi IA fallita:', err?.response?.data?.details ?? err);
-      setError(err?.response?.data?.error ?? 'Errore durante l\'analisi IA.');
+      const isTimeout = err?.code === 'ECONNABORTED' || err?.response?.status === 408;
+      setError(
+        isTimeout
+          ? "L'analisi sta richiedendo più tempo, riprova più tardi"
+          : err?.response?.data?.error ?? "Errore durante l'analisi IA."
+      );
     } finally {
       setLoading(false);
     }
@@ -100,10 +108,14 @@ export default function AiAnalysis() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <label className="text-xs text-slate-400">Macchina <span className="text-red-400">*</span></label>
-            <select value={machineId} onChange={(e) => setMachineId(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none">
-              <option value="">Seleziona macchina</option>
-              {machines.map((m) => <option key={m.id} value={m.id}>{m.code} - {m.name}{m.line ? ` (${m.line})` : ''}</option>)}
-            </select>
+            <div className="mt-1">
+              <MachineSearchSelect
+                machines={machines}
+                value={machineId}
+                onChange={setMachineId}
+                placeholder="Cerca macchina per codice, nome o linea..."
+              />
+            </div>
           </div>
           <div>
             <label className="text-xs text-slate-400">Problema <span className="text-red-400">*</span></label>
@@ -145,7 +157,7 @@ export default function AiAnalysis() {
       )}
 
       {result?.insufficient && !loading && (
-        <div className="rounded-3xl border border-amber-500/30 bg-amber-500/10 px-5 py-4 text-sm text-amber-100">
+        <div className="rounded-3xl border border-amber-500/30 bg-amber-500/10 px-5 py-4 text-sm text-amber-100 whitespace-pre-wrap">
           {result.error || result.message}
         </div>
       )}
@@ -167,7 +179,7 @@ export default function AiAnalysis() {
                   {result.stats.line ? result.stats.line.count : result.stats.same_problem_line}
                 </div>
                 <div className="mt-1 text-xs text-slate-400">
-                  {result.stats.line ? result.stats.line.label : (problemId ? "Casi con stesso problema sulla linea" : "Casi sulla linea")}
+                  {result.stats.line ? result.stats.line.label : 'Solo stesso problema'}
                 </div>
               </div>
               <div className="rounded-2xl bg-slate-900/80 p-4 text-center">

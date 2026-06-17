@@ -49,6 +49,88 @@ const HISTORICAL_CASES_SQL = `
   LEFT JOIN operatori oper ON oper.id = c.operatore_id
 `;
 
+async function fetchCasesByMachineAndProblem(machineId: string, problemId: string): Promise<HistoricalCaseRow[]> {
+  const r = await pool.query(
+    `${HISTORICAL_CASES_SQL}
+     WHERE c.machine_id = $1 AND c.problem_id = $2
+     ORDER BY c.created_at DESC
+     LIMIT 15`,
+    [machineId, problemId]
+  );
+  return r.rows as HistoricalCaseRow[];
+}
+
+async function fetchCasesByProblem(problemId: string): Promise<HistoricalCaseRow[]> {
+  const r = await pool.query(
+    `${HISTORICAL_CASES_SQL}
+     WHERE c.problem_id = $1
+     ORDER BY c.created_at DESC
+     LIMIT 15`,
+    [problemId]
+  );
+  return r.rows as HistoricalCaseRow[];
+}
+
+function uniqueFromCases(cases: HistoricalCaseRow[], field: 'solutions_tried' | 'solutions_applied' | 'spare_parts'): string[] {
+  const values = cases.flatMap((c) => (c[field] ?? '').split(', ').filter((v) => v && v !== 'N.D.'));
+  return [...new Set(values)];
+}
+
+function buildSyntheticAnalysisPrompt(data: {
+  machine: string;
+  line: string;
+  problem: string;
+  cause: string;
+  searchLevel: 'machine_problem' | 'problem_only';
+  cases: HistoricalCaseRow[];
+}): string {
+  const tried = uniqueFromCases(data.cases, 'solutions_tried');
+  const applied = uniqueFromCases(data.cases, 'solutions_applied');
+  const spareParts = uniqueFromCases(data.cases, 'spare_parts');
+  const notes = data.cases
+    .map((c) => c.notes?.trim())
+    .filter(Boolean)
+    .slice(0, 5);
+
+  const historyText = data.cases
+    .map((c, i) => {
+      const date = new Date(c.created_at).toLocaleDateString('it-IT');
+      return `${i + 1}. [${date}] Macchina ${c.machine_code} (${c.line ?? 'N/D'})
+   Problema: ${c.problem_name ?? 'N/D'} | Causa: ${c.cause_name ?? 'N/D'}
+   Soluzioni provate: ${c.solutions_tried ?? 'N/D'}
+   Soluzioni applicate: ${c.solutions_applied ?? 'N.D.'}
+   Ricambi: ${c.spare_parts ?? 'N.D.'}
+   Nota: ${c.notes?.trim() || 'N/D'}`;
+    })
+    .join('\n\n');
+
+  return `Analizza i casi storici di manutenzione e rispondi SOLO nel formato indicato, in italiano, massimo 150-200 parole totali.
+
+CASO ATTUALE:
+- Macchina: ${data.machine}
+- Linea: ${data.line}
+- Problema: ${data.problem}
+- Causa: ${data.cause}
+- Livello ricerca: ${data.searchLevel === 'machine_problem' ? 'stessa macchina + stesso problema' : 'solo stesso problema'}
+
+DATI AGGREGATI (${data.cases.length} casi):
+- Soluzioni provate: ${tried.join(', ') || 'nessuna documentata'}
+- Soluzioni applicate: ${applied.join(', ') || 'nessuna documentata'}
+- Pezzi di ricambio: ${spareParts.join(', ') || 'nessuno documentato'}
+- Note: ${notes.join(' | ') || 'nessuna'}
+
+CRONOLOGIA:
+${historyText}
+
+FORMATO OBBLIGATORIO (usa esattamente queste righe):
+Hai provato: [elenco soluzioni provate] ma non hanno risolto.
+Ti consiglio di fare: [elenco soluzioni applicate] che hanno risolto il problema in passato.
+Potresti dover sostituire: [elenco pezzi di ricambio] usati nei vari ticket.
+Nota: [breve osservazione basata sui casi storici].
+
+Regole: usa SOLO i dati forniti, non inventare nomi o statistiche.`;
+}
+
 async function fetchHistoricalCases(
   machineId: string,
   problemId: string | null,
@@ -297,11 +379,8 @@ aiRoutes.post('/suggest-solution', authMiddleware, async (req, res, next) => {
 });
 
 aiRoutes.post('/analyze', authMiddleware, async (req, res, next) => {
-  const payload = req.body;
-  logger.info({ aiAnalyze: { payload: JSON.stringify(payload) } });
-
   try {
-    const { machine_id, problem_id, cause_id } = payload as {
+    const { machine_id, problem_id, cause_id } = req.body as {
       machine_id?: string;
       problem_id?: string;
       cause_id?: string;
@@ -310,155 +389,97 @@ aiRoutes.post('/analyze', authMiddleware, async (req, res, next) => {
     if (!machine_id) {
       return res.status(400).json({ success: false, error: 'machine_id è obbligatorio' });
     }
-
-    // 🔥 Recupera dati storici con conteggi (da caseService)
-    const historicalData = await getHistoricalDataForMachine(machine_id, problem_id);
-
-    // Recupera machine, problem e cause names
-    const machineR = await pool.query('SELECT name, line FROM machines WHERE id = $1', [machine_id]);
-    const machine = machineR.rows[0];
-    if (!machine) {
-      return res.status(400).json({
-        success: false,
-        error: 'Nessun storico trovato per questa macchina',
-        details: { reason: 'machine_not_found', machine_id }
-      });
+    if (!problem_id) {
+      return res.status(400).json({ success: false, error: 'problem_id è obbligatorio' });
     }
 
-    const problemName = problem_id
-      ? (await pool.query('SELECT name FROM categories WHERE id = $1', [problem_id])).rows[0]?.name ?? 'N/D'
-      : 'N/D';
+    const machineR = await pool.query('SELECT code, name, line FROM machines WHERE id = $1', [machine_id]);
+    const machine = machineR.rows[0];
+    if (!machine) {
+      return res.status(400).json({ success: false, error: 'Macchina non trovata' });
+    }
+
+    const problemName = (await pool.query('SELECT name FROM categories WHERE id = $1', [problem_id])).rows[0]?.name ?? 'N/D';
     const causeName = cause_id
       ? (await pool.query('SELECT name FROM categories WHERE id = $1', [cause_id])).rows[0]?.name ?? 'N/D'
       : 'N/D';
 
-    // 🔥 Usa lo stesso prompt ultra-sintetico di /suggest-solution
-    const prompt = buildAIPrompt({
-      machineName: machine.name || 'Sconosciuta',
-      lineName: machine.line || 'Sconosciuta',
-      problemName: problemName,
-      causeName: causeName,
-      description: payload.description || '',
-      symptoms: payload.symptoms || '',
-      historicalData,
-    });
+    let searchLevel: 'machine_problem' | 'problem_only' = 'machine_problem';
+    let similarCases = await fetchCasesByMachineAndProblem(machine_id, problem_id);
 
-    // Chiamata a Ollama (con timeout 15s)
-    const analysis = await callOllama(prompt, 15_000);
+    if (!similarCases.length) {
+      searchLevel = 'problem_only';
+      similarCases = await fetchCasesByProblem(problem_id);
+    }
 
-    if (!analysis) {
-      const ollamaErr = getLastOllamaError();
-      logger.error({ aiAnalyze: { ollamaError: ollamaErr } });
+    if (!similarCases.length) {
       return res.json({
         success: false,
         insufficient: true,
-        error: getOllamaErrorMessage(),
+        message: 'Nessun caso storico trovato per questo problema. Ti consiglio di documentare accuratamente la soluzione che adotterai.'
+      });
+    }
+
+    const prompt = buildSyntheticAnalysisPrompt({
+      machine: `${machine.code} - ${machine.name}`,
+      line: machine.line ?? 'N/D',
+      problem: problemName,
+      cause: causeName,
+      searchLevel,
+      cases: similarCases
+    });
+
+    const analysis = await callOllama(
+      [
+        {
+          role: 'system',
+          content: 'Sei un assistente di manutenzione industriale. Rispondi sempre nel formato richiesto, in italiano, massimo 200 parole, usando solo i dati forniti.'
+        },
+        { role: 'user', content: prompt }
+      ],
+      120_000
+    );
+
+    if (!analysis) {
+      const ollamaErr = getLastOllamaError();
+      const isTimeout = ollamaErr?.reason === 'timeout';
+      return res.status(isTimeout ? 408 : 503).json({
+        success: false,
+        insufficient: true,
+        error: isTimeout
+          ? "L'analisi sta richiedendo più tempo, riprova più tardi"
+          : getOllamaErrorMessage(),
         message: formatOllamaUnavailableMessage(),
         details: { ollama: ollamaErr }
       });
     }
-
-    // 🔥 Troncamento a 100 parole
-    let finalAnalysis = analysis;
-    const words = finalAnalysis.trim().split(/\s+/);
-    if (words.length > 100) {
-      finalAnalysis = words.slice(0, 100).join(' ') + '...';
-    }
-
-    logger.info({ aiAnalyze: { responseLength: finalAnalysis.length } });
-
-    // Calcola statistiche
-    let machineCount = 0;
-    let lineCount = 0;
-
-    if (problem_id) {
-      const mc = await pool.query(
-        'SELECT COUNT(*)::int FROM cases WHERE machine_id = $1 AND problem_id = $2',
-        [machine_id, problem_id]
-      );
-      machineCount = mc.rows[0]?.count ?? 0;
-
-      if (machine.line) {
-        const lc = await pool.query(
-          `SELECT COUNT(*)::int FROM cases c
-           JOIN machines m ON c.machine_id = m.id
-           WHERE m.line = $1 AND c.machine_id != $2 AND c.problem_id = $3`,
-          [machine.line, machine_id, problem_id]
-        );
-        lineCount = lc.rows[0]?.count ?? 0;
-      }
-    } else {
-      const mc = await pool.query(
-        'SELECT COUNT(*)::int FROM cases WHERE machine_id = $1',
-        [machine_id]
-      );
-      machineCount = mc.rows[0]?.count ?? 0;
-
-      if (machine.line) {
-        const lc = await pool.query(
-          `SELECT COUNT(*)::int FROM cases c
-           JOIN machines m ON c.machine_id = m.id
-           WHERE m.line = $1 AND c.machine_id != $2`,
-          [machine.line, machine_id]
-        );
-        lineCount = lc.rows[0]?.count ?? 0;
-      }
-    }
-
-    const totalCount = machineCount + lineCount;
-
-    const machineLabel = problem_id
-      ? "Casi con stesso problema su questa macchina"
-      : "Casi su questa macchina";
-    const lineLabel = problem_id
-      ? "Casi con stesso problema sulla linea"
-      : "Casi sulla linea";
-    const totalLabel = "Casi simili totali";
 
     res.json({
       success: true,
       insufficient: false,
       stats: {
         machine: {
-          count: machineCount,
-          label: machineLabel
+          count: searchLevel === 'machine_problem' ? similarCases.length : 0,
+          label: 'Stessa macchina + problema'
         },
         line: {
-          count: lineCount,
-          label: lineLabel
+          count: searchLevel === 'problem_only' ? similarCases.length : 0,
+          label: 'Solo stesso problema'
         },
         total: {
-          count: totalCount,
-          label: totalLabel
+          count: similarCases.length,
+          label: 'Casi simili totali'
         },
-        same_machine_problem: machineCount,
-        same_problem_line: lineCount,
-        total_similar: totalCount
+        same_machine_problem: searchLevel === 'machine_problem' ? similarCases.length : 0,
+        same_problem_line: searchLevel === 'problem_only' ? similarCases.length : 0,
+        total_similar: similarCases.length
       },
-      analysis: finalAnalysis,
-      solution: finalAnalysis,
-      details: { searchScope: machineCount > 0 ? 'machine' : 'line' }
+      analysis,
+      solution: analysis,
+      details: { searchLevel }
     });
   } catch (e) {
     logger.error({ aiAnalyze: { error: e instanceof Error ? e.message : String(e) } });
-
-    if (e && typeof e === 'object' && 'code' in e) {
-      return res.status(500).json({
-        success: false,
-        error: 'Errore nel caricamento dati dal database',
-        details: { dbError: (e as { code?: string }).code }
-      });
-    }
-
-    const errMsg = e instanceof Error ? e.message : 'Errore sconosciuto';
-    if (errMsg.includes('parse') || errMsg.includes('JSON')) {
-      return res.status(500).json({
-        success: false,
-        error: 'Errore nel parsing della risposta IA',
-        details: { message: errMsg }
-      });
-    }
-
     next(e);
   }
 });
