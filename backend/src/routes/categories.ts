@@ -7,7 +7,12 @@ export const categoriesRoutes = Router();
 
 categoriesRoutes.get('/', authMiddleware, async (_req, res, next) => {
   try {
-    const r = await pool.query('SELECT id, type, name, description, created_at FROM categories ORDER BY type, created_at DESC');
+    const r = await pool.query(
+      `SELECT c.id, c.type, c.name, c.description, c.created_at,
+        (SELECT COUNT(*) FROM cases WHERE problem_id = c.id OR cause_id = c.id) AS usage_count
+       FROM categories c
+       ORDER BY c.type, c.created_at DESC`
+    );
     res.json({ items: r.rows });
   } catch (e) {
     next(e);
@@ -17,7 +22,14 @@ categoriesRoutes.get('/', authMiddleware, async (_req, res, next) => {
 categoriesRoutes.get('/:type', authMiddleware, async (req, res, next) => {
   try {
     const { type } = req.params;
-    const r = await pool.query('SELECT id, type, name, description FROM categories WHERE type = $1 ORDER BY name', [type]);
+    const r = await pool.query(
+      `SELECT c.id, c.type, c.name, c.description,
+        (SELECT COUNT(*) FROM cases WHERE problem_id = c.id OR cause_id = c.id) AS usage_count
+       FROM categories c
+       WHERE c.type = $1
+       ORDER BY c.name`,
+      [type]
+    );
     res.json({ items: r.rows });
   } catch (e) {
     next(e);
@@ -78,7 +90,10 @@ categoriesRoutes.delete('/:id', authMiddleware, async (req, res, next) => {
       const parts: string[] = [];
       if (problemCount) parts.push(`${problemCount} casi come problema`);
       if (causeCount) parts.push(`${causeCount} casi come causa`);
-      return res.status(400).json({ error: `Non eliminabile: in uso (${parts.join(', ')})` });
+      return res.status(400).json({ 
+        error: `Non eliminabile: in uso (${parts.join(', ')})`,
+        usage_count: totalUsed
+      });
     }
 
     const r = await pool.query('DELETE FROM categories WHERE id = $1 RETURNING type', [id]);
@@ -89,5 +104,3 @@ categoriesRoutes.delete('/:id', authMiddleware, async (req, res, next) => {
     next(e);
   }
 });
-
-

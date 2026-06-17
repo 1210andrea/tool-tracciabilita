@@ -8,7 +8,10 @@ export const machinesRoutes = Router();
 machinesRoutes.get('/', authMiddleware, async (_req, res, next) => {
   try {
     const r = await pool.query(
-      'SELECT id, code, name, line, location, tipologia, type, posizione, created_at FROM machines ORDER BY created_at DESC'
+      `SELECT m.id, m.code, m.name, m.line, m.location, m.tipologia, m.type, m.posizione, m.created_at,
+        (SELECT COUNT(*) FROM cases WHERE machine_id = m.id) AS usage_count
+       FROM machines m
+       ORDER BY m.created_at DESC`
     );
     res.json({ items: r.rows });
   } catch (e) {
@@ -97,4 +100,3 @@ machinesRoutes.delete('/:id', authMiddleware, async (req, res, next) => {
     next(e);
   }
 });
-

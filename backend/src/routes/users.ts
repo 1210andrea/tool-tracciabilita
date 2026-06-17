@@ -8,9 +8,10 @@ export const usersRoutes = Router();
 usersRoutes.get('/', authMiddleware, async (req, res, next) => {
   try {
     const r = await pool.query(
-      `SELECT id, username, email, role, ldap_managed, created_at
-       FROM users
-       ORDER BY created_at DESC`
+      `SELECT u.id, u.username, u.email, u.role, u.ldap_managed, u.created_at,
+        (SELECT COUNT(*) FROM cases WHERE created_by = u.id OR assigned_to = u.id) AS usage_count
+       FROM users u
+       ORDER BY u.created_at DESC`
     );
     res.json({ items: r.rows });
   } catch (e) {
@@ -78,17 +79,32 @@ usersRoutes.delete('/:id', authMiddleware, async (req, res, next) => {
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
 
     const { id } = req.params;
+
+    // 🔒 Blocca eliminazione utente amministratore principale
+    const adminCheck = await pool.query('SELECT email FROM users WHERE id = $1', [id]);
+    if (adminCheck.rows.length > 0 && adminCheck.rows[0].email === 'admin@machines.local') {
+      return res.status(403).json({ error: 'Non puoi eliminare l\'utente amministratore principale.' });
+    }
+
+    // Impedisci all'utente di eliminare se stesso
     if (id === req.user!.id) {
       return res.status(400).json({ error: 'Non puoi eliminare il tuo account mentre sei connesso' });
     }
+
+    // Verifica se l'utente è referenziato in casi
     const usedR = await pool.query(
       `SELECT COUNT(*)::int AS count FROM cases
        WHERE created_by = $1 OR assigned_to = $1`,
       [id]
     );
-    if ((usedR.rows[0]?.count ?? 0) > 0) {
-      return res.status(400).json({ error: `Non eliminabile: utente collegato a ${usedR.rows[0].count} casi` });
+    const count = usedR.rows[0]?.count ?? 0;
+    if (count > 0) {
+      return res.status(400).json({
+        error: `Non eliminabile: utente collegato a ${count} casi`,
+        usage_count: count
+      });
     }
+
     await pool.query('DELETE FROM users WHERE id = $1', [id]);
     res.json({ ok: true });
   } catch (e) {

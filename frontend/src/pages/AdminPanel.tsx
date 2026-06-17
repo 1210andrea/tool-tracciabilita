@@ -88,6 +88,10 @@ export default function AdminPanel() {
   const [sparePartForm, setSparePartForm] = useState({ name: '', tipologie: [] as string[], description: '' });
   const [solutionForm, setSolutionForm] = useState({ name: '', description: '' });
 
+  // 🔥 STATI PER MODIFICA UTENTE
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [userEditForm, setUserEditForm] = useState({ username: '', email: '', password: '' });
+
   const headers = useMemo(() => ({ headers: { Authorization: `Bearer ${token}` } }), [token]);
 
   const loadAll = async () => {
@@ -143,6 +147,40 @@ export default function AdminPanel() {
       setCategoryForm((c) => ({ ...c, type: 'cause' }));
     }
   }, [activeTab]);
+
+  // 🔥 FUNZIONI PER MODIFICA UTENTE
+  const startEditUser = (user: User) => {
+    setEditingUser(user);
+    setUserEditForm({ username: user.username, email: user.email || '', password: '' });
+  };
+
+  const cancelEditUser = () => {
+    setEditingUser(null);
+    setUserEditForm({ username: '', email: '', password: '' });
+  };
+
+  const submitUserEdit = async () => {
+    if (!editingUser) return;
+    try {
+      const payload: any = {};
+      if (userEditForm.username) payload.username = userEditForm.username;
+      if (userEditForm.email) payload.email = userEditForm.email;
+      if (userEditForm.password) payload.password = userEditForm.password;
+
+      if (Object.keys(payload).length === 0) {
+        setMessage('Nessun campo da aggiornare.');
+        return;
+      }
+
+      await axios.put(`${API_URL}/users/${editingUser.id}`, payload, headers);
+      setMessage('Utente aggiornato.');
+      setEditingUser(null);
+      setUserEditForm({ username: '', email: '', password: '' });
+      loadAll();
+    } catch (err: any) {
+      setMessage(err?.response?.data?.error ?? 'Errore aggiornamento utente.');
+    }
+  };
 
   const submitOperatore = async () => {
     try {
@@ -624,17 +662,35 @@ export default function AdminPanel() {
 
           {activeTab === 'utenti' && (
             <div className="space-y-4">
-              {users.map((userItem) => (
-                <div key={userItem.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <div className="font-semibold text-slate-100">{userItem.username}</div>
-                    <div className="text-sm text-slate-500">{userItem.email || 'Email non fornita'} · ruolo: {userItem.role}</div>
+              {users.map((userItem) => {
+                const isAdmin = userItem.email === 'admin@machines.local';
+                return (
+                  <div key={userItem.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <div className="font-semibold text-slate-100">{userItem.username}</div>
+                      <div className="text-sm text-slate-500">{userItem.email || 'Email non fornita'} · ruolo: {userItem.role}</div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button 
+                        type="button" 
+                        className="rounded-2xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition" 
+                        onClick={() => startEditUser(userItem)}
+                      >
+                        Modifica
+                      </button>
+                      {!isAdmin && (
+                        <button 
+                          type="button" 
+                          className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400 transition" 
+                          onClick={() => requestDelete('users', userItem.id)}
+                        >
+                          Elimina
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400 transition" onClick={() => requestDelete('users', userItem.id)}>
-                    Elimina
-                  </button>
-                </div>
-              ))}
+                );
+              })}
               {users.length === 0 && (
                 <p className="text-sm text-slate-500 italic text-center py-4">Nessun utente configurato.</p>
               )}
@@ -707,6 +763,49 @@ export default function AdminPanel() {
         onConfirm={confirmDelete}
       />
 
+      {/* 🔥 MODALE MODIFICA UTENTE */}
+      {editingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="max-w-md w-full rounded-3xl border border-slate-700 bg-slate-900 p-6">
+            <h3 className="text-xl font-semibold text-slate-100 mb-4">Modifica utente</h3>
+            <div className="space-y-4">
+              <input
+                value={userEditForm.username}
+                onChange={(e) => setUserEditForm(f => ({ ...f, username: e.target.value }))}
+                placeholder="Username"
+                className="w-full rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none"
+              />
+              <input
+                value={userEditForm.email}
+                onChange={(e) => setUserEditForm(f => ({ ...f, email: e.target.value }))}
+                placeholder="Email"
+                className="w-full rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none"
+              />
+              <input
+                type="password"
+                value={userEditForm.password}
+                onChange={(e) => setUserEditForm(f => ({ ...f, password: e.target.value }))}
+                placeholder="Nuova password (lasciare vuoto per non cambiare)"
+                className="w-full rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none"
+              />
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <button 
+                className="rounded-2xl border border-slate-700 px-4 py-2 text-sm text-slate-100 hover:bg-slate-800 transition" 
+                onClick={cancelEditUser}
+              >
+                Annulla
+              </button>
+              <button 
+                className="rounded-2xl bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400 transition" 
+                onClick={submitUserEdit}
+              >
+                Salva modifiche
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

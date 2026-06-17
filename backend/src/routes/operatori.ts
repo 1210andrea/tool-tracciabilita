@@ -9,10 +9,11 @@ operatoriRoutes.get('/', authMiddleware, async (req, res, next) => {
   try {
     const showAll = req.query.all === '1' && req.user?.role === 'admin';
     const r = await pool.query(
-      `SELECT id, nome, attivo, created_at, updated_at
-       FROM operatori
-       ${showAll ? '' : 'WHERE attivo = true'}
-       ORDER BY nome ASC`
+      `SELECT op.id, op.nome, op.attivo, op.created_at, op.updated_at,
+        (SELECT COUNT(*) FROM cases WHERE operatore_id = op.id) AS usage_count
+       FROM operatori op
+       ${showAll ? '' : 'WHERE op.attivo = true'}
+       ORDER BY op.nome ASC`
     );
     res.json({ items: r.rows });
   } catch (e) {
