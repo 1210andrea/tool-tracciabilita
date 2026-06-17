@@ -209,7 +209,6 @@ export function CaseDetailModal({
 
   const problems = categories.filter((c) => c.type === 'problem');
   const causes = categories.filter((c) => c.type === 'cause');
-  const isEditing = canEdit && editing;
 
   const handleSave = async () => {
     if (!canEdit) return;
