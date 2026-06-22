@@ -1,1 +1,1 @@
-PLACEHOLDER_ADMINPANEL
+AdminPanel_clean.tsx
