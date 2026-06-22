@@ -8,10 +8,9 @@ type Operatore = { id: string; nome: string; attivo: boolean; created_at?: strin
 type Machine = { id: string; code: string; name: string; line?: string; location?: string; tipologia?: string; type?: string; posizione?: string; usage_count?: number };
 type User = { id: string; username: string; email?: string; role: string };
 type SparePart = { id: string; name: string; tipologia?: string[]; tipologie?: string[]; type?: string; description?: string; usage_count?: number };
-type SolutionApplied = { id: string; name: string; description?: string; usage_count?: number };
+type SolutionApplied = { id: string; name: string; description?: string; cause_id?: string; cause_name?: string; usage_count?: number };
 
 const API_URL = '/api';
-const TIPologie_TYPES = ['nastro', 'assemblaggio', 'controllo', 'imballaggio'];
 
 type AdminTab = 'operatori' | 'problemi' | 'cause' | 'macchine' | 'utenti' | 'ricambi' | 'soluzioni';
 
@@ -29,7 +28,6 @@ function DeleteButton({
   type: 'categories' | 'machines' | 'users' | 'spare_parts' | 'solutions' | 'operatori'; 
   onDelete: (type: 'categories' | 'machines' | 'users' | 'spare_parts' | 'solutions' | 'operatori', id: string) => void;
 }) {
-  // Gli utenti sono sempre eliminabili (senza restrizioni)
   if (type === 'users') {
     return (
       <button 
@@ -86,13 +84,16 @@ export default function AdminPanel() {
   const [machineForm, setMachineForm] = useState({ code: '', name: '', line: '', location: '', tipologia: '' });
   const [userForm, setUserForm] = useState({ username: '', email: '', password: '', role: 'user' });
   const [sparePartForm, setSparePartForm] = useState({ name: '', tipologie: [] as string[], description: '' });
-  const [solutionForm, setSolutionForm] = useState({ name: '', description: '' });
+  const [solutionForm, setSolutionForm] = useState({ name: '', description: '', cause_id: '' });
 
   // 🔥 STATI PER MODIFICA UTENTE
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [userEditForm, setUserEditForm] = useState({ username: '', email: '', password: '' });
 
   const headers = useMemo(() => ({ headers: { Authorization: `Bearer ${token}` } }), [token]);
+
+  // Cause disponibili per il form soluzioni
+  const causes = useMemo(() => categories.filter((c) => c.type === 'cause').sort((a, b) => a.name.localeCompare(b.name)), [categories]);
 
   const loadAll = async () => {
     if (!token) return;
@@ -259,9 +260,13 @@ export default function AdminPanel() {
 
   const submitSolution = async () => {
     try {
+      if (!solutionForm.cause_id) {
+        setMessage('Seleziona una causa per questa soluzione.');
+        return;
+      }
       await axios.post(`${API_URL}/solutions-applied`, solutionForm, headers);
       setMessage('Soluzione aggiunta.');
-      setSolutionForm({ name: '', description: '' });
+      setSolutionForm({ name: '', description: '', cause_id: '' });
       loadAll();
     } catch (err: any) {
       setMessage(err?.response?.data?.error ?? 'Errore salvataggio soluzione.');
@@ -547,11 +552,52 @@ export default function AdminPanel() {
             <>
               <div>
                 <h2 className="text-xl font-semibold text-slate-100">Nuova soluzione applicata</h2>
-                <p className="text-sm text-slate-400">Aggiungi opzioni per le soluzioni applicate nei casi.</p>
+                <p className="text-sm text-slate-400">Aggiungi una soluzione e associala alla causa corrispondente.</p>
               </div>
 
-              <input value={solutionForm.name} onChange={(e) => setSolutionForm((c) => ({ ...c, name: e.target.value }))} placeholder="Nome soluzione" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
-              <textarea value={solutionForm.description} onChange={(e) => setSolutionForm((c) => ({ ...c, description: e.target.value }))} rows={4} placeholder="Descrizione (opzionale)" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm text-slate-300">Nome soluzione</label>
+                  <input
+                    value={solutionForm.name}
+                    onChange={(e) => setSolutionForm((c) => ({ ...c, name: e.target.value }))}
+                    placeholder="Nome soluzione"
+                    className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm text-slate-300">Causa associata <span className="text-rose-500 ml-1">*</span></label>
+                  {causes.length === 0 ? (
+                    <p className="mt-2 text-sm text-slate-500 bg-slate-900/50 p-3 rounded-2xl border border-slate-800">
+                      Nessuna causa disponibile. Crea prima una causa nella tab "Cause".
+                    </p>
+                  ) : (
+                    <select
+                      value={solutionForm.cause_id}
+                      onChange={(e) => setSolutionForm((c) => ({ ...c, cause_id: e.target.value }))}
+                      className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
+                    >
+                      <option value="">Seleziona causa...</option>
+                      {causes.map((cause) => (
+                        <option key={cause.id} value={cause.id}>{cause.name}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                <div>
+                  <label className="text-sm text-slate-300">Descrizione</label>
+                  <textarea
+                    value={solutionForm.description}
+                    onChange={(e) => setSolutionForm((c) => ({ ...c, description: e.target.value }))}
+                    rows={4}
+                    placeholder="Descrizione (opzionale)"
+                    className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
+                  />
+                </div>
+              </div>
+
               <button type="button" className="w-full rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 sm:w-auto hover:bg-sky-400 transition" onClick={submitSolution}>
                 Aggiungi soluzione
               </button>
@@ -596,7 +642,7 @@ export default function AdminPanel() {
 
           {activeTab === 'problemi' && (
             <div className="space-y-4">
-              {categories.filter((c) => c.type === 'problem').map((category) => (
+              {categories.filter((c) => c.type === 'problem').sort((a, b) => a.name.localeCompare(b.name)).map((category) => (
                 <div key={category.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <div className="font-semibold text-slate-100">{category.name}</div>
@@ -618,7 +664,7 @@ export default function AdminPanel() {
 
           {activeTab === 'cause' && (
             <div className="space-y-4">
-              {categories.filter((c) => c.type === 'cause').map((category) => (
+              {categories.filter((c) => c.type === 'cause').sort((a, b) => a.name.localeCompare(b.name)).map((category) => (
                 <div key={category.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <div className="font-semibold text-slate-100">{category.name}</div>
@@ -730,7 +776,16 @@ export default function AdminPanel() {
                 <div key={sol.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <div className="font-semibold text-slate-100">{sol.name}</div>
-                    <div className="text-sm text-slate-500">{sol.description || 'Nessuna descrizione'}</div>
+                    <div className="text-sm text-slate-500">
+                      {sol.cause_name ? (
+                        <span className="inline-flex items-center gap-1">
+                          <span className="text-sky-400 font-medium">Causa: {sol.cause_name}</span>
+                          {sol.description ? ` · ${sol.description}` : ''}
+                        </span>
+                      ) : (
+                        sol.description || 'Nessuna descrizione'
+                      )}
+                    </div>
                   </div>
                   <DeleteButton 
                     itemId={sol.id} 
@@ -741,71 +796,42 @@ export default function AdminPanel() {
                 </div>
               ))}
               {solutionsApplied.length === 0 && (
-                <p className="text-sm text-slate-500 italic text-center py-4">Nessuna soluzione applicata configurata.</p>
+                <p className="text-sm text-slate-500 italic text-center py-4">Nessuna soluzione configurata.</p>
               )}
             </div>
           )}
         </div>
       </div>
 
+      {/* Modal modifica utente */}
+      {editingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-3xl bg-slate-900 p-6 shadow-2xl border border-slate-800 space-y-4">
+            <h2 className="text-xl font-semibold text-slate-100">Modifica utente: {editingUser.username}</h2>
+            <div className="space-y-3">
+              <input value={userEditForm.username} onChange={(e) => setUserEditForm((c) => ({ ...c, username: e.target.value }))} placeholder="Nuovo username" className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-slate-100 outline-none" />
+              <input value={userEditForm.email} onChange={(e) => setUserEditForm((c) => ({ ...c, email: e.target.value }))} placeholder="Nuova email" className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-slate-100 outline-none" />
+              <input type="password" value={userEditForm.password} onChange={(e) => setUserEditForm((c) => ({ ...c, password: e.target.value }))} placeholder="Nuova password (lascia vuoto per non cambiare)" className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-slate-100 outline-none" />
+            </div>
+            <div className="flex gap-3">
+              <button type="button" className="flex-1 rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-sky-400 transition" onClick={submitUserEdit}>Salva</button>
+              <button type="button" className="flex-1 rounded-2xl border border-slate-700 bg-slate-950 px-5 py-3 text-sm font-semibold text-slate-200 hover:bg-slate-800 transition" onClick={cancelEditUser}>Annulla</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <ConfirmModal
-        open={confirmOpen}
+        isOpen={confirmOpen}
         title="Conferma eliminazione"
-        message="Sei sicuro di cancellare?"
-        confirmText="Elimina"
-        cancelText="Annulla"
-        danger
+        message="Sei sicuro di voler eliminare questo elemento? L'operazione non può essere annullata."
+        onConfirm={confirmDelete}
         onCancel={() => {
           setConfirmOpen(false);
           setPendingDeleteId(null);
           setPendingDeleteType(null);
         }}
-        onConfirm={confirmDelete}
       />
-
-      {/* 🔥 MODALE MODIFICA UTENTE */}
-      {editingUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="max-w-md w-full rounded-3xl border border-slate-700 bg-slate-900 p-6">
-            <h3 className="text-xl font-semibold text-slate-100 mb-4">Modifica utente</h3>
-            <div className="space-y-4">
-              <input
-                value={userEditForm.username}
-                onChange={(e) => setUserEditForm(f => ({ ...f, username: e.target.value }))}
-                placeholder="Username"
-                className="w-full rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none"
-              />
-              <input
-                value={userEditForm.email}
-                onChange={(e) => setUserEditForm(f => ({ ...f, email: e.target.value }))}
-                placeholder="Email"
-                className="w-full rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none"
-              />
-              <input
-                type="password"
-                value={userEditForm.password}
-                onChange={(e) => setUserEditForm(f => ({ ...f, password: e.target.value }))}
-                placeholder="Nuova password (lasciare vuoto per non cambiare)"
-                className="w-full rounded-2xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-slate-100 outline-none"
-              />
-            </div>
-            <div className="mt-6 flex justify-end gap-3">
-              <button 
-                className="rounded-2xl border border-slate-700 px-4 py-2 text-sm text-slate-100 hover:bg-slate-800 transition" 
-                onClick={cancelEditUser}
-              >
-                Annulla
-              </button>
-              <button 
-                className="rounded-2xl bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400 transition" 
-                onClick={submitUserEdit}
-              >
-                Salva modifiche
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

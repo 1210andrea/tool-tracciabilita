@@ -9,16 +9,15 @@ type OperatoreItem = { id: string; nome: string; attivo: boolean };
 type CategoryItem = { id: string; type: string; name: string };
 type MachineItem = { id: string; code: string; name: string; tipologia?: string; type?: string; reparto?: string };
 type SparePartItem = { id: string; name: string; tipologie?: string[]; types?: string[] };
-type SolutionItem = { id: string; name: string; description?: string };
+type SolutionItem = { id: string; name: string; description?: string; cause_id?: string };
 
 type CreateCaseResponse = {
   success?: boolean;
   case_id?: string;
-  item?: {
-    id?: string;
-  };
+  item?: { id?: string };
 };
 
+// ─── MultiSelect generico ────────────────────────────────────────────────────
 function MultiSelect({
   label,
   options,
@@ -114,6 +113,105 @@ function MultiSelect({
   );
 }
 
+// ─── MultiSelect ricambi con tipologie ───────────────────────────────────────
+function SparePartsMultiSelect({
+  options,
+  selectedValues,
+  onChange,
+  placeholder,
+  helperText
+}: {
+  options: SparePartItem[];
+  selectedValues: string[];
+  onChange: (vals: string[]) => void;
+  placeholder: string;
+  helperText?: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  const toggleValue = (id: string) => {
+    if (selectedValues.includes(id)) {
+      onChange(selectedValues.filter((v) => v !== id));
+    } else {
+      onChange([...selectedValues, id]);
+    }
+  };
+
+  return (
+    <div className="relative flex flex-col space-y-1.5">
+      <label className="text-sm font-medium text-slate-200 flex justify-between">
+        <span>Pezzi di Ricambio</span>
+        {selectedValues.length > 0 && (
+          <span className="text-xs text-cyan-400 font-semibold">
+            {selectedValues.length} selezionat{selectedValues.length === 1 ? 'o' : 'i'}
+          </span>
+        )}
+      </label>
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setIsOpen(!isOpen)}
+          className="w-full text-left px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 text-sm flex justify-between items-center transition duration-150"
+        >
+          <span className="truncate">
+            {selectedValues.length > 0
+              ? options
+                  .filter((o) => selectedValues.includes(o.id))
+                  .map((o) => o.name)
+                  .join(', ')
+              : placeholder}
+          </span>
+          <svg
+            className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        {isOpen && (
+          <>
+            <div className="fixed inset-0 z-30" onClick={() => setIsOpen(false)} />
+            <div className="absolute left-0 right-0 z-40 mt-2 max-h-60 overflow-y-auto rounded-md border border-slate-600 bg-slate-800 p-2 shadow-2xl backdrop-blur-md transition-all duration-200">
+              {options.length === 0 ? (
+                <div className="px-4 py-3 text-sm text-slate-400 italic text-center">Nessuna opzione disponibile</div>
+              ) : (
+                options.map((opt) => {
+                  const isChecked = selectedValues.includes(opt.id);
+                  const tipologie = opt.tipologie ?? opt.types ?? [];
+                  return (
+                    <label
+                      key={opt.id}
+                      className="flex items-center gap-3 px-4 py-2.5 rounded-md hover:bg-slate-700 hover:text-white text-slate-200 text-sm cursor-pointer transition select-none"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => toggleValue(opt.id)}
+                        className="accent-cyan-500 h-4 w-4 cursor-pointer rounded"
+                      />
+                      <span className="flex-1 min-w-0">
+                        <span className="block truncate font-medium">{opt.name}</span>
+                        {tipologie.length > 0 && (
+                          <span className="block text-xs text-slate-400 truncate">{tipologie.join(', ')}</span>
+                        )}
+                      </span>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+          </>
+        )}
+      </div>
+      {helperText && <p className="text-xs text-slate-500">{helperText}</p>}
+    </div>
+  );
+}
+
+// ─── Componente principale ────────────────────────────────────────────────────
 export default function CreateCase() {
   const { token, user } = useAuth();
   const navigate = useNavigate();
@@ -123,7 +221,8 @@ export default function CreateCase() {
   const [problems, setProblems] = useState<CategoryItem[]>([]);
   const [causes, setCauses] = useState<CategoryItem[]>([]);
   const [spareParts, setSpareParts] = useState<SparePartItem[]>([]);
-  const [solutions, setSolutions] = useState<SolutionItem[]>([]);
+  const [allSolutions, setAllSolutions] = useState<SolutionItem[]>([]);
+  const [filteredSolutions, setFilteredSolutions] = useState<SolutionItem[]>([]);
 
   const [machineId, setMachineId] = useState('');
   const [operatoreId, setOperatoreId] = useState('');
@@ -137,18 +236,21 @@ export default function CreateCase() {
   const [pezziRicambio, setPezziRicambio] = useState<string[]>([]);
   const [tempoImpiego, setTempoImpiego] = useState(0.5);
 
-  const filteredMachines = machineSearch.trim() === ''
-    ? machines
-    : machines.filter((m) =>
-        `${m.code} - ${m.name}`.toLowerCase().includes(machineSearch.toLowerCase())
-      );
+  // Macchine ordinate alfabeticamente per ricerca
+  const filteredMachines = machines.filter((m) =>
+    machineSearch.trim() === ''
+      ? true
+      : `${m.code} - ${m.name}`.toLowerCase().includes(machineSearch.toLowerCase())
+  );
 
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingParts, setLoadingParts] = useState(false);
+  const [loadingSolutions, setLoadingSolutions] = useState(false);
   const [notes, setNotes] = useState('');
 
+  // Caricamento dati iniziali
   useEffect(() => {
     if (!token) return;
 
@@ -161,24 +263,32 @@ export default function CreateCase() {
           axios.get(`${API_URL}/solutions-applied`, { headers: { Authorization: `Bearer ${token}` } })
         ]);
 
-        setMachines(machinesResp.data.items || []);
-        setOperatori(operatoriResp.data.items || []);
+        // Ordine alfabetico su tutti i lookup
+        const rawMachines: MachineItem[] = machinesResp.data.items || [];
+        setMachines([...rawMachines].sort((a, b) => `${a.code} ${a.name}`.localeCompare(`${b.code} ${b.name}`)));
+
+        const rawOperatori: OperatoreItem[] = operatoriResp.data.items || [];
+        setOperatori([...rawOperatori].sort((a, b) => a.nome.localeCompare(b.nome)));
+
         const items: CategoryItem[] = categoriesResp.data.items || [];
-        setProblems(items.filter((item) => item.type === 'problem'));
-        setCauses(items.filter((item) => item.type === 'cause'));
-        setSolutions(solutionsResp.data.items || []);
+        setProblems([...items.filter((item) => item.type === 'problem')].sort((a, b) => a.name.localeCompare(b.name)));
+        setCauses([...items.filter((item) => item.type === 'cause')].sort((a, b) => a.name.localeCompare(b.name)));
+
+        const rawSolutions: SolutionItem[] = solutionsResp.data.items || [];
+        setAllSolutions([...rawSolutions].sort((a, b) => a.name.localeCompare(b.name)));
       } catch {
         setMachines([]);
         setOperatori([]);
         setProblems([]);
         setCauses([]);
-        setSolutions([]);
+        setAllSolutions([]);
       }
     };
 
     loadLookups();
   }, [token]);
 
+  // Ricambi filtrati per macchina (invariato)
   useEffect(() => {
     if (!token || !machineId) {
       setSpareParts([]);
@@ -198,10 +308,11 @@ export default function CreateCase() {
     const loadSpareParts = async () => {
       setLoadingParts(true);
       try {
-        const resp = await axios.get(`${API_URL}/spare-parts/by-type/${encodeURIComponent(tipologia)}` , {
+        const resp = await axios.get(`${API_URL}/spare-parts/by-type/${encodeURIComponent(tipologia)}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
-        setSpareParts(resp.data.items || []);
+        const raw: SparePartItem[] = resp.data.items || [];
+        setSpareParts([...raw].sort((a, b) => a.name.localeCompare(b.name)));
         setPezziRicambio([]);
       } catch {
         setSpareParts([]);
@@ -212,6 +323,30 @@ export default function CreateCase() {
 
     loadSpareParts();
   }, [token, machineId, machines]);
+
+  // Soluzioni filtrate per causa selezionata
+  useEffect(() => {
+    // Reset selezioni soluzioni quando cambia la causa
+    setSoluzioniProvate([]);
+    setSoluzioniApplicate([]);
+
+    if (!causeId) {
+      setFilteredSolutions([]);
+      return;
+    }
+
+    setLoadingSolutions(true);
+    axios
+      .get(`${API_URL}/solutions-applied/by-cause/${encodeURIComponent(causeId)}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      .then((resp) => {
+        const raw: SolutionItem[] = resp.data.items || [];
+        setFilteredSolutions([...raw].sort((a, b) => a.name.localeCompare(b.name)));
+      })
+      .catch(() => setFilteredSolutions([]))
+      .finally(() => setLoadingSolutions(false));
+  }, [causeId, token]);
 
   const handleCreate = async () => {
     if (!token) return;
@@ -244,7 +379,6 @@ export default function CreateCase() {
 
       setSuccess('Caso creato con successo! Reindirizzamento...');
 
-      // reset form selections
       setMachineId('');
       setMachineSearch('');
       setProblemId('');
@@ -266,6 +400,7 @@ export default function CreateCase() {
   };
 
   const selectedMachine = machines.find((m) => m.id === machineId);
+  const machineTipologia = selectedMachine?.tipologia ?? selectedMachine?.type ?? selectedMachine?.reparto ?? '';
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
@@ -279,176 +414,185 @@ export default function CreateCase() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 lg:gap-4">
           
-          {/* Field: Macchina */}
-          <div className="flex flex-col space-y-1.5">
-            <label className="text-sm font-medium text-slate-200">Macchina <span className="text-rose-500 ml-1">*</span></label>
-            <div className="relative">
-              <input
-                type="text"
-                value={machineSearch}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setMachineSearch(val);
-                  const exact = machines.find(
-                    (m) =>
-                      `${m.code} - ${m.name}`.toLowerCase() === val.toLowerCase().trim() ||
-                      m.code.toLowerCase() === val.toLowerCase().trim()
-                  );
-                  setMachineId(exact ? exact.id : '');
-                }}
-                onFocus={() => setShowSuggestions(true)}
-                onBlur={() => {
-                  setTimeout(() => setShowSuggestions(false), 200);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') {
-                    setShowSuggestions(false);
-                  }
-                }}
-                placeholder="Scrivi (es. SIMM45 - Linea 1 ...)"
-                className="w-full px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 text-sm"
-              />
-              {showSuggestions && filteredMachines.length > 0 && (
-                <div className="absolute left-0 right-0 z-50 mt-2 max-h-60 overflow-y-auto rounded-md border border-slate-600 bg-slate-800 p-2 shadow-2xl backdrop-blur-md transition-all duration-200">
-                  {filteredMachines.map((m) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                      }}
-                      onClick={() => {
-                        setMachineId(m.id);
-                        setMachineSearch(`${m.code} - ${m.name}`);
-                        setShowSuggestions(false);
-                      }}
-                      className="w-full text-left px-4 py-2.5 rounded-md hover:bg-slate-700 hover:text-white text-slate-200 text-sm transition-colors duration-150 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1"
-                    >
-                      <div className="font-semibold text-slate-100">{m.code}</div>
-                      <div className="text-xs text-slate-400">{m.name}</div>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {showSuggestions && machineSearch.trim() !== '' && filteredMachines.length === 0 && (
-                <div className="absolute left-0 right-0 z-50 mt-2 rounded-md border border-slate-600 bg-slate-800 p-4 shadow-2xl backdrop-blur-md text-sm text-slate-400 text-center italic">
-                  Nessuna macchina trovata
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Field: Operatore */}
-          <div className="flex flex-col space-y-1.5">
-            <label className="text-sm font-medium text-slate-200">Operatore <span className="text-rose-500 ml-1">*</span></label>
-            <select value={operatoreId} onChange={(e) => setOperatoreId(e.target.value)} className="w-full px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 text-sm">
-              <option value="">Seleziona operatore</option>
-              {operatori.map((op) => (
-                <option key={op.id} value={op.id}>{op.nome}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Field: Pezzi di Ricambio */}
-          <div className="flex flex-col space-y-1.5">
-            <MultiSelect
-              label="Pezzi di Ricambio"
-              options={spareParts}
-              selectedValues={pezziRicambio}
-              onChange={setPezziRicambio}
-              placeholder={!machineId ? 'Seleziona prima una macchina' : loadingParts ? 'Caricamento ricambi...' : spareParts.length ? 'Seleziona pezzi di ricambio' : 'Nessun ricambio per questo tipo'}
-              helperText={selectedMachine ? `Tipo/Reparto macchina: ${selectedMachine.reparto ?? selectedMachine.type ?? ''}` : 'Seleziona i pezzi di ricambio utilizzati per questo intervento'}
-              required={false}
+        {/* Field: Macchina */}
+        <div className="flex flex-col space-y-1.5">
+          <label className="text-sm font-medium text-slate-200">Macchina <span className="text-rose-500 ml-1">*</span></label>
+          <div className="relative">
+            <input
+              type="text"
+              value={machineSearch}
+              onChange={(e) => {
+                const val = e.target.value;
+                setMachineSearch(val);
+                const exact = machines.find(
+                  (m) =>
+                    `${m.code} - ${m.name}`.toLowerCase() === val.toLowerCase().trim() ||
+                    m.code.toLowerCase() === val.toLowerCase().trim()
+                );
+                setMachineId(exact ? exact.id : '');
+              }}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+              onKeyDown={(e) => { if (e.key === 'Escape') setShowSuggestions(false); }}
+              placeholder="Scrivi (es. SIMM45 - Linea 1 ...)"
+              className="w-full px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 text-sm"
             />
-          </div>
-
-          {/* Field: Problema */}
-          <div className="flex flex-col space-y-1.5">
-            <label className="text-sm font-medium text-slate-200">Problema <span className="text-rose-500 ml-1">*</span></label>
-            <select value={problemId} onChange={(e) => setProblemId(e.target.value)} className="w-full px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 text-sm">
-              <option value="">Seleziona problema</option>
-              {problems.map((item) => (
-                <option key={item.id} value={item.id}>{item.name}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Field: Causa */}
-          <div className="flex flex-col space-y-1.5">
-            <label className="text-sm font-medium text-slate-200">Causa <span className="text-rose-500 ml-1">*</span></label>
-            <select value={causeId} onChange={(e) => setCauseId(e.target.value)} className="w-full px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 text-sm">
-              <option value="">Seleziona causa</option>
-              {causes.map((item) => (
-                <option key={item.id} value={item.id}>{item.name}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Field: Soluzioni Provate */}
-          <div className="col-span-1 md:col-span-2 lg:col-span-2 flex flex-col space-y-1.5">
-            <MultiSelect
-              label="Soluzioni Provate"
-              options={solutions}
-              selectedValues={soluzioniProvate}
-              onChange={setSoluzioniProvate}
-              placeholder="Seleziona soluzioni provate..."
-              helperText="Soluzioni che sono state tentate ma NON hanno risolto il problema"
-              required={false}
-            />
-          </div>
-
-          {/* Field: Soluzione Applicata */}
-          <div className="col-span-1 md:col-span-2 lg:col-span-2 flex flex-col space-y-1.5">
-            <MultiSelect
-              label="Soluzione Applicata"
-              options={solutions}
-              selectedValues={soluzioniApplicate}
-              onChange={setSoluzioniApplicate}
-              placeholder="Seleziona soluzione/i applicata/e..."
-              helperText="Soluzione/i che ha/hanno effettivamente risolto il problema"
-              required={true}
-            />
-          </div>
-
-          {/* Field: Tempo Impiego */}
-          <div className="col-span-1 md:col-span-2 lg:col-span-2 flex flex-col space-y-1.5">
-            <label className="text-sm font-medium text-slate-200">Tempo Impiego <span className="text-rose-500 ml-1">*</span></label>
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setTempoImpiego((t) => Math.max(0.5, t - 0.5))}
-                className="flex h-10 w-12 items-center justify-center rounded-md border border-slate-600 bg-slate-700 text-lg font-bold text-slate-300 hover:bg-slate-650 transition active:scale-95"
-              >
-                -
-              </button>
-              <div className="flex-1 h-10 rounded-md border border-slate-600 bg-slate-700 px-4 flex items-center justify-center text-slate-100 font-semibold text-sm">
-                {tempoImpiego}h ({Math.floor(tempoImpiego)}h {Math.round((tempoImpiego % 1) * 60)}m)
+            {showSuggestions && filteredMachines.length > 0 && (
+              <div className="absolute left-0 right-0 z-50 mt-2 max-h-60 overflow-y-auto rounded-md border border-slate-600 bg-slate-800 p-2 shadow-2xl backdrop-blur-md transition-all duration-200">
+                {filteredMachines.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setMachineId(m.id);
+                      setMachineSearch(`${m.code} - ${m.name}`);
+                      setShowSuggestions(false);
+                    }}
+                    className="w-full text-left px-4 py-2.5 rounded-md hover:bg-slate-700 hover:text-white text-slate-200 text-sm transition-colors duration-150 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1"
+                  >
+                    <div className="font-semibold text-slate-100">{m.code}</div>
+                    <div className="text-xs text-slate-400">{m.name}</div>
+                  </button>
+                ))}
               </div>
-              <button
-                type="button"
-                onClick={() => setTempoImpiego((t) => Math.min(999, t + 0.5))}
-                className="flex h-10 w-12 items-center justify-center rounded-md border border-slate-600 bg-slate-700 text-lg font-bold text-slate-300 hover:bg-slate-650 transition active:scale-95"
-              >
-                +
-              </button>
-            </div>
-            <p className="text-xs text-slate-500">Durata totale dell'intervento manutentivo in ore.</p>
-          </div>
-
-          {/* Field: Note aggiuntive */}
-          <div className="col-span-1 md:col-span-2 lg:col-span-2 flex flex-col space-y-1.5">
-            <div className="flex justify-between items-center">
-              <label className="text-sm font-medium text-slate-200">Note aggiuntive</label>
-              <span className="text-xs text-slate-400">{notes.length}/1000 caratteri</span>
-            </div>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value.slice(0, 1000))}
-              placeholder="Aggiungi dettagli aggiuntivi sull'intervento, anomalie riscontrate o altre osservazioni..."
-              className="w-full h-28 px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 resize-none text-sm"
-            />
+            )}
+            {showSuggestions && machineSearch.trim() !== '' && filteredMachines.length === 0 && (
+              <div className="absolute left-0 right-0 z-50 mt-2 rounded-md border border-slate-600 bg-slate-800 p-4 shadow-2xl backdrop-blur-md text-sm text-slate-400 text-center italic">
+                Nessuna macchina trovata
+              </div>
+            )}
           </div>
         </div>
+
+        {/* Field: Operatore */}
+        <div className="flex flex-col space-y-1.5">
+          <label className="text-sm font-medium text-slate-200">Operatore <span className="text-rose-500 ml-1">*</span></label>
+          <select value={operatoreId} onChange={(e) => setOperatoreId(e.target.value)} className="w-full px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 text-sm">
+            <option value="">Seleziona operatore</option>
+            {operatori.map((op) => (
+              <option key={op.id} value={op.id}>{op.nome}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Field: Pezzi di Ricambio */}
+        <div className="flex flex-col space-y-1.5">
+          <SparePartsMultiSelect
+            options={spareParts}
+            selectedValues={pezziRicambio}
+            onChange={setPezziRicambio}
+            placeholder={
+              !machineId ? 'Seleziona prima una macchina'
+              : loadingParts ? 'Caricamento ricambi...'
+              : spareParts.length ? 'Seleziona pezzi di ricambio'
+              : 'Nessun ricambio per questo tipo'
+            }
+            helperText={machineTipologia ? `Tipologia macchina: ${machineTipologia}` : 'I ricambi vengono filtrati in base alla tipologia della macchina'}
+          />
+        </div>
+
+        {/* Field: Problema */}
+        <div className="flex flex-col space-y-1.5">
+          <label className="text-sm font-medium text-slate-200">Problema <span className="text-rose-500 ml-1">*</span></label>
+          <select value={problemId} onChange={(e) => setProblemId(e.target.value)} className="w-full px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 text-sm">
+            <option value="">Seleziona problema</option>
+            {problems.map((item) => (
+              <option key={item.id} value={item.id}>{item.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Field: Causa */}
+        <div className="flex flex-col space-y-1.5">
+          <label className="text-sm font-medium text-slate-200">Causa <span className="text-rose-500 ml-1">*</span></label>
+          <select
+            value={causeId}
+            onChange={(e) => setCauseId(e.target.value)}
+            className="w-full px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 text-sm"
+          >
+            <option value="">Seleziona causa</option>
+            {causes.map((item) => (
+              <option key={item.id} value={item.id}>{item.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Field: Soluzioni Provate — filtrate per causa */}
+        <div className="col-span-1 md:col-span-2 flex flex-col space-y-1.5">
+          <MultiSelect
+            label="Soluzioni Provate"
+            options={filteredSolutions}
+            selectedValues={soluzioniProvate}
+            onChange={setSoluzioniProvate}
+            placeholder={
+              !causeId ? 'Seleziona prima una causa'
+              : loadingSolutions ? 'Caricamento soluzioni...'
+              : filteredSolutions.length ? 'Seleziona soluzioni provate...'
+              : 'Nessuna soluzione per questa causa'
+            }
+            helperText="Soluzioni tentate ma che NON hanno risolto il problema (filtrate per causa)"
+            required={false}
+          />
+        </div>
+
+        {/* Field: Soluzione Applicata — filtrata per causa */}
+        <div className="col-span-1 md:col-span-2 flex flex-col space-y-1.5">
+          <MultiSelect
+            label="Soluzione Applicata"
+            options={filteredSolutions}
+            selectedValues={soluzioniApplicate}
+            onChange={setSoluzioniApplicate}
+            placeholder={
+              !causeId ? 'Seleziona prima una causa'
+              : loadingSolutions ? 'Caricamento soluzioni...'
+              : filteredSolutions.length ? 'Seleziona soluzione/i applicata/e...'
+              : 'Nessuna soluzione per questa causa'
+            }
+            helperText="Soluzione/i che ha/hanno effettivamente risolto il problema (filtrate per causa)"
+            required={true}
+          />
+        </div>
+
+        {/* Field: Tempo Impiego */}
+        <div className="col-span-1 md:col-span-2 flex flex-col space-y-1.5">
+          <label className="text-sm font-medium text-slate-200">Tempo Impiego <span className="text-rose-500 ml-1">*</span></label>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setTempoImpiego((t) => Math.max(0.5, t - 0.5))}
+              className="flex h-10 w-12 items-center justify-center rounded-md border border-slate-600 bg-slate-700 text-lg font-bold text-slate-300 hover:bg-slate-650 transition active:scale-95"
+            >
+              -
+            </button>
+            <div className="flex-1 h-10 rounded-md border border-slate-600 bg-slate-700 px-4 flex items-center justify-center text-slate-100 font-semibold text-sm">
+              {tempoImpiego}h ({Math.floor(tempoImpiego)}h {Math.round((tempoImpiego % 1) * 60)}m)
+            </div>
+            <button
+              type="button"
+              onClick={() => setTempoImpiego((t) => Math.min(999, t + 0.5))}
+              className="flex h-10 w-12 items-center justify-center rounded-md border border-slate-600 bg-slate-700 text-lg font-bold text-slate-300 hover:bg-slate-650 transition active:scale-95"
+            >
+              +
+            </button>
+          </div>
+          <p className="text-xs text-slate-500">Durata totale dell'intervento manutentivo in ore.</p>
+        </div>
+
+        {/* Field: Note aggiuntive */}
+        <div className="col-span-1 md:col-span-2 flex flex-col space-y-1.5">
+          <div className="flex justify-between items-center">
+            <label className="text-sm font-medium text-slate-200">Note aggiuntive</label>
+            <span className="text-xs text-slate-400">{notes.length}/1000 caratteri</span>
+          </div>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value.slice(0, 1000))}
+            placeholder="Aggiungi dettagli aggiuntivi sull'intervento, anomalie riscontrate o altre osservazioni..."
+            className="w-full h-28 px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 resize-none text-sm"
+          />
+        </div>
+      </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <button type="button" className="inline-flex items-center justify-center rounded-2xl bg-sky-500 px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-60" onClick={handleCreate} disabled={!token || loading}>
