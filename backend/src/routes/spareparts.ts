@@ -12,7 +12,7 @@ sparepartsRoutes.get('/spare-parts', authMiddleware, async (_req, res, next) => 
               sp.description,
               sp.created_at,
               COUNT(csp.id)::int AS usage_count,
-              COALESCE(ARRAY_AGG(spt.tipologia ORDER BY spt.tipologia) FILTER (WHERE spt.tipologia IS NOT NULL), '{}') AS tipologie
+              COALESCE(ARRAY_AGG(spt.tipologia) FILTER (WHERE spt.tipologia IS NOT NULL), '{}') AS tipologie
        FROM spare_parts sp
        LEFT JOIN spare_part_tipologie spt ON spt.spare_part_id = sp.id
        LEFT JOIN case_spare_parts csp ON csp.spare_part_id = sp.id
@@ -31,7 +31,7 @@ sparepartsRoutes.get('/spare-parts/by-type/:type', authMiddleware, async (req, r
   try {
     const r = await pool.query(
       `SELECT sp.id, sp.name, sp.description, sp.created_at,
-              COALESCE(ARRAY_AGG(spt.tipologia ORDER BY spt.tipologia) FILTER (WHERE spt.tipologia IS NOT NULL), '{}') AS tipologie
+              COALESCE(ARRAY_AGG(spt.tipologia) FILTER (WHERE spt.tipologia IS NOT NULL), '{}') AS tipologie
        FROM spare_parts sp
        JOIN spare_part_tipologie spt ON spt.spare_part_id = sp.id AND spt.tipologia = $1
        GROUP BY sp.id
@@ -53,7 +53,7 @@ sparepartsRoutes.post('/spare-parts', authMiddleware, async (req, res, next) => 
       name?: string;
       description?: string;
       tipologie?: string[];
-      types?: string[]; // back-compat
+      types?: string[];
     };
 
     if (!name?.trim()) {
@@ -113,7 +113,6 @@ sparepartsRoutes.post('/spare-parts', authMiddleware, async (req, res, next) => 
 });
 
 
-
 sparepartsRoutes.delete('/spare-parts/:id', authMiddleware, async (req, res, next) => {
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
@@ -132,16 +131,11 @@ sparepartsRoutes.delete('/spare-parts/:id', authMiddleware, async (req, res, nex
 });
 
 
-// ─── SOLUTIONS APPLIED ────────────────────────────────────────────────────────
-
+// GET tutte le soluzioni (con causa associata)
 sparepartsRoutes.get('/solutions-applied', authMiddleware, async (_req, res, next) => {
   try {
     const r = await pool.query(
-      `SELECT sa.id,
-              sa.name,
-              sa.description,
-              sa.cause_id,
-              sa.created_at,
+      `SELECT sa.id, sa.name, sa.description, sa.created_at, sa.cause_id,
               c.name AS cause_name,
               ((SELECT COUNT(*)::int FROM case_solutions_applied csa WHERE csa.solution_id = sa.id) +
                (SELECT COUNT(*)::int FROM case_solutions_tried cst WHERE cst.solution_id = sa.id))::int AS usage_count
@@ -155,14 +149,11 @@ sparepartsRoutes.get('/solutions-applied', authMiddleware, async (_req, res, nex
   }
 });
 
-// Soluzioni filtrate per causa (usato in CreateCase)
+// GET soluzioni filtrate per causa
 sparepartsRoutes.get('/solutions-applied/by-cause/:causeId', authMiddleware, async (req, res, next) => {
   try {
     const r = await pool.query(
-      `SELECT sa.id,
-              sa.name,
-              sa.description,
-              sa.cause_id,
+      `SELECT sa.id, sa.name, sa.description, sa.cause_id,
               c.name AS cause_name
        FROM solutions_applied sa
        LEFT JOIN categories c ON c.id = sa.cause_id
@@ -180,26 +171,12 @@ sparepartsRoutes.post('/solutions-applied', authMiddleware, async (req, res, nex
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
 
-    const { name, description, cause_id } = req.body as {
-      name?: string;
-      description?: string;
-      cause_id?: string;
-    };
+    const { name, description, cause_id } = req.body as { name?: string; description?: string; cause_id?: string };
     if (!name?.trim()) return res.status(400).json({ error: 'name è obbligatorio' });
-    if (!cause_id) return res.status(400).json({ error: 'cause_id è obbligatorio' });
-
-    // Verifica che cause_id sia effettivamente una causa
-    const causeCheck = await pool.query(
-      `SELECT id FROM categories WHERE id = $1 AND type = 'cause'`,
-      [cause_id]
-    );
-    if (!causeCheck.rows.length) {
-      return res.status(400).json({ error: 'cause_id non valido o non è una causa' });
-    }
 
     const r = await pool.query(
       'INSERT INTO solutions_applied(name, description, cause_id) VALUES($1, $2, $3) RETURNING *',
-      [name.trim(), description?.trim() ?? null, cause_id]
+      [name.trim(), description?.trim() ?? null, cause_id ?? null]
     );
     res.json({ item: r.rows[0] });
   } catch (e) {
