@@ -17,7 +17,6 @@ type CreateCaseResponse = {
   item?: { id?: string };
 };
 
-// ─── MultiSelect generico ────────────────────────────────────────────────────
 function MultiSelect({
   label,
   options,
@@ -25,7 +24,8 @@ function MultiSelect({
   onChange,
   placeholder = 'Seleziona...',
   helperText,
-  required = false
+  required = false,
+  emptyMessage
 }: {
   label: string;
   options: { id: string; name: string }[];
@@ -34,15 +34,14 @@ function MultiSelect({
   placeholder?: string;
   helperText?: string;
   required?: boolean;
+  emptyMessage?: string;
 }) {
   const [isOpen, setIsOpen] = useState(false);
 
   const toggleValue = (id: string) => {
-    if (selectedValues.includes(id)) {
-      onChange(selectedValues.filter((v) => v !== id));
-    } else {
-      onChange([...selectedValues, id]);
-    }
+    onChange(selectedValues.includes(id)
+      ? selectedValues.filter((v) => v !== id)
+      : [...selectedValues, id]);
   };
 
   return (
@@ -63,18 +62,10 @@ function MultiSelect({
         >
           <span className="truncate">
             {selectedValues.length > 0
-              ? options
-                  .filter((o) => selectedValues.includes(o.id))
-                  .map((o) => o.name)
-                  .join(', ')
+              ? options.filter((o) => selectedValues.includes(o.id)).map((o) => o.name).join(', ')
               : placeholder}
           </span>
-          <svg
-            className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
+          <svg className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
           </svg>
         </button>
@@ -84,25 +75,16 @@ function MultiSelect({
             <div className="fixed inset-0 z-30" onClick={() => setIsOpen(false)} />
             <div className="absolute left-0 right-0 z-40 mt-2 max-h-60 overflow-y-auto rounded-md border border-slate-600 bg-slate-800 p-2 shadow-2xl backdrop-blur-md transition-all duration-200">
               {options.length === 0 ? (
-                <div className="px-4 py-3 text-sm text-slate-400 italic text-center">Nessuna opzione disponibile</div>
+                <div className="px-4 py-3 text-sm text-slate-400 italic text-center">
+                  {emptyMessage ?? 'Nessuna opzione disponibile'}
+                </div>
               ) : (
-                options.map((opt) => {
-                  const isChecked = selectedValues.includes(opt.id);
-                  return (
-                    <label
-                      key={opt.id}
-                      className="flex items-center gap-3 px-4 py-2.5 rounded-md hover:bg-slate-700 hover:text-white text-slate-200 text-sm cursor-pointer transition select-none"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => toggleValue(opt.id)}
-                        className="accent-cyan-500 h-4 w-4 cursor-pointer rounded"
-                      />
-                      <span className="truncate">{opt.name}</span>
-                    </label>
-                  );
-                })
+                options.map((opt) => (
+                  <label key={opt.id} className="flex items-center gap-3 px-4 py-2.5 rounded-md hover:bg-slate-700 hover:text-white text-slate-200 text-sm cursor-pointer transition select-none">
+                    <input type="checkbox" checked={selectedValues.includes(opt.id)} onChange={() => toggleValue(opt.id)} className="accent-cyan-500 h-4 w-4 cursor-pointer rounded" />
+                    <span className="truncate">{opt.name}</span>
+                  </label>
+                ))
               )}
             </div>
           </>
@@ -113,105 +95,6 @@ function MultiSelect({
   );
 }
 
-// ─── MultiSelect ricambi con tipologie ───────────────────────────────────────
-function SparePartsMultiSelect({
-  options,
-  selectedValues,
-  onChange,
-  placeholder,
-  helperText
-}: {
-  options: SparePartItem[];
-  selectedValues: string[];
-  onChange: (vals: string[]) => void;
-  placeholder: string;
-  helperText?: string;
-}) {
-  const [isOpen, setIsOpen] = useState(false);
-
-  const toggleValue = (id: string) => {
-    if (selectedValues.includes(id)) {
-      onChange(selectedValues.filter((v) => v !== id));
-    } else {
-      onChange([...selectedValues, id]);
-    }
-  };
-
-  return (
-    <div className="relative flex flex-col space-y-1.5">
-      <label className="text-sm font-medium text-slate-200 flex justify-between">
-        <span>Pezzi di Ricambio</span>
-        {selectedValues.length > 0 && (
-          <span className="text-xs text-cyan-400 font-semibold">
-            {selectedValues.length} selezionat{selectedValues.length === 1 ? 'o' : 'i'}
-          </span>
-        )}
-      </label>
-      <div className="relative">
-        <button
-          type="button"
-          onClick={() => setIsOpen(!isOpen)}
-          className="w-full text-left px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 text-sm flex justify-between items-center transition duration-150"
-        >
-          <span className="truncate">
-            {selectedValues.length > 0
-              ? options
-                  .filter((o) => selectedValues.includes(o.id))
-                  .map((o) => o.name)
-                  .join(', ')
-              : placeholder}
-          </span>
-          <svg
-            className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
-
-        {isOpen && (
-          <>
-            <div className="fixed inset-0 z-30" onClick={() => setIsOpen(false)} />
-            <div className="absolute left-0 right-0 z-40 mt-2 max-h-60 overflow-y-auto rounded-md border border-slate-600 bg-slate-800 p-2 shadow-2xl backdrop-blur-md transition-all duration-200">
-              {options.length === 0 ? (
-                <div className="px-4 py-3 text-sm text-slate-400 italic text-center">Nessuna opzione disponibile</div>
-              ) : (
-                options.map((opt) => {
-                  const isChecked = selectedValues.includes(opt.id);
-                  const tipologie = opt.tipologie ?? opt.types ?? [];
-                  return (
-                    <label
-                      key={opt.id}
-                      className="flex items-center gap-3 px-4 py-2.5 rounded-md hover:bg-slate-700 hover:text-white text-slate-200 text-sm cursor-pointer transition select-none"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => toggleValue(opt.id)}
-                        className="accent-cyan-500 h-4 w-4 cursor-pointer rounded"
-                      />
-                      <span className="flex-1 min-w-0">
-                        <span className="block truncate font-medium">{opt.name}</span>
-                        {tipologie.length > 0 && (
-                          <span className="block text-xs text-slate-400 truncate">{tipologie.join(', ')}</span>
-                        )}
-                      </span>
-                    </label>
-                  );
-                })
-              )}
-            </div>
-          </>
-        )}
-      </div>
-      {helperText && <p className="text-xs text-slate-500">{helperText}</p>}
-    </div>
-  );
-}
-
-// ─── Componente principale ────────────────────────────────────────────────────
 export default function CreateCase() {
   const { token, user } = useAuth();
   const navigate = useNavigate();
@@ -230,18 +113,11 @@ export default function CreateCase() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [problemId, setProblemId] = useState('');
   const [causeId, setCauseId] = useState('');
-  
+
   const [soluzioniProvate, setSoluzioniProvate] = useState<string[]>([]);
   const [soluzioniApplicate, setSoluzioniApplicate] = useState<string[]>([]);
   const [pezziRicambio, setPezziRicambio] = useState<string[]>([]);
   const [tempoImpiego, setTempoImpiego] = useState(0.5);
-
-  // Macchine ordinate alfabeticamente per ricerca
-  const filteredMachines = machines.filter((m) =>
-    machineSearch.trim() === ''
-      ? true
-      : `${m.code} - ${m.name}`.toLowerCase().includes(machineSearch.toLowerCase())
-  );
 
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -250,10 +126,17 @@ export default function CreateCase() {
   const [loadingSolutions, setLoadingSolutions] = useState(false);
   const [notes, setNotes] = useState('');
 
+  const filteredMachines = machineSearch.trim() === ''
+    ? [...machines].sort((a, b) => `${a.code} ${a.name}`.localeCompare(`${b.code} ${b.name}`))
+    : machines
+        .filter((m) => `${m.code} - ${m.name}`.toLowerCase().includes(machineSearch.toLowerCase()))
+        .sort((a, b) => `${a.code} ${a.name}`.localeCompare(`${b.code} ${b.name}`));
+
+  // -------------------------------------------------------
   // Caricamento dati iniziali
+  // -------------------------------------------------------
   useEffect(() => {
     if (!token) return;
-
     const loadLookups = async () => {
       try {
         const [machinesResp, operatoriResp, categoriesResp, solutionsResp] = await Promise.all([
@@ -263,32 +146,63 @@ export default function CreateCase() {
           axios.get(`${API_URL}/solutions-applied`, { headers: { Authorization: `Bearer ${token}` } })
         ]);
 
-        // Ordine alfabetico su tutti i lookup
-        const rawMachines: MachineItem[] = machinesResp.data.items || [];
-        setMachines([...rawMachines].sort((a, b) => `${a.code} ${a.name}`.localeCompare(`${b.code} ${b.name}`)));
-
-        const rawOperatori: OperatoreItem[] = operatoriResp.data.items || [];
-        setOperatori([...rawOperatori].sort((a, b) => a.nome.localeCompare(b.nome)));
-
+        setMachines(machinesResp.data.items || []);
+        setOperatori((operatoriResp.data.items || []).sort((a: OperatoreItem, b: OperatoreItem) => a.nome.localeCompare(b.nome)));
         const items: CategoryItem[] = categoriesResp.data.items || [];
-        setProblems([...items.filter((item) => item.type === 'problem')].sort((a, b) => a.name.localeCompare(b.name)));
-        setCauses([...items.filter((item) => item.type === 'cause')].sort((a, b) => a.name.localeCompare(b.name)));
-
-        const rawSolutions: SolutionItem[] = solutionsResp.data.items || [];
-        setAllSolutions([...rawSolutions].sort((a, b) => a.name.localeCompare(b.name)));
+        setProblems(items.filter((i) => i.type === 'problem').sort((a, b) => a.name.localeCompare(b.name)));
+        setCauses(items.filter((i) => i.type === 'cause').sort((a, b) => a.name.localeCompare(b.name)));
+        const sols: SolutionItem[] = (solutionsResp.data.items || []).sort((a: SolutionItem, b: SolutionItem) => a.name.localeCompare(b.name));
+        setAllSolutions(sols);
+        setFilteredSolutions(sols);
       } catch {
         setMachines([]);
         setOperatori([]);
         setProblems([]);
         setCauses([]);
         setAllSolutions([]);
+        setFilteredSolutions([]);
       }
     };
-
     loadLookups();
   }, [token]);
 
-  // Ricambi filtrati per macchina (invariato)
+  // -------------------------------------------------------
+  // Filtro soluzioni per causa selezionata
+  // -------------------------------------------------------
+  useEffect(() => {
+    if (!causeId) {
+      setFilteredSolutions(allSolutions);
+      setSoluzioniProvate([]);
+      setSoluzioniApplicate([]);
+      return;
+    }
+
+    // Filtra localmente le soluzioni che hanno la causa corrispondente
+    const byCause = allSolutions.filter((s) => s.cause_id === causeId);
+
+    // Se nessuna soluzione è associata alla causa, prova a caricarle dal backend
+    if (byCause.length === 0 && token) {
+      setLoadingSolutions(true);
+      axios
+        .get(`${API_URL}/solutions-applied/by-cause/${causeId}`, { headers: { Authorization: `Bearer ${token}` } })
+        .then((res) => {
+          const items: SolutionItem[] = (res.data.items || []).sort((a: SolutionItem, b: SolutionItem) => a.name.localeCompare(b.name));
+          setFilteredSolutions(items);
+        })
+        .catch(() => setFilteredSolutions([]))
+        .finally(() => setLoadingSolutions(false));
+    } else {
+      setFilteredSolutions(byCause);
+    }
+
+    // Deseleziona soluzioni non più disponibili
+    setSoluzioniProvate((prev) => prev.filter((id) => byCause.some((s) => s.id === id)));
+    setSoluzioniApplicate((prev) => prev.filter((id) => byCause.some((s) => s.id === id)));
+  }, [causeId, allSolutions, token]);
+
+  // -------------------------------------------------------
+  // Ricambi filtrati per tipologia macchina
+  // -------------------------------------------------------
   useEffect(() => {
     if (!token || !machineId) {
       setSpareParts([]);
@@ -308,11 +222,9 @@ export default function CreateCase() {
     const loadSpareParts = async () => {
       setLoadingParts(true);
       try {
-        const resp = await axios.get(`${API_URL}/spare-parts/by-type/${encodeURIComponent(tipologia)}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        const raw: SparePartItem[] = resp.data.items || [];
-        setSpareParts([...raw].sort((a, b) => a.name.localeCompare(b.name)));
+        const resp = await axios.get(`${API_URL}/spare-parts/by-type/${encodeURIComponent(tipologia)}`, { headers: { Authorization: `Bearer ${token}` } });
+        const parts: SparePartItem[] = (resp.data.items || []).sort((a: SparePartItem, b: SparePartItem) => a.name.localeCompare(b.name));
+        setSpareParts(parts);
         setPezziRicambio([]);
       } catch {
         setSpareParts([]);
@@ -320,46 +232,27 @@ export default function CreateCase() {
         setLoadingParts(false);
       }
     };
-
     loadSpareParts();
   }, [token, machineId, machines]);
 
-  // Soluzioni filtrate per causa selezionata
-  useEffect(() => {
-    // Reset selezioni soluzioni quando cambia la causa
-    setSoluzioniProvate([]);
-    setSoluzioniApplicate([]);
-
-    if (!causeId) {
-      setFilteredSolutions([]);
-      return;
-    }
-
-    setLoadingSolutions(true);
-    axios
-      .get(`${API_URL}/solutions-applied/by-cause/${encodeURIComponent(causeId)}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      .then((resp) => {
-        const raw: SolutionItem[] = resp.data.items || [];
-        setFilteredSolutions([...raw].sort((a, b) => a.name.localeCompare(b.name)));
-      })
-      .catch(() => setFilteredSolutions([]))
-      .finally(() => setLoadingSolutions(false));
-  }, [causeId, token]);
+  // -------------------------------------------------------
+  // Opzioni MultiSelect ricambi (Nome + prima tipologia)
+  // -------------------------------------------------------
+  const sparePartOptions = spareParts.map((sp) => {
+    const tList = sp.tipologie?.length ? sp.tipologie : (sp.types?.length ? sp.types : []);
+    const label = tList.length ? `${sp.name} (${tList[0]})` : sp.name;
+    return { id: sp.id, name: label };
+  });
 
   const handleCreate = async () => {
     if (!token) return;
-
     if (!machineId || !operatoreId || !problemId || !causeId || !soluzioniApplicate.length) {
       setError('Compila tutti i campi obbligatori: operatore, macchina, problema, causa e almeno una soluzione applicata.');
       return;
     }
-
     setError(null);
     setSuccess(null);
     setLoading(true);
-
     try {
       await axios.post(
         `${API_URL}/cases`,
@@ -378,7 +271,6 @@ export default function CreateCase() {
       ) as { data: CreateCaseResponse };
 
       setSuccess('Caso creato con successo! Reindirizzamento...');
-
       setMachineId('');
       setMachineSearch('');
       setProblemId('');
@@ -400,7 +292,6 @@ export default function CreateCase() {
   };
 
   const selectedMachine = machines.find((m) => m.id === machineId);
-  const machineTipologia = selectedMachine?.tipologia ?? selectedMachine?.type ?? selectedMachine?.reparto ?? '';
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
@@ -413,8 +304,8 @@ export default function CreateCase() {
       {success && <div className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4 text-emerald-200">{success}</div>}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 lg:gap-4">
-          
-        {/* Field: Macchina */}
+
+        {/* Macchina */}
         <div className="flex flex-col space-y-1.5">
           <label className="text-sm font-medium text-slate-200">Macchina <span className="text-rose-500 ml-1">*</span></label>
           <div className="relative">
@@ -424,10 +315,9 @@ export default function CreateCase() {
               onChange={(e) => {
                 const val = e.target.value;
                 setMachineSearch(val);
-                const exact = machines.find(
-                  (m) =>
-                    `${m.code} - ${m.name}`.toLowerCase() === val.toLowerCase().trim() ||
-                    m.code.toLowerCase() === val.toLowerCase().trim()
+                const exact = machines.find((m) =>
+                  `${m.code} - ${m.name}`.toLowerCase() === val.toLowerCase().trim() ||
+                  m.code.toLowerCase() === val.toLowerCase().trim()
                 );
                 setMachineId(exact ? exact.id : '');
               }}
@@ -438,18 +328,14 @@ export default function CreateCase() {
               className="w-full px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 text-sm"
             />
             {showSuggestions && filteredMachines.length > 0 && (
-              <div className="absolute left-0 right-0 z-50 mt-2 max-h-60 overflow-y-auto rounded-md border border-slate-600 bg-slate-800 p-2 shadow-2xl backdrop-blur-md transition-all duration-200">
+              <div className="absolute left-0 right-0 z-50 mt-2 max-h-60 overflow-y-auto rounded-md border border-slate-600 bg-slate-800 p-2 shadow-2xl backdrop-blur-md">
                 {filteredMachines.map((m) => (
                   <button
                     key={m.id}
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => {
-                      setMachineId(m.id);
-                      setMachineSearch(`${m.code} - ${m.name}`);
-                      setShowSuggestions(false);
-                    }}
-                    className="w-full text-left px-4 py-2.5 rounded-md hover:bg-slate-700 hover:text-white text-slate-200 text-sm transition-colors duration-150 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1"
+                    onClick={() => { setMachineId(m.id); setMachineSearch(`${m.code} - ${m.name}`); setShowSuggestions(false); }}
+                    className="w-full text-left px-4 py-2.5 rounded-md hover:bg-slate-700 hover:text-white text-slate-200 text-sm transition-colors flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1"
                   >
                     <div className="font-semibold text-slate-100">{m.code}</div>
                     <div className="text-xs text-slate-400">{m.name}</div>
@@ -458,14 +344,14 @@ export default function CreateCase() {
               </div>
             )}
             {showSuggestions && machineSearch.trim() !== '' && filteredMachines.length === 0 && (
-              <div className="absolute left-0 right-0 z-50 mt-2 rounded-md border border-slate-600 bg-slate-800 p-4 shadow-2xl backdrop-blur-md text-sm text-slate-400 text-center italic">
+              <div className="absolute left-0 right-0 z-50 mt-2 rounded-md border border-slate-600 bg-slate-800 p-4 shadow-2xl text-sm text-slate-400 text-center italic">
                 Nessuna macchina trovata
               </div>
             )}
           </div>
         </div>
 
-        {/* Field: Operatore */}
+        {/* Operatore */}
         <div className="flex flex-col space-y-1.5">
           <label className="text-sm font-medium text-slate-200">Operatore <span className="text-rose-500 ml-1">*</span></label>
           <select value={operatoreId} onChange={(e) => setOperatoreId(e.target.value)} className="w-full px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 text-sm">
@@ -476,10 +362,11 @@ export default function CreateCase() {
           </select>
         </div>
 
-        {/* Field: Pezzi di Ricambio */}
+        {/* Pezzi di Ricambio — Nome (tipologia) */}
         <div className="flex flex-col space-y-1.5">
-          <SparePartsMultiSelect
-            options={spareParts}
+          <MultiSelect
+            label="Pezzi di Ricambio"
+            options={sparePartOptions}
             selectedValues={pezziRicambio}
             onChange={setPezziRicambio}
             placeholder={
@@ -488,11 +375,13 @@ export default function CreateCase() {
               : spareParts.length ? 'Seleziona pezzi di ricambio'
               : 'Nessun ricambio per questo tipo'
             }
-            helperText={machineTipologia ? `Tipologia macchina: ${machineTipologia}` : 'I ricambi vengono filtrati in base alla tipologia della macchina'}
+            helperText={selectedMachine ? `Tipologia macchina: ${selectedMachine.tipologia ?? selectedMachine.type ?? selectedMachine.reparto ?? 'N/D'}` : 'Seleziona i pezzi di ricambio utilizzati'}
+            required={false}
+            emptyMessage="Nessun ricambio disponibile per questa macchina"
           />
         </div>
 
-        {/* Field: Problema */}
+        {/* Problema */}
         <div className="flex flex-col space-y-1.5">
           <label className="text-sm font-medium text-slate-200">Problema <span className="text-rose-500 ml-1">*</span></label>
           <select value={problemId} onChange={(e) => setProblemId(e.target.value)} className="w-full px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 text-sm">
@@ -503,7 +392,7 @@ export default function CreateCase() {
           </select>
         </div>
 
-        {/* Field: Causa */}
+        {/* Causa */}
         <div className="flex flex-col space-y-1.5">
           <label className="text-sm font-medium text-slate-200">Causa <span className="text-rose-500 ml-1">*</span></label>
           <select
@@ -516,70 +405,55 @@ export default function CreateCase() {
               <option key={item.id} value={item.id}>{item.name}</option>
             ))}
           </select>
+          {causeId && filteredSolutions.length === 0 && !loadingSolutions && (
+            <p className="text-xs text-amber-400 mt-0.5">
+              Nessuna soluzione associata a questa causa. Aggiungile dall'Admin Panel.
+            </p>
+          )}
         </div>
 
-        {/* Field: Soluzioni Provate — filtrate per causa */}
+        {/* Soluzioni Provate — filtrate per causa */}
         <div className="col-span-1 md:col-span-2 flex flex-col space-y-1.5">
           <MultiSelect
             label="Soluzioni Provate"
             options={filteredSolutions}
             selectedValues={soluzioniProvate}
             onChange={setSoluzioniProvate}
-            placeholder={
-              !causeId ? 'Seleziona prima una causa'
-              : loadingSolutions ? 'Caricamento soluzioni...'
-              : filteredSolutions.length ? 'Seleziona soluzioni provate...'
-              : 'Nessuna soluzione per questa causa'
-            }
-            helperText="Soluzioni tentate ma che NON hanno risolto il problema (filtrate per causa)"
+            placeholder={loadingSolutions ? 'Caricamento soluzioni...' : causeId ? 'Seleziona soluzioni provate...' : 'Seleziona prima una causa'}
+            helperText="Soluzioni tentate ma che NON hanno risolto il problema"
             required={false}
+            emptyMessage={causeId ? 'Nessuna soluzione associata a questa causa' : 'Seleziona prima una causa'}
           />
         </div>
 
-        {/* Field: Soluzione Applicata — filtrata per causa */}
+        {/* Soluzione Applicata — filtrata per causa */}
         <div className="col-span-1 md:col-span-2 flex flex-col space-y-1.5">
           <MultiSelect
             label="Soluzione Applicata"
             options={filteredSolutions}
             selectedValues={soluzioniApplicate}
             onChange={setSoluzioniApplicate}
-            placeholder={
-              !causeId ? 'Seleziona prima una causa'
-              : loadingSolutions ? 'Caricamento soluzioni...'
-              : filteredSolutions.length ? 'Seleziona soluzione/i applicata/e...'
-              : 'Nessuna soluzione per questa causa'
-            }
-            helperText="Soluzione/i che ha/hanno effettivamente risolto il problema (filtrate per causa)"
+            placeholder={loadingSolutions ? 'Caricamento soluzioni...' : causeId ? 'Seleziona soluzione/i applicata/e...' : 'Seleziona prima una causa'}
+            helperText="Soluzione/i che ha/hanno effettivamente risolto il problema"
             required={true}
+            emptyMessage={causeId ? 'Nessuna soluzione associata a questa causa' : 'Seleziona prima una causa'}
           />
         </div>
 
-        {/* Field: Tempo Impiego */}
+        {/* Tempo Impiego */}
         <div className="col-span-1 md:col-span-2 flex flex-col space-y-1.5">
           <label className="text-sm font-medium text-slate-200">Tempo Impiego <span className="text-rose-500 ml-1">*</span></label>
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setTempoImpiego((t) => Math.max(0.5, t - 0.5))}
-              className="flex h-10 w-12 items-center justify-center rounded-md border border-slate-600 bg-slate-700 text-lg font-bold text-slate-300 hover:bg-slate-650 transition active:scale-95"
-            >
-              -
-            </button>
+            <button type="button" onClick={() => setTempoImpiego((t) => Math.max(0.5, t - 0.5))} className="flex h-10 w-12 items-center justify-center rounded-md border border-slate-600 bg-slate-700 text-lg font-bold text-slate-300 hover:bg-slate-600 transition active:scale-95">-</button>
             <div className="flex-1 h-10 rounded-md border border-slate-600 bg-slate-700 px-4 flex items-center justify-center text-slate-100 font-semibold text-sm">
               {tempoImpiego}h ({Math.floor(tempoImpiego)}h {Math.round((tempoImpiego % 1) * 60)}m)
             </div>
-            <button
-              type="button"
-              onClick={() => setTempoImpiego((t) => Math.min(999, t + 0.5))}
-              className="flex h-10 w-12 items-center justify-center rounded-md border border-slate-600 bg-slate-700 text-lg font-bold text-slate-300 hover:bg-slate-650 transition active:scale-95"
-            >
-              +
-            </button>
+            <button type="button" onClick={() => setTempoImpiego((t) => Math.min(999, t + 0.5))} className="flex h-10 w-12 items-center justify-center rounded-md border border-slate-600 bg-slate-700 text-lg font-bold text-slate-300 hover:bg-slate-600 transition active:scale-95">+</button>
           </div>
           <p className="text-xs text-slate-500">Durata totale dell'intervento manutentivo in ore.</p>
         </div>
 
-        {/* Field: Note aggiuntive */}
+        {/* Note aggiuntive */}
         <div className="col-span-1 md:col-span-2 flex flex-col space-y-1.5">
           <div className="flex justify-between items-center">
             <label className="text-sm font-medium text-slate-200">Note aggiuntive</label>
@@ -588,7 +462,7 @@ export default function CreateCase() {
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value.slice(0, 1000))}
-            placeholder="Aggiungi dettagli aggiuntivi sull'intervento, anomalie riscontrate o altre osservazioni..."
+            placeholder="Aggiungi dettagli sull'intervento, anomalie riscontrate o altre osservazioni..."
             className="w-full h-28 px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 resize-none text-sm"
           />
         </div>
