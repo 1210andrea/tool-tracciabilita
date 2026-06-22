@@ -20,7 +20,7 @@ categoriesRoutes.get('/', authMiddleware, async (_req, res, next) => {
   }
 });
 
-// GET /categories/causes-by-problem/:problemId - cause associate a un problema
+// GET /categories/causes-by-problem/:problemId
 categoriesRoutes.get('/causes-by-problem/:problemId', authMiddleware, async (req, res, next) => {
   try {
     const { problemId } = req.params;
@@ -38,7 +38,7 @@ categoriesRoutes.get('/causes-by-problem/:problemId', authMiddleware, async (req
   }
 });
 
-// GET /categories/solutions-by-problem/:problemId - soluzioni associate a un problema
+// GET /categories/solutions-by-problem/:problemId
 categoriesRoutes.get('/solutions-by-problem/:problemId', authMiddleware, async (req, res, next) => {
   try {
     const { problemId } = req.params;
@@ -56,11 +56,10 @@ categoriesRoutes.get('/solutions-by-problem/:problemId', authMiddleware, async (
   }
 });
 
-// GET /categories/:type - per tipo (problem/cause)
+// GET /categories/:type
 categoriesRoutes.get('/:type', authMiddleware, async (req, res, next) => {
   try {
     const { type } = req.params;
-    // Evita conflitti con le rotte parametriche sopra
     if (['causes-by-problem', 'solutions-by-problem'].includes(type)) {
       return res.status(400).json({ error: 'Invalid type' });
     }
@@ -78,7 +77,7 @@ categoriesRoutes.get('/:type', authMiddleware, async (req, res, next) => {
   }
 });
 
-// POST /categories - crea
+// POST /categories
 categoriesRoutes.post('/', authMiddleware, async (req, res, next) => {
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
@@ -87,7 +86,7 @@ categoriesRoutes.post('/', authMiddleware, async (req, res, next) => {
       type: string;
       name: string;
       description?: string;
-      problem_ids?: string[]; // per cause: array di problem_id
+      problem_ids?: string[];
     };
     if (!type || !name) return res.status(400).json({ error: 'type and name are required' });
 
@@ -100,7 +99,6 @@ categoriesRoutes.post('/', authMiddleware, async (req, res, next) => {
       );
       const newItem = r.rows[0];
 
-      // Se è una causa e vengono passati problem_ids, inserisci i link
       if (type === 'cause' && problem_ids && problem_ids.length > 0) {
         for (const pid of problem_ids) {
           await client.query(
@@ -124,7 +122,7 @@ categoriesRoutes.post('/', authMiddleware, async (req, res, next) => {
   }
 });
 
-// PUT /categories/:id - modifica
+// PUT /categories/:id
 categoriesRoutes.put('/:id', authMiddleware, async (req, res, next) => {
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
@@ -133,7 +131,7 @@ categoriesRoutes.put('/:id', authMiddleware, async (req, res, next) => {
     const { name, description, problem_ids } = req.body as {
       name?: string;
       description?: string;
-      problem_ids?: string[]; // aggiorna i link problema-causa
+      problem_ids?: string[];
     };
 
     const client = await pool.connect();
@@ -150,7 +148,6 @@ categoriesRoutes.put('/:id', authMiddleware, async (req, res, next) => {
       }
       const updated = r.rows[0];
 
-      // Aggiorna link problema-causa se è una causa e problem_ids è fornito
       if (updated.type === 'cause' && problem_ids !== undefined) {
         await client.query('DELETE FROM problem_causes WHERE cause_id = $1', [id]);
         for (const pid of problem_ids) {
@@ -192,7 +189,7 @@ categoriesRoutes.delete('/:id', authMiddleware, async (req, res, next) => {
     if (totalUsed > 0) {
       const parts: string[] = [];
       if (problemCount) parts.push(`${problemCount} casi come problema`);
-      if causeCount) parts.push(`${causeCount} casi come causa`);
+      if (causeCount) parts.push(`${causeCount} casi come causa`);
       return res.status(400).json({
         error: `Non eliminabile: in uso (${parts.join(', ')})`,
         usage_count: totalUsed
