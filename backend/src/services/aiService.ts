@@ -81,17 +81,28 @@ export async function callOllama(
       ? [{ role: 'user', content: promptOrMessages }]
       : promptOrMessages;
 
-    const reqBody: any = { model: env.AI_MODEL, messages, stream: false };
+    // 🔥 MODIFICA: disabilita la cache
+    const reqBody: any = { 
+      model: env.AI_MODEL, 
+      messages, 
+      stream: false,
+      options: {
+        cache: false  // ← Disabilita la cache
+      }
+    };
+    
     if (timeoutOrOptions && typeof timeoutOrOptions === 'object' && timeoutOrOptions.max_tokens) {
-      reqBody.options = { num_predict: timeoutOrOptions.max_tokens };
+      reqBody.options.num_predict = timeoutOrOptions.max_tokens;
       reqBody.max_tokens = timeoutOrOptions.max_tokens;
     }
+    
     const resp = await fetch(`${env.AI_API_URL}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(reqBody),
       signal: controller.signal
     });
+    
     if (!resp.ok) {
       const errBody = await resp.text().catch(() => '');
       lastOllamaError = {
@@ -101,6 +112,7 @@ export async function callOllama(
       logger.error({ ollama: { status: resp.status, model: env.AI_MODEL, body: errBody.slice(0, 500) } });
       return null;
     }
+    
     const payload = await resp.json();
     const content = extractOllamaContent(payload);
     if (!content) {
