@@ -8,7 +8,7 @@ type Operatore = { id: string; nome: string; attivo: boolean; created_at?: strin
 type Machine = { id: string; code: string; name: string; line?: string; location?: string; tipologia?: string; type?: string; posizione?: string; usage_count?: number };
 type User = { id: string; username: string; email?: string; role: string };
 type SparePart = { id: string; name: string; tipologia?: string[]; tipologie?: string[]; type?: string; description?: string; usage_count?: number };
-type SolutionApplied = { id: string; name: string; description?: string; cause_id?: string; cause_name?: string; usage_count?: number; problem_ids?: string[] };
+type SolutionApplied = { id: string; name: string; description?: string; usage_count?: number; problem_ids?: string[] };
 
 const API_URL = '/api';
 type AdminTab = 'operatori' | 'problemi' | 'cause' | 'macchine' | 'utenti' | 'ricambi' | 'soluzioni';
@@ -45,7 +45,6 @@ export default function AdminPanel() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
 
-  // Form stati
   const [categoryForm, setCategoryForm] = useState({ type: 'problem', name: '', description: '' });
   const [categoryProblemIds, setCategoryProblemIds] = useState<string[]>([]);
   const [operatoreForm, setOperatoreForm] = useState({ nome: '', attivo: true });
@@ -55,7 +54,7 @@ export default function AdminPanel() {
   const [userForm, setUserForm] = useState({ username: '', email: '', password: '', role: 'user' });
   const [sparePartForm, setSparePartForm] = useState({ name: '', tipologie: [] as string[], description: '' });
   const [editingSparePartId, setEditingSparePartId] = useState<string | null>(null);
-  const [solutionForm, setSolutionForm] = useState({ name: '', description: '', cause_id: '', problem_ids: [] as string[] });
+  const [solutionForm, setSolutionForm] = useState({ name: '', description: '', problem_ids: [] as string[] });
   const [editingSolutionId, setEditingSolutionId] = useState<string | null>(null);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
 
@@ -117,11 +116,10 @@ export default function AdminPanel() {
     setCategoryProblemIds([]);
     setMachineForm({ code: '', name: '', line: '', location: '', tipologia: '' });
     setSparePartForm({ name: '', tipologie: [], description: '' });
-    setSolutionForm({ name: '', description: '', cause_id: '', problem_ids: [] });
+    setSolutionForm({ name: '', description: '', problem_ids: [] });
     setOperatoreForm({ nome: '', attivo: true });
   }, [activeTab]);
 
-  // ---- Utenti ----
   const startEditUser = (user: User) => { setEditingUser(user); setUserEditForm({ username: user.username, email: user.email || '', password: '' }); };
   const cancelEditUser = () => { setEditingUser(null); setUserEditForm({ username: '', email: '', password: '' }); };
   const submitUserEdit = async () => {
@@ -137,7 +135,6 @@ export default function AdminPanel() {
     } catch (err: any) { setMessage(err?.response?.data?.error ?? 'Errore aggiornamento utente.'); }
   };
 
-  // ---- Operatori ----
   const submitOperatore = async () => {
     try {
       if (!operatoreForm.nome.trim()) { setMessage('Il nome operatore è obbligatorio.'); return; }
@@ -154,7 +151,6 @@ export default function AdminPanel() {
   const startEditOperatore = (op: Operatore) => { setEditingOperatoreId(op.id); setOperatoreForm({ nome: op.nome, attivo: op.attivo }); };
   const cancelEditOperatore = () => { setEditingOperatoreId(null); setOperatoreForm({ nome: '', attivo: true }); };
 
-  // ---- Categorie (Problemi e Cause) ----
   const submitCategory = async () => {
     try {
       const payload = { ...categoryForm, problem_ids: categoryForm.type === 'cause' ? categoryProblemIds : undefined };
@@ -180,7 +176,6 @@ export default function AdminPanel() {
   };
   const cancelEditCategory = () => { setEditingCategoryId(null); setCategoryForm((c) => ({ ...c, name: '', description: '' })); setCategoryProblemIds([]); };
 
-  // ---- Macchine ----
   const submitMachine = async () => {
     try {
       const payload = { ...machineForm, tipologia: machineForm.tipologia || undefined };
@@ -197,7 +192,6 @@ export default function AdminPanel() {
   const startEditMachine = (m: Machine) => { setEditingMachineId(m.id); setMachineForm({ code: m.code, name: m.name, line: m.line || '', location: m.location || '', tipologia: m.tipologia || m.type || '' }); };
   const cancelEditMachine = () => { setEditingMachineId(null); setMachineForm({ code: '', name: '', line: '', location: '', tipologia: '' }); };
 
-  // ---- Ricambi ----
   const submitSparePart = async () => {
     try {
       if (editingSparePartId) {
@@ -217,13 +211,11 @@ export default function AdminPanel() {
   };
   const cancelEditSparePart = () => { setEditingSparePartId(null); setSparePartForm({ name: '', tipologie: [], description: '' }); };
 
-  // ---- Soluzioni ----
   const submitSolution = async () => {
     try {
       const payload = {
         name: solutionForm.name,
         description: solutionForm.description,
-        cause_id: solutionForm.cause_id || null,
         problem_ids: solutionForm.problem_ids,
       };
       if (editingSolutionId) {
@@ -233,20 +225,18 @@ export default function AdminPanel() {
         await axios.post(`${API_URL}/solutions-applied`, payload, headers);
         setMessage('Soluzione aggiunta.');
       }
-      setSolutionForm({ name: '', description: '', cause_id: '', problem_ids: [] }); setEditingSolutionId(null); loadAll();
+      setSolutionForm({ name: '', description: '', problem_ids: [] }); setEditingSolutionId(null); loadAll();
     } catch (err: any) { setMessage(err?.response?.data?.error ?? 'Errore salvataggio soluzione.'); }
   };
   const startEditSolution = (sol: SolutionApplied) => {
     setEditingSolutionId(sol.id);
-    setSolutionForm({ name: sol.name, description: sol.description || '', cause_id: sol.cause_id || '', problem_ids: [] });
-    // Carica i problem_ids associati alla soluzione
+    setSolutionForm({ name: sol.name, description: sol.description || '', problem_ids: [] });
     axios.get(`${API_URL}/solutions-applied/${sol.id}/problems`, headers)
       .then((r) => setSolutionForm((f) => ({ ...f, problem_ids: (r.data.items || []).map((p: any) => p.id) })))
       .catch(() => {});
   };
-  const cancelEditSolution = () => { setEditingSolutionId(null); setSolutionForm({ name: '', description: '', cause_id: '', problem_ids: [] }); };
+  const cancelEditSolution = () => { setEditingSolutionId(null); setSolutionForm({ name: '', description: '', problem_ids: [] }); };
 
-  // ---- Elimina ----
   const submitUser = async () => {
     try {
       await axios.post(`${API_URL}/users`, userForm, headers);
@@ -299,10 +289,8 @@ export default function AdminPanel() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.2fr_1fr]">
-        {/* FORM SINISTRA */}
         <div className="space-y-6 rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6">
 
-          {/* OPERATORI */}
           {activeTab === 'operatori' && (
             <>
               <div>
@@ -326,7 +314,6 @@ export default function AdminPanel() {
             </>
           )}
 
-          {/* PROBLEMI */}
           {activeTab === 'problemi' && (
             <>
               <div>
@@ -348,7 +335,6 @@ export default function AdminPanel() {
             </>
           )}
 
-          {/* CAUSE */}
           {activeTab === 'cause' && (
             <>
               <div>
@@ -390,7 +376,6 @@ export default function AdminPanel() {
             </>
           )}
 
-          {/* MACCHINE */}
           {activeTab === 'macchine' && (
             <>
               <div>
@@ -410,7 +395,6 @@ export default function AdminPanel() {
             </>
           )}
 
-          {/* UTENTI */}
           {activeTab === 'utenti' && (
             <>
               <div>
@@ -430,7 +414,6 @@ export default function AdminPanel() {
             </>
           )}
 
-          {/* RICAMBI */}
           {activeTab === 'ricambi' && (
             <>
               <div>
@@ -466,22 +449,14 @@ export default function AdminPanel() {
             </>
           )}
 
-          {/* SOLUZIONI */}
           {activeTab === 'soluzioni' && (
             <>
               <div>
                 <h2 className="text-xl font-semibold text-slate-100">{editingSolutionId ? 'Modifica soluzione' : 'Nuova soluzione applicata'}</h2>
-                <p className="text-sm text-slate-400">Aggiungi una soluzione e collegala a problemi e causa specifici.</p>
+                <p className="text-sm text-slate-400">Aggiungi una soluzione e collegala a uno o più problemi.</p>
               </div>
               <input value={solutionForm.name} onChange={(e) => setSolutionForm((c) => ({ ...c, name: e.target.value }))} placeholder="Nome soluzione" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
               <textarea value={solutionForm.description} onChange={(e) => setSolutionForm((c) => ({ ...c, description: e.target.value }))} rows={4} placeholder="Descrizione (opzionale)" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
-              <div>
-                <label className="text-sm text-slate-300">Causa associata</label>
-                <select value={solutionForm.cause_id} onChange={(e) => setSolutionForm((c) => ({ ...c, cause_id: e.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none">
-                  <option value="">Seleziona causa...</option>
-                  {causes.map((cause) => <option key={cause.id} value={cause.id}>{cause.name}</option>)}
-                </select>
-              </div>
               <div>
                 <label className="text-sm text-slate-300">Problemi associati</label>
                 {problems.length === 0 ? (
@@ -510,7 +485,6 @@ export default function AdminPanel() {
           )}
         </div>
 
-        {/* LISTA DESTRA */}
         <div className="space-y-6 rounded-3xl bg-slate-950/95 p-5 shadow-xl shadow-slate-950/10 sm:p-6">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold text-slate-100">Elenco {listTitle}</h2>
@@ -638,12 +612,10 @@ export default function AdminPanel() {
                   <div>
                     <div className="font-semibold text-slate-100">{sol.name}</div>
                     <div className="text-sm text-slate-500">
-                      {sol.cause_name ? <span className="text-sky-400/80">Causa: {sol.cause_name}</span> : <span className="italic">Nessuna causa associata</span>}
-                      {sol.problem_ids && sol.problem_ids.length > 0 && (
-                        <span className="ml-2 text-emerald-400/80">
-                          · Problemi: {sol.problem_ids.length}
-                        </span>
-                      )}
+                      {sol.problem_ids && sol.problem_ids.length > 0
+                        ? <span className="text-emerald-400/80">Problemi: {sol.problem_ids.length}</span>
+                        : <span className="italic">Nessun problema associato</span>
+                      }
                       {sol.description && <span> · {sol.description}</span>}
                     </div>
                   </div>

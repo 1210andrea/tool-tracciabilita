@@ -25,8 +25,6 @@ sparepartsRoutes.get('/spare-parts', authMiddleware, async (_req, res, next) => 
   }
 });
 
-
-// compat: manteniamo by-type/:type, ma lo interpretiamo come tipologia
 sparepartsRoutes.get('/spare-parts/by-type/:type', authMiddleware, async (req, res, next) => {
   try {
     const r = await pool.query(
@@ -43,7 +41,6 @@ sparepartsRoutes.get('/spare-parts/by-type/:type', authMiddleware, async (req, r
     next(e);
   }
 });
-
 
 sparepartsRoutes.post('/spare-parts', authMiddleware, async (req, res, next) => {
   try {
@@ -112,7 +109,6 @@ sparepartsRoutes.post('/spare-parts', authMiddleware, async (req, res, next) => 
   }
 });
 
-
 sparepartsRoutes.delete('/spare-parts/:id', authMiddleware, async (req, res, next) => {
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
@@ -130,13 +126,11 @@ sparepartsRoutes.delete('/spare-parts/:id', authMiddleware, async (req, res, nex
   }
 });
 
-
-// GET tutte le soluzioni (con causa e problemi associati)
+// GET tutte le soluzioni (con problemi associati)
 sparepartsRoutes.get('/solutions-applied', authMiddleware, async (_req, res, next) => {
   try {
     const r = await pool.query(
-      `SELECT sa.id, sa.name, sa.description, sa.created_at, sa.cause_id,
-              c.name AS cause_name,
+      `SELECT sa.id, sa.name, sa.description, sa.created_at,
               ((SELECT COUNT(*)::int FROM case_solutions_applied csa WHERE csa.solution_id = sa.id) +
                (SELECT COUNT(*)::int FROM case_solutions_tried cst WHERE cst.solution_id = sa.id))::int AS usage_count,
               COALESCE(
@@ -144,26 +138,7 @@ sparepartsRoutes.get('/solutions-applied', authMiddleware, async (_req, res, nex
                 '{}'
               ) AS problem_ids
        FROM solutions_applied sa
-       LEFT JOIN categories c ON c.id = sa.cause_id
        ORDER BY sa.name ASC`
-    );
-    res.json({ items: r.rows });
-  } catch (e) {
-    next(e);
-  }
-});
-
-// GET soluzioni filtrate per causa
-sparepartsRoutes.get('/solutions-applied/by-cause/:causeId', authMiddleware, async (req, res, next) => {
-  try {
-    const r = await pool.query(
-      `SELECT sa.id, sa.name, sa.description, sa.cause_id,
-              c.name AS cause_name
-       FROM solutions_applied sa
-       LEFT JOIN categories c ON c.id = sa.cause_id
-       WHERE sa.cause_id = $1
-       ORDER BY sa.name ASC`,
-      [req.params.causeId]
     );
     res.json({ items: r.rows });
   } catch (e) {
@@ -192,10 +167,9 @@ sparepartsRoutes.post('/solutions-applied', authMiddleware, async (req, res, nex
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
 
-    const { name, description, cause_id, problem_ids } = req.body as {
+    const { name, description, problem_ids } = req.body as {
       name?: string;
       description?: string;
-      cause_id?: string;
       problem_ids?: string[];
     };
     if (!name?.trim()) return res.status(400).json({ error: 'name è obbligatorio' });
@@ -204,8 +178,8 @@ sparepartsRoutes.post('/solutions-applied', authMiddleware, async (req, res, nex
     try {
       await client.query('BEGIN');
       const r = await client.query(
-        'INSERT INTO solutions_applied(name, description, cause_id) VALUES($1, $2, $3) RETURNING *',
-        [name.trim(), description?.trim() ?? null, cause_id ?? null]
+        'INSERT INTO solutions_applied(name, description) VALUES($1, $2) RETURNING *',
+        [name.trim(), description?.trim() ?? null]
       );
       const newSol = r.rows[0];
 
@@ -237,10 +211,9 @@ sparepartsRoutes.put('/solutions-applied/:id', authMiddleware, async (req, res, 
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
 
     const { id } = req.params;
-    const { name, description, cause_id, problem_ids } = req.body as {
+    const { name, description, problem_ids } = req.body as {
       name?: string;
       description?: string;
-      cause_id?: string | null;
       problem_ids?: string[];
     };
 
@@ -250,10 +223,9 @@ sparepartsRoutes.put('/solutions-applied/:id', authMiddleware, async (req, res, 
       const r = await client.query(
         `UPDATE solutions_applied
          SET name = COALESCE($1, name),
-             description = COALESCE($2, description),
-             cause_id = $3
-         WHERE id = $4 RETURNING *`,
-        [name?.trim() ?? null, description?.trim() ?? null, cause_id ?? null, id]
+             description = COALESCE($2, description)
+         WHERE id = $3 RETURNING *`,
+        [name?.trim() ?? null, description?.trim() ?? null, id]
       );
       if (!r.rows.length) {
         await client.query('ROLLBACK');
