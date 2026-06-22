@@ -7,7 +7,7 @@ const API_URL = '/api';
 type CategoryItem = { id: string; type: string; name: string };
 type MachineItem = { id: string; code: string; name: string; type?: string; tipologia?: string };
 type SparePartItem = { id: string; name: string };
-type SolutionItem = { id: string; name: string };
+type SolutionItem = { id: string; name: string; cause_id?: string };
 
 export type CaseDetail = {
   id: string;
@@ -34,71 +34,33 @@ export type CaseDetail = {
 };
 
 function MultiSelect({
-  label,
-  options,
-  selectedValues,
-  onChange,
-  placeholder = 'Seleziona...',
-  helperText,
-  disabled = false,
-  required = false
+  label, options, selectedValues, onChange, placeholder = 'Seleziona...', helperText, disabled = false, required = false
 }: {
-  label: string;
-  options: { id: string; name: string }[];
-  selectedValues: string[];
-  onChange: (vals: string[]) => void;
-  placeholder?: string;
-  helperText?: string;
-  disabled?: boolean;
-  required?: boolean;
+  label: string; options: { id: string; name: string }[]; selectedValues: string[];
+  onChange: (vals: string[]) => void; placeholder?: string; helperText?: string; disabled?: boolean; required?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
-
   const toggleValue = (id: string) => {
-    if (selectedValues.includes(id)) {
-      onChange(selectedValues.filter((v) => v !== id));
-    } else {
-      onChange([...selectedValues, id]);
-    }
+    onChange(selectedValues.includes(id) ? selectedValues.filter((v) => v !== id) : [...selectedValues, id]);
   };
-
   return (
     <div className="relative space-y-1">
       <label className="text-xs text-slate-400 flex justify-between">
         <span>{label} {required && <span className="text-red-400">*</span>}</span>
-        {selectedValues.length > 0 && (
-          <span className="text-xs text-sky-400 font-semibold">
-            {selectedValues.length} selezionat{selectedValues.length === 1 ? 'o' : 'i'}
-          </span>
-        )}
+        {selectedValues.length > 0 && <span className="text-xs text-sky-400 font-semibold">{selectedValues.length} selezionat{selectedValues.length === 1 ? 'o' : 'i'}</span>}
       </label>
       <div className="relative">
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={() => setIsOpen(!isOpen)}
-          className="w-full text-left rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-xs text-slate-100 outline-none flex justify-between items-center focus:border-sky-500/40 focus:ring-2 focus:ring-sky-500/10 disabled:opacity-60 transition duration-150"
-        >
+        <button type="button" disabled={disabled} onClick={() => setIsOpen(!isOpen)}
+          className="w-full text-left rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-xs text-slate-100 outline-none flex justify-between items-center focus:border-sky-500/40 focus:ring-2 focus:ring-sky-500/10 disabled:opacity-60 transition duration-150">
           <span className="truncate">
-            {selectedValues.length > 0
-              ? options
-                  .filter((o) => selectedValues.includes(o.id))
-                  .map((o) => o.name)
-                  .join(', ')
-              : placeholder}
+            {selectedValues.length > 0 ? options.filter((o) => selectedValues.includes(o.id)).map((o) => o.name).join(', ') : placeholder}
           </span>
           {!disabled && (
-            <svg
-              className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
+            <svg className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
             </svg>
           )}
         </button>
-
         {isOpen && !disabled && (
           <>
             <div className="fixed inset-0 z-30" onClick={() => setIsOpen(false)} />
@@ -106,23 +68,12 @@ function MultiSelect({
               {options.length === 0 ? (
                 <div className="px-4 py-3 text-xs text-slate-500 italic text-center">Nessuna opzione disponibile</div>
               ) : (
-                options.map((opt) => {
-                  const isChecked = selectedValues.includes(opt.id);
-                  return (
-                    <label
-                      key={opt.id}
-                      className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-sky-500/20 hover:text-sky-300 text-slate-200 text-xs cursor-pointer transition select-none"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => toggleValue(opt.id)}
-                        className="accent-sky-500 h-4 w-4 cursor-pointer rounded"
-                      />
-                      <span className="truncate">{opt.name}</span>
-                    </label>
-                  );
-                })
+                options.map((opt) => (
+                  <label key={opt.id} className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-sky-500/20 hover:text-sky-300 text-slate-200 text-xs cursor-pointer transition select-none">
+                    <input type="checkbox" checked={selectedValues.includes(opt.id)} onChange={() => toggleValue(opt.id)} className="accent-sky-500 h-4 w-4 cursor-pointer rounded" />
+                    <span className="truncate">{opt.name}</span>
+                  </label>
+                ))
               )}
             </div>
           </>
@@ -134,24 +85,10 @@ function MultiSelect({
 }
 
 export function CaseDetailModal({
-  open,
-  token,
-  caseItem,
-  machines,
-  categories,
-  canEdit,
-  onClose,
-  onSaved,
+  open, token, caseItem, machines, categories, canEdit, onClose, onSaved,
 }: {
-  open: boolean;
-  token: string;
-  caseItem: CaseDetail | null;
-  machines: MachineItem[];
-  categories: CategoryItem[];
-  canEdit: boolean;
-  isAdmin?: boolean;
-  onClose: () => void;
-  onSaved: () => void;
+  open: boolean; token: string; caseItem: CaseDetail | null; machines: MachineItem[];
+  categories: CategoryItem[]; canEdit: boolean; isAdmin?: boolean; onClose: () => void; onSaved: () => void;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [machineId, setMachineId] = useState('');
@@ -161,19 +98,16 @@ export function CaseDetailModal({
   const [soluzioniApplicate, setSoluzioniApplicate] = useState<string[]>([]);
   const [pezziRicambio, setPezziRicambio] = useState<string[]>([]);
   const [tempoImpiego, setTempoImpiego] = useState(0.5);
-
   const [spareParts, setSpareParts] = useState<SparePartItem[]>([]);
-  const [solutions, setSolutions] = useState<SolutionItem[]>([]);
+  const [filteredCauses, setFilteredCauses] = useState<CategoryItem[]>([]);
+  const [filteredSolutions, setFilteredSolutions] = useState<SolutionItem[]>([]);
+  const [loadingCauses, setLoadingCauses] = useState(false);
+  const [loadingSolutions, setLoadingSolutions] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [notes, setNotes] = useState('');
 
-  useEffect(() => {
-    if (!token) return;
-    axios.get(`${API_URL}/solutions-applied`, { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => setSolutions(r.data.items || []))
-      .catch(() => setSolutions([]));
-  }, [token]);
+  const problems = categories.filter((c) => c.type === 'problem');
 
   useEffect(() => {
     if (!caseItem) return;
@@ -189,26 +123,58 @@ export function CaseDetailModal({
     setError(null);
   }, [caseItem]);
 
+  // Carica cause e soluzioni filtrate per problema (anche in visualizzazione per averle pronte)
   useEffect(() => {
-    if (!token || !machineId) {
-      setSpareParts([]);
-      return;
-    }
+    setFilteredCauses([]);
+    setFilteredSolutions([]);
+    if (!problemId || !token) return;
+
+    setLoadingCauses(true);
+    setLoadingSolutions(true);
+
+    axios
+      .get(`${API_URL}/categories/causes-by-problem/${problemId}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => setFilteredCauses(r.data.items || []))
+      .catch(() => setFilteredCauses([]))
+      .finally(() => setLoadingCauses(false));
+
+    axios
+      .get(`${API_URL}/categories/solutions-by-problem/${problemId}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => setFilteredSolutions(r.data.items || []))
+      .catch(() => setFilteredSolutions([]))
+      .finally(() => setLoadingSolutions(false));
+  }, [problemId, token]);
+
+  // Reset causa e soluzioni quando cambia il problema in edit
+  const handleProblemChange = (newProblemId: string) => {
+    setProblemId(newProblemId);
+    setCauseId('');
+    setSoluzioniProvate([]);
+    setSoluzioniApplicate([]);
+  };
+
+  // Reset soluzioni quando cambia la causa
+  const handleCauseChange = (newCauseId: string) => {
+    setCauseId(newCauseId);
+    setSoluzioniProvate([]);
+    setSoluzioniApplicate([]);
+  };
+
+  const solutionsByCurrentCause = causeId
+    ? filteredSolutions.filter((s) => s.cause_id === causeId)
+    : filteredSolutions;
+
+  useEffect(() => {
+    if (!token || !machineId) { setSpareParts([]); return; }
     const machine = machines.find((m) => m.id === machineId);
     const tipologia = (machine?.type || machine?.tipologia) as string | undefined;
     if (!tipologia) return;
-
-    axios.get(`${API_URL}/spare-parts/by-type/${encodeURIComponent(tipologia)}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
+    axios.get(`${API_URL}/spare-parts/by-type/${encodeURIComponent(tipologia)}`, { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => setSpareParts(r.data.items || []))
       .catch(() => setSpareParts([]));
   }, [token, machineId, machines]);
 
   if (!open || !caseItem) return null;
-
-  const problems = categories.filter((c) => c.type === 'problem');
-  const causes = categories.filter((c) => c.type === 'cause');
 
   const handleSave = async () => {
     if (!canEdit) return;
@@ -216,26 +182,14 @@ export function CaseDetailModal({
       setError('Compila tutti i campi obbligatori: macchina, problema, causa e almeno una soluzione applicata.');
       return;
     }
-
-    setLoading(true);
-    setError(null);
+    setLoading(true); setError(null);
     try {
       await axios.put(
         `${API_URL}/cases/${caseItem.id}`,
-        {
-          machine_id: machineId,
-          problem_id: problemId,
-          cause_id: causeId,
-          soluzioni_provate: soluzioniProvate,
-          soluzioni_applicate: soluzioniApplicate,
-          pezzi_ricambio: pezziRicambio,
-          tempo_impiego: tempoImpiego,
-          notes: notes.trim() || null,
-        },
+        { machine_id: machineId, problem_id: problemId, cause_id: causeId, soluzioni_provate: soluzioniProvate, soluzioni_applicate: soluzioniApplicate, pezzi_ricambio: pezziRicambio, tempo_impiego: tempoImpiego, notes: notes.trim() || null },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      onSaved();
-      onClose();
+      onSaved(); onClose();
     } catch (err: any) {
       setError(err?.response?.data?.error ?? 'Errore durante il salvataggio.');
     } finally {
@@ -263,24 +217,22 @@ export function CaseDetailModal({
             <>
               <div className="sm:col-span-2">
                 <label className="text-xs text-slate-400">Macchina</label>
-                <div className="mt-1">
-                  <MachineSearchSelect machines={machines} value={machineId} onChange={setMachineId} />
-                </div>
+                <div className="mt-1"><MachineSearchSelect machines={machines} value={machineId} onChange={setMachineId} /></div>
               </div>
 
               <div>
                 <label className="text-xs text-slate-400">Problema</label>
-                <select value={problemId} onChange={(e) => setProblemId(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-xs text-slate-100 outline-none">
+                <select value={problemId} onChange={(e) => handleProblemChange(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-xs text-slate-100 outline-none">
                   <option value="">Nessuno</option>
                   {problems.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </div>
 
               <div>
-                <label className="text-xs text-slate-400">Causa</label>
-                <select value={causeId} onChange={(e) => setCauseId(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-xs text-slate-100 outline-none">
-                  <option value="">Nessuna</option>
-                  {causes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                <label className="text-xs text-slate-400">Causa {loadingCauses && <span className="text-slate-500">(caricamento...)</span>}</label>
+                <select value={causeId} onChange={(e) => handleCauseChange(e.target.value)} disabled={!problemId || loadingCauses} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-xs text-slate-100 outline-none disabled:opacity-50">
+                  <option value="">{!problemId ? 'Seleziona prima un problema' : 'Seleziona causa'}</option>
+                  {filteredCauses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
 
@@ -291,51 +243,39 @@ export function CaseDetailModal({
                   selectedValues={pezziRicambio}
                   onChange={setPezziRicambio}
                   placeholder={!machineId ? 'Seleziona prima una macchina' : 'Seleziona ricambi...'}
-                  helperText={selectedMachine ? `Tipo macchina: ${selectedMachine.type || ''}` : ''}
+                  helperText={selectedMachine ? `Tipo macchina: ${selectedMachine.type || selectedMachine.tipologia || ''}` : ''}
                 />
               </div>
 
               <div className="sm:col-span-2">
                 <MultiSelect
                   label="Soluzioni Provate"
-                  options={solutions}
+                  options={solutionsByCurrentCause}
                   selectedValues={soluzioniProvate}
                   onChange={setSoluzioniProvate}
-                  placeholder="Seleziona soluzioni provate..."
+                  placeholder={loadingSolutions ? 'Caricamento...' : !problemId ? 'Seleziona prima un problema' : !causeId ? 'Seleziona una causa per filtrare' : 'Seleziona soluzioni provate...'}
+                  disabled={!problemId}
                 />
               </div>
 
               <div className="sm:col-span-2">
                 <MultiSelect
                   label="Soluzioni Applicate"
-                  options={solutions}
+                  options={solutionsByCurrentCause}
                   selectedValues={soluzioniApplicate}
                   onChange={setSoluzioniApplicate}
-                  placeholder="Seleziona soluzioni applicate..."
+                  placeholder={loadingSolutions ? 'Caricamento...' : !problemId ? 'Seleziona prima un problema' : !causeId ? 'Seleziona una causa per filtrare' : 'Seleziona soluzioni applicate...'}
                   required={true}
+                  disabled={!problemId}
                 />
               </div>
 
               <div className="sm:col-span-2">
                 <label className="text-xs text-slate-400">Tempo Impiego (Ore)</label>
                 <div className="mt-2 flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setTempoImpiego((t) => Math.max(0.5, t - 0.5))}
-                    className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-700 bg-slate-950 text-md font-bold text-slate-300 hover:bg-slate-800 transition"
-                  >
-                    -
-                  </button>
-                  <div className="flex-1 h-10 rounded-xl border border-slate-700 bg-slate-950/80 px-4 flex items-center justify-center text-slate-100 font-semibold text-xs">
-                    {tempoImpiego}h ({Math.floor(tempoImpiego)}h {Math.round((tempoImpiego % 1) * 60)}m)
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setTempoImpiego((t) => Math.min(999, t + 0.5))}
-                    className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-700 bg-slate-950 text-md font-bold text-slate-300 hover:bg-slate-800 transition"
-                  >
-                    +
-                  </button>
+                  <button type="button" onClick={() => setTempoImpiego((t) => Math.max(0.5, t - 0.5))} className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-700 bg-slate-950 text-md font-bold text-slate-300 hover:bg-slate-800 transition">-</button>
+                  <div className="flex-1 h-10 rounded-xl border border-slate-700 bg-slate-950/80 px-4 flex items-center justify-center text-slate-100 font-semibold text-xs">{tempoImpiego}h ({Math.floor(tempoImpiego)}h {Math.round((tempoImpiego % 1) * 60)}m)</div>
+                  <button type="button" onClick={() => setTempoImpiego((t) => Math.min(999, t + 0.5))} className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-700 bg-slate-950 text-md font-bold text-slate-300 hover:bg-slate-800 transition">+</button>
                 </div>
               </div>
             </>
@@ -345,43 +285,29 @@ export function CaseDetailModal({
                 <span className="text-xs text-slate-500">Macchina</span>
                 <div className="text-sm font-medium text-slate-200 mt-1">{caseItem.machine_code} - {caseItem.machine_name}</div>
               </div>
-
               <div>
                 <span className="text-xs text-slate-500">Problema</span>
                 <div className="text-sm font-medium text-slate-200 mt-1">{caseItem.problem_name || 'N.D.'}</div>
               </div>
-
               <div>
                 <span className="text-xs text-slate-500">Causa</span>
                 <div className="text-sm font-medium text-slate-200 mt-1">{caseItem.cause_name || 'N.D.'}</div>
               </div>
-
               <div className="sm:col-span-2">
                 <span className="text-xs text-slate-500">Pezzi di Ricambio</span>
-                <div className="text-sm font-medium text-slate-200 mt-1">
-                  {(caseItem.pezzi_ricambio || []).map((p) => p.name).join(', ') || caseItem.spare_part_name || 'Nessuno'}
-                </div>
+                <div className="text-sm font-medium text-slate-200 mt-1">{(caseItem.pezzi_ricambio || []).map((p) => p.name).join(', ') || caseItem.spare_part_name || 'Nessuno'}</div>
               </div>
-
               <div className="sm:col-span-2">
                 <span className="text-xs text-slate-500">Soluzioni Provate</span>
-                <div className="text-sm font-medium text-slate-200 mt-1">
-                  {(caseItem.soluzioni_provate || []).map((s) => s.name).join(', ') || 'Nessuna'}
-                </div>
+                <div className="text-sm font-medium text-slate-200 mt-1">{(caseItem.soluzioni_provate || []).map((s) => s.name).join(', ') || 'Nessuna'}</div>
               </div>
-
               <div className="sm:col-span-2">
                 <span className="text-xs text-slate-500">Soluzioni Applicate</span>
-                <div className="text-sm font-medium text-slate-200 mt-1">
-                  {(caseItem.soluzioni_applicate || []).map((s) => s.name).join(', ') || caseItem.solution_applied_name || 'Nessuna'}
-                </div>
+                <div className="text-sm font-medium text-slate-200 mt-1">{(caseItem.soluzioni_applicate || []).map((s) => s.name).join(', ') || caseItem.solution_applied_name || 'Nessuna'}</div>
               </div>
-
               <div className="sm:col-span-2">
                 <span className="text-xs text-slate-500">Tempo Impiego</span>
-                <div className="text-sm font-medium text-slate-200 mt-1">
-                  {caseItem.tempo_impiego ? `${caseItem.tempo_impiego}h (${Math.floor(caseItem.tempo_impiego)}h ${Math.round((caseItem.tempo_impiego % 1) * 60)}m)` : '—'}
-                </div>
+                <div className="text-sm font-medium text-slate-200 mt-1">{caseItem.tempo_impiego ? `${caseItem.tempo_impiego}h (${Math.floor(caseItem.tempo_impiego)}h ${Math.round((caseItem.tempo_impiego % 1) * 60)}m)` : '—'}</div>
               </div>
             </>
           )}
@@ -392,12 +318,7 @@ export function CaseDetailModal({
               {canEdit && <span className="text-[10px] text-slate-500">{notes.length}/1000 caratteri</span>}
             </div>
             {isEditing ? (
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value.slice(0, 1000))}
-                placeholder="Aggiungi dettagli aggiuntivi..."
-                className="mt-1 w-full h-24 rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2 text-xs text-slate-100 outline-none resize-none focus:border-sky-500/50 transition-colors"
-              />
+              <textarea value={notes} onChange={(e) => setNotes(e.target.value.slice(0, 1000))} placeholder="Aggiungi dettagli aggiuntivi..." className="mt-1 w-full h-24 rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2 text-xs text-slate-100 outline-none resize-none focus:border-sky-500/50 transition-colors" />
             ) : (
               <div className="mt-1 w-full rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-2.5 text-xs text-slate-300 min-h-[4rem] whitespace-pre-wrap">
                 {notes || <span className="text-slate-500 italic">Nessuna nota aggiuntiva</span>}
@@ -409,16 +330,12 @@ export function CaseDetailModal({
         <div className="mt-6 flex flex-wrap justify-end gap-3">
           <button type="button" onClick={onClose} className="rounded-2xl border border-slate-700 px-4 py-2 text-xs text-slate-100 hover:bg-slate-800">Chiudi</button>
           {canEdit && !isEditing && (
-            <button type="button" onClick={() => setIsEditing(true)} className="rounded-2xl bg-sky-500 px-4 py-2 text-xs font-semibold text-slate-950 hover:bg-sky-400">
-              Modifica
-            </button>
+            <button type="button" onClick={() => setIsEditing(true)} className="rounded-2xl bg-sky-500 px-4 py-2 text-xs font-semibold text-slate-950 hover:bg-sky-400">Modifica</button>
           )}
           {isEditing && (
             <>
               <button type="button" onClick={() => setIsEditing(false)} className="rounded-2xl border border-slate-700 px-4 py-2 text-xs text-slate-100 hover:bg-slate-800">Annulla</button>
-              <button type="button" onClick={handleSave} disabled={loading} className="rounded-2xl bg-sky-500 px-4 py-2 text-xs font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-60">
-                {loading ? 'Salvataggio...' : 'Salva modifiche'}
-              </button>
+              <button type="button" onClick={handleSave} disabled={loading} className="rounded-2xl bg-sky-500 px-4 py-2 text-xs font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-60">{loading ? 'Salvataggio...' : 'Salva modifiche'}</button>
             </>
           )}
         </div>

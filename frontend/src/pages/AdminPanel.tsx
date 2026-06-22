@@ -11,51 +11,21 @@ type SparePart = { id: string; name: string; tipologia?: string[]; tipologie?: s
 type SolutionApplied = { id: string; name: string; description?: string; cause_id?: string; cause_name?: string; usage_count?: number };
 
 const API_URL = '/api';
-
 type AdminTab = 'operatori' | 'problemi' | 'cause' | 'macchine' | 'utenti' | 'ricambi' | 'soluzioni';
 
-function DeleteButton({ 
-  itemId, 
-  usageCount, 
-  type, 
-  onDelete 
-}: { 
-  itemId: string; 
-  usageCount?: number; 
-  type: 'categories' | 'machines' | 'users' | 'spare_parts' | 'solutions' | 'operatori'; 
+function DeleteButton({ itemId, usageCount, type, onDelete }: {
+  itemId: string; usageCount?: number;
+  type: 'categories' | 'machines' | 'users' | 'spare_parts' | 'solutions' | 'operatori';
   onDelete: (type: 'categories' | 'machines' | 'users' | 'spare_parts' | 'solutions' | 'operatori', id: string) => void;
 }) {
   if (type === 'users') {
-    return (
-      <button 
-        type="button" 
-        className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400 transition" 
-        onClick={() => onDelete(type, itemId)}
-      >
-        Elimina
-      </button>
-    );
+    return <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400 transition" onClick={() => onDelete(type, itemId)}>Elimina</button>;
   }
-
   const isInUse = (usageCount ?? 0) > 0;
-
   if (isInUse) {
-    return (
-      <span className="text-xs text-slate-500 font-semibold bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800">
-        In uso (Non eliminabile)
-      </span>
-    );
+    return <span className="text-xs text-slate-500 font-semibold bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800">In uso (Non eliminabile)</span>;
   }
-
-  return (
-    <button 
-      type="button" 
-      className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400 transition" 
-      onClick={() => onDelete(type, itemId)}
-    >
-      Elimina
-    </button>
-  );
+  return <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400 transition" onClick={() => onDelete(type, itemId)}>Elimina</button>;
 }
 
 export default function AdminPanel() {
@@ -75,27 +45,31 @@ export default function AdminPanel() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
 
+  // Form stati
   const [categoryForm, setCategoryForm] = useState({ type: 'problem', name: '', description: '' });
+  const [categoryProblemIds, setCategoryProblemIds] = useState<string[]>([]);
   const [operatoreForm, setOperatoreForm] = useState({ nome: '', attivo: true });
   const [editingOperatoreId, setEditingOperatoreId] = useState<string | null>(null);
   const [machineForm, setMachineForm] = useState({ code: '', name: '', line: '', location: '', tipologia: '' });
+  const [editingMachineId, setEditingMachineId] = useState<string | null>(null);
   const [userForm, setUserForm] = useState({ username: '', email: '', password: '', role: 'user' });
   const [sparePartForm, setSparePartForm] = useState({ name: '', tipologie: [] as string[], description: '' });
+  const [editingSparePartId, setEditingSparePartId] = useState<string | null>(null);
   const [solutionForm, setSolutionForm] = useState({ name: '', description: '', cause_id: '' });
+  const [editingSolutionId, setEditingSolutionId] = useState<string | null>(null);
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
 
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [userEditForm, setUserEditForm] = useState({ username: '', email: '', password: '' });
 
   const headers = useMemo(() => ({ headers: { Authorization: `Bearer ${token}` } }), [token]);
 
-  // Cause disponibili per il dropdown soluzioni
   const causes = useMemo(() => categories.filter((c) => c.type === 'cause').sort((a, b) => a.name.localeCompare(b.name)), [categories]);
+  const problems = useMemo(() => categories.filter((c) => c.type === 'problem').sort((a, b) => a.name.localeCompare(b.name)), [categories]);
 
   const loadAll = async () => {
     if (!token) return;
-    setLoading(true);
-    setMessage(null);
-
+    setLoading(true); setMessage(null);
     const requests = [
       { key: 'categories' as const, promise: axios.get(`${API_URL}/categories`, headers) },
       { key: 'operatori' as const, promise: axios.get(`${API_URL}/operatori?all=1`, headers) },
@@ -105,10 +79,8 @@ export default function AdminPanel() {
       { key: 'solutionsApplied' as const, promise: axios.get(`${API_URL}/solutions-applied`, headers) },
       { key: 'tipologie' as const, promise: axios.get(`${API_URL}/machines/tipologie`, headers) }
     ];
-
     const results = await Promise.allSettled(requests.map((r) => r.promise));
     const errors: string[] = [];
-
     results.forEach((result, index) => {
       const key = requests[index].key;
       if (result.status === 'fulfilled') {
@@ -121,40 +93,38 @@ export default function AdminPanel() {
         if (key === 'solutionsApplied') setSolutionsApplied(items);
         if (key === 'tipologie') setAvailableTipologie(items);
       } else {
-        const errMsg = (result.reason as any)?.response?.data?.error;
-        errors.push(errMsg ?? `Errore caricamento ${key}`);
+        errors.push((result.reason as any)?.response?.data?.error ?? `Errore caricamento ${key}`);
       }
     });
-
-    if (errors.length) {
-      setMessage(`Alcuni dati non sono stati caricati: ${errors.join(' · ')}`);
-    }
-
+    if (errors.length) setMessage(`Alcuni dati non sono stati caricati: ${errors.join(' · ')}`);
     setLoading(false);
   };
 
-  useEffect(() => {
-    loadAll();
-  }, [token]);
+  useEffect(() => { loadAll(); }, [token]);
 
   useEffect(() => {
-    if (activeTab === 'problemi') {
-      setCategoryForm((c) => ({ ...c, type: 'problem' }));
-    } else if (activeTab === 'cause') {
-      setCategoryForm((c) => ({ ...c, type: 'cause' }));
-    }
+    if (activeTab === 'problemi') setCategoryForm((c) => ({ ...c, type: 'problem' }));
+    else if (activeTab === 'cause') setCategoryForm((c) => ({ ...c, type: 'cause' }));
   }, [activeTab]);
 
-  const startEditUser = (user: User) => {
-    setEditingUser(user);
-    setUserEditForm({ username: user.username, email: user.email || '', password: '' });
-  };
+  // ---- Reset form quando cambio tab ----
+  useEffect(() => {
+    setEditingCategoryId(null);
+    setEditingMachineId(null);
+    setEditingSparePartId(null);
+    setEditingSolutionId(null);
+    setEditingOperatoreId(null);
+    setCategoryForm((c) => ({ type: activeTab === 'cause' ? 'cause' : 'problem', name: '', description: '' }));
+    setCategoryProblemIds([]);
+    setMachineForm({ code: '', name: '', line: '', location: '', tipologia: '' });
+    setSparePartForm({ name: '', tipologie: [], description: '' });
+    setSolutionForm({ name: '', description: '', cause_id: '' });
+    setOperatoreForm({ nome: '', attivo: true });
+  }, [activeTab]);
 
-  const cancelEditUser = () => {
-    setEditingUser(null);
-    setUserEditForm({ username: '', email: '', password: '' });
-  };
-
+  // ---- Utenti ----
+  const startEditUser = (user: User) => { setEditingUser(user); setUserEditForm({ username: user.username, email: user.email || '', password: '' }); };
+  const cancelEditUser = () => { setEditingUser(null); setUserEditForm({ username: '', email: '', password: '' }); };
   const submitUserEdit = async () => {
     if (!editingUser) return;
     try {
@@ -162,28 +132,16 @@ export default function AdminPanel() {
       if (userEditForm.username) payload.username = userEditForm.username;
       if (userEditForm.email) payload.email = userEditForm.email;
       if (userEditForm.password) payload.password = userEditForm.password;
-
-      if (Object.keys(payload).length === 0) {
-        setMessage('Nessun campo da aggiornare.');
-        return;
-      }
-
+      if (Object.keys(payload).length === 0) { setMessage('Nessun campo da aggiornare.'); return; }
       await axios.put(`${API_URL}/users/${editingUser.id}`, payload, headers);
-      setMessage('Utente aggiornato.');
-      setEditingUser(null);
-      setUserEditForm({ username: '', email: '', password: '' });
-      loadAll();
-    } catch (err: any) {
-      setMessage(err?.response?.data?.error ?? 'Errore aggiornamento utente.');
-    }
+      setMessage('Utente aggiornato.'); cancelEditUser(); loadAll();
+    } catch (err: any) { setMessage(err?.response?.data?.error ?? 'Errore aggiornamento utente.'); }
   };
 
+  // ---- Operatori ----
   const submitOperatore = async () => {
     try {
-      if (!operatoreForm.nome.trim()) {
-        setMessage('Il nome operatore è obbligatorio.');
-        return;
-      }
+      if (!operatoreForm.nome.trim()) { setMessage('Il nome operatore è obbligatorio.'); return; }
       if (editingOperatoreId) {
         await axios.put(`${API_URL}/operatori/${editingOperatoreId}`, operatoreForm, headers);
         setMessage('Operatore aggiornato.');
@@ -191,93 +149,106 @@ export default function AdminPanel() {
         await axios.post(`${API_URL}/operatori`, operatoreForm, headers);
         setMessage('Operatore creato.');
       }
-      setOperatoreForm({ nome: '', attivo: true });
-      setEditingOperatoreId(null);
-      loadAll();
-    } catch (err: any) {
-      setMessage(err?.response?.data?.error ?? 'Errore salvataggio operatore.');
-    }
+      setOperatoreForm({ nome: '', attivo: true }); setEditingOperatoreId(null); loadAll();
+    } catch (err: any) { setMessage(err?.response?.data?.error ?? 'Errore salvataggio operatore.'); }
   };
+  const startEditOperatore = (op: Operatore) => { setEditingOperatoreId(op.id); setOperatoreForm({ nome: op.nome, attivo: op.attivo }); };
+  const cancelEditOperatore = () => { setEditingOperatoreId(null); setOperatoreForm({ nome: '', attivo: true }); };
 
-  const startEditOperatore = (op: Operatore) => {
-    setEditingOperatoreId(op.id);
-    setOperatoreForm({ nome: op.nome, attivo: op.attivo });
-  };
-
-  const cancelEditOperatore = () => {
-    setEditingOperatoreId(null);
-    setOperatoreForm({ nome: '', attivo: true });
-  };
-
+  // ---- Categorie (Problemi e Cause) ----
   const submitCategory = async () => {
     try {
-      await axios.post(`${API_URL}/categories`, categoryForm, headers);
-      setMessage('Categoria creata.');
+      const payload = { ...categoryForm, problem_ids: categoryForm.type === 'cause' ? categoryProblemIds : undefined };
+      if (editingCategoryId) {
+        await axios.put(`${API_URL}/categories/${editingCategoryId}`, payload, headers);
+        setMessage('Aggiornato.');
+      } else {
+        await axios.post(`${API_URL}/categories`, payload, headers);
+        setMessage('Creato.');
+      }
       setCategoryForm((prev) => ({ type: prev.type, name: '', description: '' }));
-      loadAll();
-    } catch (err: any) {
-      setMessage(err?.response?.data?.error ?? 'Errore salvataggio categoria.');
+      setCategoryProblemIds([]); setEditingCategoryId(null); loadAll();
+    } catch (err: any) { setMessage(err?.response?.data?.error ?? 'Errore salvataggio.'); }
+  };
+  const startEditCategory = (cat: Category) => {
+    setEditingCategoryId(cat.id);
+    setCategoryForm({ type: cat.type, name: cat.name, description: cat.description || '' });
+    // Carica i problem_ids associati alla causa
+    if (cat.type === 'cause') {
+      axios.get(`${API_URL}/categories/problems-by-cause/${cat.id}`, headers)
+        .then((r) => setCategoryProblemIds((r.data.items || []).map((p: any) => p.id)))
+        .catch(() => setCategoryProblemIds([]));
     }
   };
+  const cancelEditCategory = () => { setEditingCategoryId(null); setCategoryForm((c) => ({ ...c, name: '', description: '' })); setCategoryProblemIds([]); };
 
+  // ---- Macchine ----
   const submitMachine = async () => {
     try {
-      await axios.post(`${API_URL}/machines`, { ...machineForm, tipologia: machineForm.tipologia || undefined }, headers);
-      setMessage('Macchina aggiunta.');
-      setMachineForm({ code: '', name: '', line: '', location: '', tipologia: '' });
-      loadAll();
-    } catch (err: any) {
-      setMessage(err?.response?.data?.error ?? 'Errore salvataggio macchina.');
-    }
+      const payload = { ...machineForm, tipologia: machineForm.tipologia || undefined };
+      if (editingMachineId) {
+        await axios.put(`${API_URL}/machines/${editingMachineId}`, payload, headers);
+        setMessage('Macchina aggiornata.');
+      } else {
+        await axios.post(`${API_URL}/machines`, payload, headers);
+        setMessage('Macchina aggiunta.');
+      }
+      setMachineForm({ code: '', name: '', line: '', location: '', tipologia: '' }); setEditingMachineId(null); loadAll();
+    } catch (err: any) { setMessage(err?.response?.data?.error ?? 'Errore salvataggio macchina.'); }
   };
+  const startEditMachine = (m: Machine) => { setEditingMachineId(m.id); setMachineForm({ code: m.code, name: m.name, line: m.line || '', location: m.location || '', tipologia: m.tipologia || m.type || '' }); };
+  const cancelEditMachine = () => { setEditingMachineId(null); setMachineForm({ code: '', name: '', line: '', location: '', tipologia: '' }); };
 
+  // ---- Ricambi ----
+  const submitSparePart = async () => {
+    try {
+      if (editingSparePartId) {
+        await axios.put(`${API_URL}/spare-parts/${editingSparePartId}`, sparePartForm, headers);
+        setMessage('Ricambio aggiornato.');
+      } else {
+        await axios.post(`${API_URL}/spare-parts`, sparePartForm, headers);
+        setMessage('Ricambio aggiunto.');
+      }
+      setSparePartForm({ name: '', tipologie: [], description: '' }); setEditingSparePartId(null); loadAll();
+    } catch (err: any) { setMessage(err?.response?.data?.error ?? 'Errore salvataggio ricambio.'); }
+  };
+  const startEditSparePart = (part: SparePart) => {
+    setEditingSparePartId(part.id);
+    const tList = part.tipologie && part.tipologie.length ? part.tipologie : (part.tipologia && part.tipologia.length ? part.tipologia : []);
+    setSparePartForm({ name: part.name, tipologie: tList, description: part.description || '' });
+  };
+  const cancelEditSparePart = () => { setEditingSparePartId(null); setSparePartForm({ name: '', tipologie: [], description: '' }); };
+
+  // ---- Soluzioni ----
+  const submitSolution = async () => {
+    try {
+      const payload = { name: solutionForm.name, description: solutionForm.description, cause_id: solutionForm.cause_id || null };
+      if (editingSolutionId) {
+        await axios.put(`${API_URL}/solutions-applied/${editingSolutionId}`, payload, headers);
+        setMessage('Soluzione aggiornata.');
+      } else {
+        await axios.post(`${API_URL}/solutions-applied`, payload, headers);
+        setMessage('Soluzione aggiunta.');
+      }
+      setSolutionForm({ name: '', description: '', cause_id: '' }); setEditingSolutionId(null); loadAll();
+    } catch (err: any) { setMessage(err?.response?.data?.error ?? 'Errore salvataggio soluzione.'); }
+  };
+  const startEditSolution = (sol: SolutionApplied) => { setEditingSolutionId(sol.id); setSolutionForm({ name: sol.name, description: sol.description || '', cause_id: sol.cause_id || '' }); };
+  const cancelEditSolution = () => { setEditingSolutionId(null); setSolutionForm({ name: '', description: '', cause_id: '' }); };
+
+  // ---- Elimina ----
   const submitUser = async () => {
     try {
       await axios.post(`${API_URL}/users`, userForm, headers);
-      setMessage('Utente creato.');
-      setUserForm({ username: '', email: '', password: '', role: 'user' });
-      loadAll();
-    } catch (err: any) {
-      setMessage(err?.response?.data?.error ?? 'Errore salvataggio utente.');
-    }
-  };
-
-  const submitSparePart = async () => {
-    try {
-      await axios.post(`${API_URL}/spare-parts`, sparePartForm, headers);
-      setMessage('Ricambio aggiunto.');
-      setSparePartForm({ name: '', tipologie: [], description: '' });
-      loadAll();
-    } catch (err: any) {
-      setMessage(err?.response?.data?.error ?? 'Errore salvataggio ricambio.');
-    }
-  };
-
-  const submitSolution = async () => {
-    try {
-      const payload = {
-        name: solutionForm.name,
-        description: solutionForm.description,
-        cause_id: solutionForm.cause_id || null
-      };
-      await axios.post(`${API_URL}/solutions-applied`, payload, headers);
-      setMessage('Soluzione aggiunta.');
-      setSolutionForm({ name: '', description: '', cause_id: '' });
-      loadAll();
-    } catch (err: any) {
-      setMessage(err?.response?.data?.error ?? 'Errore salvataggio soluzione.');
-    }
+      setMessage('Utente creato.'); setUserForm({ username: '', email: '', password: '', role: 'user' }); loadAll();
+    } catch (err: any) { setMessage(err?.response?.data?.error ?? 'Errore salvataggio utente.'); }
   };
 
   const deleteItem = async (type: 'categories' | 'machines' | 'users' | 'spare_parts' | 'solutions' | 'operatori', id: string) => {
     try {
-      const path = type === 'spare_parts' ? 'spare-parts'
-        : type === 'solutions' ? 'solutions-applied'
-        : type === 'operatori' ? 'operatori'
-        : type;
+      const path = type === 'spare_parts' ? 'spare-parts' : type === 'solutions' ? 'solutions-applied' : type === 'operatori' ? 'operatori' : type;
       await axios.delete(`${API_URL}/${path}/${id}`, headers);
-      setMessage('Elemento eliminato.');
-      loadAll();
+      setMessage('Elemento eliminato.'); loadAll();
     } catch (err: any) {
       const usage = err?.response?.data?.usage_count;
       setMessage(err?.response?.data?.error ?? (usage ? `In uso da ${usage} casi` : 'Eliminazione non consentita.'));
@@ -285,38 +256,19 @@ export default function AdminPanel() {
   };
 
   const requestDelete = (type: 'categories' | 'machines' | 'users' | 'spare_parts' | 'solutions' | 'operatori', id: string) => {
-    setPendingDeleteType(type);
-    setPendingDeleteId(id);
-    setConfirmOpen(true);
+    setPendingDeleteType(type); setPendingDeleteId(id); setConfirmOpen(true);
   };
 
   const confirmDelete = async () => {
     if (!pendingDeleteType || !pendingDeleteId) return;
     setConfirmOpen(false);
-    const type = pendingDeleteType;
-    const id = pendingDeleteId;
-    setPendingDeleteType(null);
-    setPendingDeleteId(null);
+    const type = pendingDeleteType; const id = pendingDeleteId;
+    setPendingDeleteType(null); setPendingDeleteId(null);
     await deleteItem(type, id);
   };
 
-  const tabLabels: Record<AdminTab, string> = {
-    operatori: 'Operatori',
-    problemi: 'Problemi',
-    cause: 'Cause',
-    macchine: 'Macchine',
-    utenti: 'Utenti',
-    ricambi: 'Pezzi di Ricambio',
-    soluzioni: 'Soluzioni'
-  };
-
-  const listTitle = activeTab === 'operatori' ? 'operatori'
-    : activeTab === 'problemi' ? 'problemi'
-    : activeTab === 'cause' ? 'cause'
-    : activeTab === 'macchine' ? 'macchine'
-    : activeTab === 'utenti' ? 'utenti'
-    : activeTab === 'ricambi' ? 'pezzi di ricambio'
-    : 'soluzioni applicate';
+  const tabLabels: Record<AdminTab, string> = { operatori: 'Operatori', problemi: 'Problemi', cause: 'Cause', macchine: 'Macchine', utenti: 'Utenti', ricambi: 'Pezzi di Ricambio', soluzioni: 'Soluzioni' };
+  const listTitle = activeTab === 'operatori' ? 'operatori' : activeTab === 'problemi' ? 'problemi' : activeTab === 'cause' ? 'cause' : activeTab === 'macchine' ? 'macchine' : activeTab === 'utenti' ? 'utenti' : activeTab === 'ricambi' ? 'pezzi di ricambio' : 'soluzioni applicate';
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
@@ -329,145 +281,126 @@ export default function AdminPanel() {
 
       <div className="flex flex-wrap gap-2 sm:gap-3">
         {(['operatori', 'problemi', 'cause', 'macchine', 'utenti', 'ricambi', 'soluzioni'] as const).map((tab) => (
-          <button
-            key={tab}
-            type="button"
-            onClick={() => setActiveTab(tab)}
-            className={`rounded-full px-4 py-2.5 text-xs font-semibold transition sm:px-5 sm:py-3 sm:text-sm ${
-              activeTab === tab ? 'bg-sky-500 text-slate-950' : 'bg-slate-900 text-slate-300 hover:bg-slate-800'
-            }`}
-          >
+          <button key={tab} type="button" onClick={() => setActiveTab(tab)}
+            className={`rounded-full px-4 py-2.5 text-xs font-semibold transition sm:px-5 sm:py-3 sm:text-sm ${activeTab === tab ? 'bg-sky-500 text-slate-950' : 'bg-slate-900 text-slate-300 hover:bg-slate-800'}`}>
             {tabLabels[tab]}
           </button>
         ))}
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.2fr_1fr]">
+        {/* FORM SINISTRA */}
         <div className="space-y-6 rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6">
 
+          {/* OPERATORI */}
           {activeTab === 'operatori' && (
             <>
               <div>
                 <h2 className="text-xl font-semibold text-slate-100">{editingOperatoreId ? 'Modifica operatore' : 'Nuovo operatore'}</h2>
-                <p className="text-sm text-slate-400">Gestisci gli operatori indipendentemente dagli utenti.</p>
+                <p className="text-sm text-slate-400">Gestisci gli operatori.</p>
               </div>
               <div className="grid grid-cols-1 gap-4">
                 <div>
                   <label className="text-sm text-slate-300">Nome operatore</label>
-                  <input
-                    value={operatoreForm.nome}
-                    onChange={(e) => setOperatoreForm((current) => ({ ...current, nome: e.target.value }))}
-                    placeholder="Nome operatore"
-                    className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
-                  />
+                  <input value={operatoreForm.nome} onChange={(e) => setOperatoreForm((c) => ({ ...c, nome: e.target.value }))} placeholder="Nome operatore" className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
                 </div>
                 <label className="flex items-center gap-3 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={operatoreForm.attivo}
-                    onChange={(e) => setOperatoreForm((current) => ({ ...current, attivo: e.target.checked }))}
-                    className="accent-sky-500 h-4 w-4 cursor-pointer rounded"
-                  />
+                  <input type="checkbox" checked={operatoreForm.attivo} onChange={(e) => setOperatoreForm((c) => ({ ...c, attivo: e.target.checked }))} className="accent-sky-500 h-4 w-4 cursor-pointer rounded" />
                   <span className="text-sm text-slate-300">Attivo</span>
                 </label>
               </div>
               <div className="flex flex-wrap gap-2">
-                <button type="button" className="rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-sky-400 transition" onClick={submitOperatore}>
-                  {editingOperatoreId ? 'Salva modifiche' : 'Aggiungi operatore'}
-                </button>
-                {editingOperatoreId && (
-                  <button type="button" className="rounded-2xl border border-slate-700 bg-slate-900 px-5 py-3 text-sm font-semibold text-slate-200 hover:bg-slate-800 transition" onClick={cancelEditOperatore}>
-                    Annulla
-                  </button>
-                )}
+                <button type="button" className="rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-sky-400 transition" onClick={submitOperatore}>{editingOperatoreId ? 'Salva modifiche' : 'Aggiungi operatore'}</button>
+                {editingOperatoreId && <button type="button" className="rounded-2xl border border-slate-700 bg-slate-900 px-5 py-3 text-sm font-semibold text-slate-200 hover:bg-slate-800 transition" onClick={cancelEditOperatore}>Annulla</button>}
               </div>
             </>
           )}
 
+          {/* PROBLEMI */}
           {activeTab === 'problemi' && (
             <>
               <div>
-                <h2 className="text-xl font-semibold text-slate-100">Nuovo problema</h2>
-                <p className="text-sm text-slate-400">Aggiungi una nuova tipologia di problema.</p>
+                <h2 className="text-xl font-semibold text-slate-100">{editingCategoryId ? 'Modifica problema' : 'Nuovo problema'}</h2>
+                <p className="text-sm text-slate-400">Aggiungi o modifica una tipologia di problema.</p>
               </div>
-              <div className="grid grid-cols-1 gap-4">
-                <div>
-                  <label className="text-sm text-slate-300">Nome</label>
-                  <input
-                    value={categoryForm.name}
-                    onChange={(e) => setCategoryForm((current) => ({ ...current, name: e.target.value }))}
-                    placeholder="Nome problema"
-                    className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
-                  />
-                </div>
+              <div>
+                <label className="text-sm text-slate-300">Nome</label>
+                <input value={categoryForm.name} onChange={(e) => setCategoryForm((c) => ({ ...c, name: e.target.value }))} placeholder="Nome problema" className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
               </div>
               <div>
                 <label className="text-sm text-slate-300">Descrizione</label>
-                <textarea
-                  value={categoryForm.description}
-                  onChange={(e) => setCategoryForm((current) => ({ ...current, description: e.target.value }))}
-                  rows={4}
-                  placeholder="Descrizione (opzionale)"
-                  className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
-                />
+                <textarea value={categoryForm.description} onChange={(e) => setCategoryForm((c) => ({ ...c, description: e.target.value }))} rows={3} placeholder="Descrizione (opzionale)" className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
               </div>
-              <button type="button" className="w-full rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 sm:w-auto hover:bg-sky-400 transition" onClick={submitCategory}>
-                Aggiungi problema
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className="rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-sky-400 transition" onClick={submitCategory}>{editingCategoryId ? 'Salva modifiche' : 'Aggiungi problema'}</button>
+                {editingCategoryId && <button type="button" className="rounded-2xl border border-slate-700 bg-slate-900 px-5 py-3 text-sm font-semibold text-slate-200 hover:bg-slate-800 transition" onClick={cancelEditCategory}>Annulla</button>}
+              </div>
             </>
           )}
 
+          {/* CAUSE */}
           {activeTab === 'cause' && (
             <>
               <div>
-                <h2 className="text-xl font-semibold text-slate-100">Nuova causa</h2>
-                <p className="text-sm text-slate-400">Aggiungi una nuova causa di guasto.</p>
+                <h2 className="text-xl font-semibold text-slate-100">{editingCategoryId ? 'Modifica causa' : 'Nuova causa'}</h2>
+                <p className="text-sm text-slate-400">Ogni causa può essere associata a più problemi.</p>
               </div>
-              <div className="grid grid-cols-1 gap-4">
-                <div>
-                  <label className="text-sm text-slate-300">Nome</label>
-                  <input
-                    value={categoryForm.name}
-                    onChange={(e) => setCategoryForm((current) => ({ ...current, name: e.target.value }))}
-                    placeholder="Nome causa"
-                    className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
-                  />
-                </div>
+              <div>
+                <label className="text-sm text-slate-300">Nome</label>
+                <input value={categoryForm.name} onChange={(e) => setCategoryForm((c) => ({ ...c, name: e.target.value }))} placeholder="Nome causa" className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
+              </div>
+              <div>
+                <label className="text-sm text-slate-300">Problemi associati</label>
+                {problems.length === 0 ? (
+                  <p className="mt-1 text-xs text-slate-500">Nessun problema disponibile. Creane uno prima nel tab "Problemi".</p>
+                ) : (
+                  <div className="mt-2 flex flex-wrap gap-2 p-3 rounded-2xl border border-slate-800 bg-slate-900/30">
+                    {problems.map((p) => {
+                      const checked = categoryProblemIds.includes(p.id);
+                      return (
+                        <label key={p.id} className="flex items-center gap-2 cursor-pointer bg-slate-950 px-3.5 py-2 rounded-xl border border-slate-800 hover:bg-slate-800/80 transition select-none">
+                          <input type="checkbox" checked={checked} onChange={(e) => {
+                            setCategoryProblemIds(e.target.checked ? [...categoryProblemIds, p.id] : categoryProblemIds.filter((x) => x !== p.id));
+                          }} className="accent-sky-500 h-4 w-4 cursor-pointer" />
+                          <span className="text-sm text-slate-200">{p.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
               <div>
                 <label className="text-sm text-slate-300">Descrizione</label>
-                <textarea
-                  value={categoryForm.description}
-                  onChange={(e) => setCategoryForm((current) => ({ ...current, description: e.target.value }))}
-                  rows={4}
-                  placeholder="Descrizione (opzionale)"
-                  className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
-                />
+                <textarea value={categoryForm.description} onChange={(e) => setCategoryForm((c) => ({ ...c, description: e.target.value }))} rows={3} placeholder="Descrizione (opzionale)" className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
               </div>
-              <button type="button" className="w-full rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 sm:w-auto hover:bg-sky-400 transition" onClick={submitCategory}>
-                Aggiungi causa
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className="rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-sky-400 transition" onClick={submitCategory}>{editingCategoryId ? 'Salva modifiche' : 'Aggiungi causa'}</button>
+                {editingCategoryId && <button type="button" className="rounded-2xl border border-slate-700 bg-slate-900 px-5 py-3 text-sm font-semibold text-slate-200 hover:bg-slate-800 transition" onClick={cancelEditCategory}>Annulla</button>}
+              </div>
             </>
           )}
 
+          {/* MACCHINE */}
           {activeTab === 'macchine' && (
             <>
               <div>
-                <h2 className="text-xl font-semibold text-slate-100">Nuova macchina</h2>
-                <p className="text-sm text-slate-400">Aggiungi qui le macchine della linea.</p>
+                <h2 className="text-xl font-semibold text-slate-100">{editingMachineId ? 'Modifica macchina' : 'Nuova macchina'}</h2>
+                <p className="text-sm text-slate-400">Aggiungi o modifica le macchine della linea.</p>
               </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <input value={machineForm.code} onChange={(e) => setMachineForm((c) => ({ ...c, code: e.target.value }))} placeholder="Codice macchina" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
                 <input value={machineForm.name} onChange={(e) => setMachineForm((c) => ({ ...c, name: e.target.value }))} placeholder="Nome macchina" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
                 <input value={machineForm.line} onChange={(e) => setMachineForm((c) => ({ ...c, line: e.target.value }))} placeholder="Linea" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
-                <input value={machineForm.tipologia} onChange={(e) => setMachineForm((c) => ({ ...c, tipologia: e.target.value }))} placeholder="Tipologia (es. nastro, assemblaggio, controllo, imballaggio)" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none sm:col-span-2" />
+                <input value={machineForm.tipologia} onChange={(e) => setMachineForm((c) => ({ ...c, tipologia: e.target.value }))} placeholder="Tipologia" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
               </div>
-              <button type="button" className="w-full rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 sm:w-auto hover:bg-sky-400 transition" onClick={submitMachine}>
-                Aggiungi macchina
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className="rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-sky-400 transition" onClick={submitMachine}>{editingMachineId ? 'Salva modifiche' : 'Aggiungi macchina'}</button>
+                {editingMachineId && <button type="button" className="rounded-2xl border border-slate-700 bg-slate-900 px-5 py-3 text-sm font-semibold text-slate-200 hover:bg-slate-800 transition" onClick={cancelEditMachine}>Annulla</button>}
+              </div>
             </>
           )}
 
+          {/* UTENTI */}
           {activeTab === 'utenti' && (
             <>
               <div>
@@ -483,103 +416,71 @@ export default function AdminPanel() {
                   <option value="admin">Admin</option>
                 </select>
               </div>
-              <button type="button" className="w-full rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 sm:w-auto hover:bg-sky-400 transition" onClick={submitUser}>
-                Crea utente
-              </button>
+              <button type="button" className="w-full rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 sm:w-auto hover:bg-sky-400 transition" onClick={submitUser}>Crea utente</button>
             </>
           )}
 
+          {/* RICAMBI */}
           {activeTab === 'ricambi' && (
             <>
               <div>
-                <h2 className="text-xl font-semibold text-slate-100">Nuovo pezzo di ricambio</h2>
+                <h2 className="text-xl font-semibold text-slate-100">{editingSparePartId ? 'Modifica ricambio' : 'Nuovo pezzo di ricambio'}</h2>
                 <p className="text-sm text-slate-400">Aggiungi pezzi di ricambio collegati alle tipologie di macchine.</p>
               </div>
-              <div className="space-y-4">
-                <input value={sparePartForm.name} onChange={(e) => setSparePartForm((c) => ({ ...c, name: e.target.value }))} placeholder="Nome ricambio" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
-                <div>
-                  <span className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Tipologie Macchine Collegate</span>
-                  {availableTipologie.length === 0 ? (
-                    <p className="text-sm text-slate-500 bg-slate-900/50 p-3 rounded-2xl border border-slate-800">
-                      Nessuna tipologia trovata. Crea prima una macchina con una tipologia.
-                    </p>
-                  ) : (
-                    <div className="flex flex-wrap gap-2 p-3 rounded-2xl border border-slate-800 bg-slate-900/30">
-                      {availableTipologie.map((t) => {
-                        const isChecked = sparePartForm.tipologie.includes(t);
-                        return (
-                          <label key={t} className="flex items-center gap-2 cursor-pointer bg-slate-950 px-3.5 py-2 rounded-xl border border-slate-800 hover:bg-slate-800/80 transition select-none">
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={(e) => {
-                                const nextTipologie = e.target.checked
-                                  ? [...sparePartForm.tipologie, t]
-                                  : sparePartForm.tipologie.filter((x) => x !== t);
-                                setSparePartForm((c) => ({ ...c, tipologie: nextTipologie }));
-                              }}
-                              className="accent-sky-500 h-4 w-4 cursor-pointer"
-                            />
-                            <span className="text-sm text-slate-200">{t}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
+              <input value={sparePartForm.name} onChange={(e) => setSparePartForm((c) => ({ ...c, name: e.target.value }))} placeholder="Nome ricambio" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
+              <div>
+                <span className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Tipologie Macchine Collegate</span>
+                {availableTipologie.length === 0 ? (
+                  <p className="text-sm text-slate-500 bg-slate-900/50 p-3 rounded-2xl border border-slate-800">Nessuna tipologia trovata.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2 p-3 rounded-2xl border border-slate-800 bg-slate-900/30">
+                    {availableTipologie.map((t) => {
+                      const isChecked = sparePartForm.tipologie.includes(t);
+                      return (
+                        <label key={t} className="flex items-center gap-2 cursor-pointer bg-slate-950 px-3.5 py-2 rounded-xl border border-slate-800 hover:bg-slate-800/80 transition select-none">
+                          <input type="checkbox" checked={isChecked} onChange={(e) => {
+                            setSparePartForm((c) => ({ ...c, tipologie: e.target.checked ? [...c.tipologie, t] : c.tipologie.filter((x) => x !== t) }));
+                          }} className="accent-sky-500 h-4 w-4 cursor-pointer" />
+                          <span className="text-sm text-slate-200">{t}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
               <textarea value={sparePartForm.description} onChange={(e) => setSparePartForm((c) => ({ ...c, description: e.target.value }))} rows={3} placeholder="Descrizione (opzionale)" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
-              <button type="button" className="w-full rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 sm:w-auto hover:bg-sky-400 transition" onClick={submitSparePart}>
-                Aggiungi ricambio
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className="rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-sky-400 transition" onClick={submitSparePart}>{editingSparePartId ? 'Salva modifiche' : 'Aggiungi ricambio'}</button>
+                {editingSparePartId && <button type="button" className="rounded-2xl border border-slate-700 bg-slate-900 px-5 py-3 text-sm font-semibold text-slate-200 hover:bg-slate-800 transition" onClick={cancelEditSparePart}>Annulla</button>}
+              </div>
             </>
           )}
 
+          {/* SOLUZIONI */}
           {activeTab === 'soluzioni' && (
             <>
               <div>
-                <h2 className="text-xl font-semibold text-slate-100">Nuova soluzione applicata</h2>
+                <h2 className="text-xl font-semibold text-slate-100">{editingSolutionId ? 'Modifica soluzione' : 'Nuova soluzione applicata'}</h2>
                 <p className="text-sm text-slate-400">Aggiungi una soluzione e collegala a una causa specifica.</p>
               </div>
-
-              <input
-                value={solutionForm.name}
-                onChange={(e) => setSolutionForm((c) => ({ ...c, name: e.target.value }))}
-                placeholder="Nome soluzione"
-                className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
-              />
-
+              <input value={solutionForm.name} onChange={(e) => setSolutionForm((c) => ({ ...c, name: e.target.value }))} placeholder="Nome soluzione" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
               <div>
-                <label className="text-sm text-slate-300">Causa associata <span className="text-slate-500">(obbligatoria)</span></label>
-                <select
-                  value={solutionForm.cause_id}
-                  onChange={(e) => setSolutionForm((c) => ({ ...c, cause_id: e.target.value }))}
-                  className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
-                >
+                <label className="text-sm text-slate-300">Causa associata</label>
+                <select value={solutionForm.cause_id} onChange={(e) => setSolutionForm((c) => ({ ...c, cause_id: e.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none">
                   <option value="">Seleziona causa...</option>
-                  {causes.map((cause) => (
-                    <option key={cause.id} value={cause.id}>{cause.name}</option>
-                  ))}
+                  {causes.map((cause) => <option key={cause.id} value={cause.id}>{cause.name}</option>)}
                 </select>
-                {causes.length === 0 && (
-                  <p className="mt-1 text-xs text-slate-500">Nessuna causa disponibile. Crea prima una causa nel tab "Cause".</p>
-                )}
               </div>
-
-              <textarea
-                value={solutionForm.description}
-                onChange={(e) => setSolutionForm((c) => ({ ...c, description: e.target.value }))}
-                rows={4}
-                placeholder="Descrizione (opzionale)"
-                className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
-              />
-              <button type="button" className="w-full rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 sm:w-auto hover:bg-sky-400 transition" onClick={submitSolution}>
-                Aggiungi soluzione
-              </button>
+              <textarea value={solutionForm.description} onChange={(e) => setSolutionForm((c) => ({ ...c, description: e.target.value }))} rows={4} placeholder="Descrizione (opzionale)" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className="rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-sky-400 transition" onClick={submitSolution}>{editingSolutionId ? 'Salva modifiche' : 'Aggiungi soluzione'}</button>
+                {editingSolutionId && <button type="button" className="rounded-2xl border border-slate-700 bg-slate-900 px-5 py-3 text-sm font-semibold text-slate-200 hover:bg-slate-800 transition" onClick={cancelEditSolution}>Annulla</button>}
+              </div>
             </>
           )}
         </div>
 
+        {/* LISTA DESTRA */}
         <div className="space-y-6 rounded-3xl bg-slate-950/95 p-5 shadow-xl shadow-slate-950/10 sm:p-6">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold text-slate-100">Elenco {listTitle}</h2>
@@ -592,38 +493,33 @@ export default function AdminPanel() {
                 <div key={op.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <div className="font-semibold text-slate-100">{op.nome}</div>
-                    <div className={`text-sm ${op.attivo ? 'text-emerald-400' : 'text-slate-500'}`}>
-                      {op.attivo ? 'Attivo' : 'Inattivo'}
-                    </div>
+                    <div className={`text-sm ${op.attivo ? 'text-emerald-400' : 'text-slate-500'}`}>{op.attivo ? 'Attivo' : 'Inattivo'}</div>
                   </div>
                   <div className="flex gap-2">
-                    <button type="button" className="rounded-2xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition" onClick={() => startEditOperatore(op)}>
-                      Modifica
-                    </button>
+                    <button type="button" className="rounded-2xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition" onClick={() => startEditOperatore(op)}>Modifica</button>
                     <DeleteButton itemId={op.id} usageCount={op.usage_count} type="operatori" onDelete={requestDelete} />
                   </div>
                 </div>
               ))}
-              {operatori.length === 0 && (
-                <p className="text-sm text-slate-500 italic text-center py-4">Nessun operatore configurato.</p>
-              )}
+              {operatori.length === 0 && <p className="text-sm text-slate-500 italic text-center py-4">Nessun operatore configurato.</p>}
             </div>
           )}
 
           {activeTab === 'problemi' && (
             <div className="space-y-4">
-              {categories.filter((c) => c.type === 'problem').sort((a,b) => a.name.localeCompare(b.name)).map((category) => (
+              {problems.map((category) => (
                 <div key={category.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <div className="font-semibold text-slate-100">{category.name}</div>
                     <div className="text-sm text-slate-500">{category.description || 'Nessuna descrizione'}</div>
                   </div>
-                  <DeleteButton itemId={category.id} usageCount={category.usage_count} type="categories" onDelete={requestDelete} />
+                  <div className="flex gap-2">
+                    <button type="button" className="rounded-2xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition" onClick={() => startEditCategory(category)}>Modifica</button>
+                    <DeleteButton itemId={category.id} usageCount={category.usage_count} type="categories" onDelete={requestDelete} />
+                  </div>
                 </div>
               ))}
-              {categories.filter((c) => c.type === 'problem').length === 0 && (
-                <p className="text-sm text-slate-500 italic text-center py-4">Nessun problema configurato.</p>
-              )}
+              {problems.length === 0 && <p className="text-sm text-slate-500 italic text-center py-4">Nessun problema configurato.</p>}
             </div>
           )}
 
@@ -635,29 +531,31 @@ export default function AdminPanel() {
                     <div className="font-semibold text-slate-100">{category.name}</div>
                     <div className="text-sm text-slate-500">{category.description || 'Nessuna descrizione'}</div>
                   </div>
-                  <DeleteButton itemId={category.id} usageCount={category.usage_count} type="categories" onDelete={requestDelete} />
+                  <div className="flex gap-2">
+                    <button type="button" className="rounded-2xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition" onClick={() => startEditCategory(category)}>Modifica</button>
+                    <DeleteButton itemId={category.id} usageCount={category.usage_count} type="categories" onDelete={requestDelete} />
+                  </div>
                 </div>
               ))}
-              {causes.length === 0 && (
-                <p className="text-sm text-slate-500 italic text-center py-4">Nessuna causa configurata.</p>
-              )}
+              {causes.length === 0 && <p className="text-sm text-slate-500 italic text-center py-4">Nessuna causa configurata.</p>}
             </div>
           )}
 
           {activeTab === 'macchine' && (
             <div className="space-y-4">
-              {machines.sort((a,b) => a.name.localeCompare(b.name)).map((machine) => (
+              {machines.sort((a, b) => a.name.localeCompare(b.name)).map((machine) => (
                 <div key={machine.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <div className="font-semibold text-slate-100">{machine.code} - {machine.name}</div>
                     <div className="text-sm text-slate-500">{machine.line || 'Linea N/D'} · Tipologia: {machine.tipologia || 'Non specificata'}</div>
                   </div>
-                  <DeleteButton itemId={machine.id} usageCount={machine.usage_count} type="machines" onDelete={requestDelete} />
+                  <div className="flex gap-2">
+                    <button type="button" className="rounded-2xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition" onClick={() => startEditMachine(machine)}>Modifica</button>
+                    <DeleteButton itemId={machine.id} usageCount={machine.usage_count} type="machines" onDelete={requestDelete} />
+                  </div>
                 </div>
               ))}
-              {machines.length === 0 && (
-                <p className="text-sm text-slate-500 italic text-center py-4">Nessuna macchina configurata.</p>
-              )}
+              {machines.length === 0 && <p className="text-sm text-slate-500 italic text-center py-4">Nessuna macchina configurata.</p>}
             </div>
           )}
 
@@ -672,21 +570,13 @@ export default function AdminPanel() {
                       <div className="text-sm text-slate-500">{userItem.email || 'Email non fornita'} · ruolo: {userItem.role}</div>
                     </div>
                     <div className="flex gap-2">
-                      <button type="button" className="rounded-2xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition" onClick={() => startEditUser(userItem)}>
-                        Modifica
-                      </button>
-                      {!isAdmin && (
-                        <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400 transition" onClick={() => requestDelete('users', userItem.id)}>
-                          Elimina
-                        </button>
-                      )}
+                      <button type="button" className="rounded-2xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition" onClick={() => startEditUser(userItem)}>Modifica</button>
+                      {!isAdmin && <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400 transition" onClick={() => requestDelete('users', userItem.id)}>Elimina</button>}
                     </div>
                   </div>
                 );
               })}
-              {users.length === 0 && (
-                <p className="text-sm text-slate-500 italic text-center py-4">Nessun utente configurato.</p>
-              )}
+              {users.length === 0 && <p className="text-sm text-slate-500 italic text-center py-4">Nessun utente configurato.</p>}
             </div>
           )}
 
@@ -698,17 +588,16 @@ export default function AdminPanel() {
                   <div key={part.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <div className="font-semibold text-slate-100">{part.name}</div>
-                      <div className="text-sm text-slate-500">
-                        Tipologie: {partTipologie.length ? partTipologie.join(', ') : 'Nessuna'} · {part.description || 'Nessuna descrizione'}
-                      </div>
+                      <div className="text-sm text-slate-500">Tipologie: {partTipologie.length ? partTipologie.join(', ') : 'Nessuna'} · {part.description || 'Nessuna descrizione'}</div>
                     </div>
-                    <DeleteButton itemId={part.id} usageCount={part.usage_count} type="spare_parts" onDelete={requestDelete} />
+                    <div className="flex gap-2">
+                      <button type="button" className="rounded-2xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition" onClick={() => startEditSparePart(part)}>Modifica</button>
+                      <DeleteButton itemId={part.id} usageCount={part.usage_count} type="spare_parts" onDelete={requestDelete} />
+                    </div>
                   </div>
                 );
               })}
-              {spareParts.length === 0 && (
-                <p className="text-sm text-slate-500 italic text-center py-4">Nessun pezzo di ricambio configurato.</p>
-              )}
+              {spareParts.length === 0 && <p className="text-sm text-slate-500 italic text-center py-4">Nessun pezzo di ricambio configurato.</p>}
             </div>
           )}
 
@@ -719,36 +608,24 @@ export default function AdminPanel() {
                   <div>
                     <div className="font-semibold text-slate-100">{sol.name}</div>
                     <div className="text-sm text-slate-500">
-                      {sol.cause_name
-                        ? <span className="text-sky-400/80">Causa: {sol.cause_name}</span>
-                        : <span className="italic">Nessuna causa associata</span>
-                      }
+                      {sol.cause_name ? <span className="text-sky-400/80">Causa: {sol.cause_name}</span> : <span className="italic">Nessuna causa associata</span>}
                       {sol.description && <span> · {sol.description}</span>}
                     </div>
                   </div>
-                  <DeleteButton itemId={sol.id} usageCount={sol.usage_count} type="solutions" onDelete={requestDelete} />
+                  <div className="flex gap-2">
+                    <button type="button" className="rounded-2xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition" onClick={() => startEditSolution(sol)}>Modifica</button>
+                    <DeleteButton itemId={sol.id} usageCount={sol.usage_count} type="solutions" onDelete={requestDelete} />
+                  </div>
                 </div>
               ))}
-              {solutionsApplied.length === 0 && (
-                <p className="text-sm text-slate-500 italic text-center py-4">Nessuna soluzione applicata configurata.</p>
-              )}
+              {solutionsApplied.length === 0 && <p className="text-sm text-slate-500 italic text-center py-4">Nessuna soluzione applicata configurata.</p>}
             </div>
           )}
         </div>
       </div>
 
-      <ConfirmModal
-        open={confirmOpen}
-        title="Conferma eliminazione"
-        message="Sei sicuro di cancellare?"
-        confirmText="Elimina"
-        cancelText="Annulla"
-        danger
-        onCancel={() => {
-          setConfirmOpen(false);
-          setPendingDeleteId(null);
-          setPendingDeleteType(null);
-        }}
+      <ConfirmModal open={confirmOpen} title="Conferma eliminazione" message="Sei sicuro di cancellare?" confirmText="Elimina" cancelText="Annulla" danger
+        onCancel={() => { setConfirmOpen(false); setPendingDeleteId(null); setPendingDeleteType(null); }}
         onConfirm={confirmDelete}
       />
 
