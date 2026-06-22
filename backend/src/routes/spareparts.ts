@@ -131,14 +131,18 @@ sparepartsRoutes.delete('/spare-parts/:id', authMiddleware, async (req, res, nex
 });
 
 
-// GET tutte le soluzioni (con causa associata)
+// GET tutte le soluzioni (con causa e problemi associati)
 sparepartsRoutes.get('/solutions-applied', authMiddleware, async (_req, res, next) => {
   try {
     const r = await pool.query(
       `SELECT sa.id, sa.name, sa.description, sa.created_at, sa.cause_id,
               c.name AS cause_name,
               ((SELECT COUNT(*)::int FROM case_solutions_applied csa WHERE csa.solution_id = sa.id) +
-               (SELECT COUNT(*)::int FROM case_solutions_tried cst WHERE cst.solution_id = sa.id))::int AS usage_count
+               (SELECT COUNT(*)::int FROM case_solutions_tried cst WHERE cst.solution_id = sa.id))::int AS usage_count,
+              COALESCE(
+                (SELECT ARRAY_AGG(ps.problem_id::text) FROM problem_solutions ps WHERE ps.solution_id = sa.id),
+                '{}'
+              ) AS problem_ids
        FROM solutions_applied sa
        LEFT JOIN categories c ON c.id = sa.cause_id
        ORDER BY sa.name ASC`
@@ -167,18 +171,113 @@ sparepartsRoutes.get('/solutions-applied/by-cause/:causeId', authMiddleware, asy
   }
 });
 
+// GET problems associati a una soluzione
+sparepartsRoutes.get('/solutions-applied/:id/problems', authMiddleware, async (req, res, next) => {
+  try {
+    const r = await pool.query(
+      `SELECT c.id, c.name FROM categories c
+       INNER JOIN problem_solutions ps ON ps.problem_id = c.id
+       WHERE ps.solution_id = $1 AND c.type = 'problem'
+       ORDER BY c.name`,
+      [req.params.id]
+    );
+    res.json({ items: r.rows });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// POST nuova soluzione
 sparepartsRoutes.post('/solutions-applied', authMiddleware, async (req, res, next) => {
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
 
-    const { name, description, cause_id } = req.body as { name?: string; description?: string; cause_id?: string };
+    const { name, description, cause_id, problem_ids } = req.body as {
+      name?: string;
+      description?: string;
+      cause_id?: string;
+      problem_ids?: string[];
+    };
     if (!name?.trim()) return res.status(400).json({ error: 'name è obbligatorio' });
 
-    const r = await pool.query(
-      'INSERT INTO solutions_applied(name, description, cause_id) VALUES($1, $2, $3) RETURNING *',
-      [name.trim(), description?.trim() ?? null, cause_id ?? null]
-    );
-    res.json({ item: r.rows[0] });
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const r = await client.query(
+        'INSERT INTO solutions_applied(name, description, cause_id) VALUES($1, $2, $3) RETURNING *',
+        [name.trim(), description?.trim() ?? null, cause_id ?? null]
+      );
+      const newSol = r.rows[0];
+
+      if (Array.isArray(problem_ids) && problem_ids.length > 0) {
+        for (const pid of problem_ids) {
+          await client.query(
+            'INSERT INTO problem_solutions(problem_id, solution_id) VALUES($1,$2) ON CONFLICT DO NOTHING',
+            [pid, newSol.id]
+          );
+        }
+      }
+
+      await client.query('COMMIT');
+      res.json({ item: { ...newSol, problem_ids: problem_ids ?? [] } });
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  } catch (e) {
+    next(e);
+  }
+});
+
+// PUT aggiorna soluzione
+sparepartsRoutes.put('/solutions-applied/:id', authMiddleware, async (req, res, next) => {
+  try {
+    if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
+
+    const { id } = req.params;
+    const { name, description, cause_id, problem_ids } = req.body as {
+      name?: string;
+      description?: string;
+      cause_id?: string | null;
+      problem_ids?: string[];
+    };
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const r = await client.query(
+        `UPDATE solutions_applied
+         SET name = COALESCE($1, name),
+             description = COALESCE($2, description),
+             cause_id = $3
+         WHERE id = $4 RETURNING *`,
+        [name?.trim() ?? null, description?.trim() ?? null, cause_id ?? null, id]
+      );
+      if (!r.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Soluzione non trovata' });
+      }
+
+      if (problem_ids !== undefined) {
+        await client.query('DELETE FROM problem_solutions WHERE solution_id = $1', [id]);
+        for (const pid of problem_ids) {
+          await client.query(
+            'INSERT INTO problem_solutions(problem_id, solution_id) VALUES($1,$2) ON CONFLICT DO NOTHING',
+            [pid, id]
+          );
+        }
+      }
+
+      await client.query('COMMIT');
+      res.json({ item: { ...r.rows[0], problem_ids: problem_ids ?? [] } });
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
   } catch (e) {
     next(e);
   }

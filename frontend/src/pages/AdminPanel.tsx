@@ -8,7 +8,7 @@ type Operatore = { id: string; nome: string; attivo: boolean; created_at?: strin
 type Machine = { id: string; code: string; name: string; line?: string; location?: string; tipologia?: string; type?: string; posizione?: string; usage_count?: number };
 type User = { id: string; username: string; email?: string; role: string };
 type SparePart = { id: string; name: string; tipologia?: string[]; tipologie?: string[]; type?: string; description?: string; usage_count?: number };
-type SolutionApplied = { id: string; name: string; description?: string; cause_id?: string; cause_name?: string; usage_count?: number };
+type SolutionApplied = { id: string; name: string; description?: string; cause_id?: string; cause_name?: string; usage_count?: number; problem_ids?: string[] };
 
 const API_URL = '/api';
 type AdminTab = 'operatori' | 'problemi' | 'cause' | 'macchine' | 'utenti' | 'ricambi' | 'soluzioni';
@@ -55,7 +55,7 @@ export default function AdminPanel() {
   const [userForm, setUserForm] = useState({ username: '', email: '', password: '', role: 'user' });
   const [sparePartForm, setSparePartForm] = useState({ name: '', tipologie: [] as string[], description: '' });
   const [editingSparePartId, setEditingSparePartId] = useState<string | null>(null);
-  const [solutionForm, setSolutionForm] = useState({ name: '', description: '', cause_id: '' });
+  const [solutionForm, setSolutionForm] = useState({ name: '', description: '', cause_id: '', problem_ids: [] as string[] });
   const [editingSolutionId, setEditingSolutionId] = useState<string | null>(null);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
 
@@ -107,7 +107,6 @@ export default function AdminPanel() {
     else if (activeTab === 'cause') setCategoryForm((c) => ({ ...c, type: 'cause' }));
   }, [activeTab]);
 
-  // ---- Reset form quando cambio tab ----
   useEffect(() => {
     setEditingCategoryId(null);
     setEditingMachineId(null);
@@ -118,7 +117,7 @@ export default function AdminPanel() {
     setCategoryProblemIds([]);
     setMachineForm({ code: '', name: '', line: '', location: '', tipologia: '' });
     setSparePartForm({ name: '', tipologie: [], description: '' });
-    setSolutionForm({ name: '', description: '', cause_id: '' });
+    setSolutionForm({ name: '', description: '', cause_id: '', problem_ids: [] });
     setOperatoreForm({ nome: '', attivo: true });
   }, [activeTab]);
 
@@ -173,7 +172,6 @@ export default function AdminPanel() {
   const startEditCategory = (cat: Category) => {
     setEditingCategoryId(cat.id);
     setCategoryForm({ type: cat.type, name: cat.name, description: cat.description || '' });
-    // Carica i problem_ids associati alla causa
     if (cat.type === 'cause') {
       axios.get(`${API_URL}/categories/problems-by-cause/${cat.id}`, headers)
         .then((r) => setCategoryProblemIds((r.data.items || []).map((p: any) => p.id)))
@@ -222,7 +220,12 @@ export default function AdminPanel() {
   // ---- Soluzioni ----
   const submitSolution = async () => {
     try {
-      const payload = { name: solutionForm.name, description: solutionForm.description, cause_id: solutionForm.cause_id || null };
+      const payload = {
+        name: solutionForm.name,
+        description: solutionForm.description,
+        cause_id: solutionForm.cause_id || null,
+        problem_ids: solutionForm.problem_ids,
+      };
       if (editingSolutionId) {
         await axios.put(`${API_URL}/solutions-applied/${editingSolutionId}`, payload, headers);
         setMessage('Soluzione aggiornata.');
@@ -230,11 +233,18 @@ export default function AdminPanel() {
         await axios.post(`${API_URL}/solutions-applied`, payload, headers);
         setMessage('Soluzione aggiunta.');
       }
-      setSolutionForm({ name: '', description: '', cause_id: '' }); setEditingSolutionId(null); loadAll();
+      setSolutionForm({ name: '', description: '', cause_id: '', problem_ids: [] }); setEditingSolutionId(null); loadAll();
     } catch (err: any) { setMessage(err?.response?.data?.error ?? 'Errore salvataggio soluzione.'); }
   };
-  const startEditSolution = (sol: SolutionApplied) => { setEditingSolutionId(sol.id); setSolutionForm({ name: sol.name, description: sol.description || '', cause_id: sol.cause_id || '' }); };
-  const cancelEditSolution = () => { setEditingSolutionId(null); setSolutionForm({ name: '', description: '', cause_id: '' }); };
+  const startEditSolution = (sol: SolutionApplied) => {
+    setEditingSolutionId(sol.id);
+    setSolutionForm({ name: sol.name, description: sol.description || '', cause_id: sol.cause_id || '', problem_ids: [] });
+    // Carica i problem_ids associati alla soluzione
+    axios.get(`${API_URL}/solutions-applied/${sol.id}/problems`, headers)
+      .then((r) => setSolutionForm((f) => ({ ...f, problem_ids: (r.data.items || []).map((p: any) => p.id) })))
+      .catch(() => {});
+  };
+  const cancelEditSolution = () => { setEditingSolutionId(null); setSolutionForm({ name: '', description: '', cause_id: '', problem_ids: [] }); };
 
   // ---- Elimina ----
   const submitUser = async () => {
@@ -461,9 +471,10 @@ export default function AdminPanel() {
             <>
               <div>
                 <h2 className="text-xl font-semibold text-slate-100">{editingSolutionId ? 'Modifica soluzione' : 'Nuova soluzione applicata'}</h2>
-                <p className="text-sm text-slate-400">Aggiungi una soluzione e collegala a una causa specifica.</p>
+                <p className="text-sm text-slate-400">Aggiungi una soluzione e collegala a problemi e causa specifici.</p>
               </div>
               <input value={solutionForm.name} onChange={(e) => setSolutionForm((c) => ({ ...c, name: e.target.value }))} placeholder="Nome soluzione" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
+              <textarea value={solutionForm.description} onChange={(e) => setSolutionForm((c) => ({ ...c, description: e.target.value }))} rows={4} placeholder="Descrizione (opzionale)" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
               <div>
                 <label className="text-sm text-slate-300">Causa associata</label>
                 <select value={solutionForm.cause_id} onChange={(e) => setSolutionForm((c) => ({ ...c, cause_id: e.target.value }))} className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none">
@@ -471,7 +482,26 @@ export default function AdminPanel() {
                   {causes.map((cause) => <option key={cause.id} value={cause.id}>{cause.name}</option>)}
                 </select>
               </div>
-              <textarea value={solutionForm.description} onChange={(e) => setSolutionForm((c) => ({ ...c, description: e.target.value }))} rows={4} placeholder="Descrizione (opzionale)" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
+              <div>
+                <label className="text-sm text-slate-300">Problemi associati</label>
+                {problems.length === 0 ? (
+                  <p className="mt-1 text-xs text-slate-500">Nessun problema disponibile. Creane uno prima nel tab "Problemi".</p>
+                ) : (
+                  <div className="mt-2 flex flex-wrap gap-2 p-3 rounded-2xl border border-slate-800 bg-slate-900/30">
+                    {problems.map((p) => {
+                      const checked = solutionForm.problem_ids.includes(p.id);
+                      return (
+                        <label key={p.id} className="flex items-center gap-2 cursor-pointer bg-slate-950 px-3.5 py-2 rounded-xl border border-slate-800 hover:bg-slate-800/80 transition select-none">
+                          <input type="checkbox" checked={checked} onChange={(e) => {
+                            setSolutionForm((f) => ({ ...f, problem_ids: e.target.checked ? [...f.problem_ids, p.id] : f.problem_ids.filter((x) => x !== p.id) }));
+                          }} className="accent-sky-500 h-4 w-4 cursor-pointer" />
+                          <span className="text-sm text-slate-200">{p.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
               <div className="flex flex-wrap gap-2">
                 <button type="button" className="rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-sky-400 transition" onClick={submitSolution}>{editingSolutionId ? 'Salva modifiche' : 'Aggiungi soluzione'}</button>
                 {editingSolutionId && <button type="button" className="rounded-2xl border border-slate-700 bg-slate-900 px-5 py-3 text-sm font-semibold text-slate-200 hover:bg-slate-800 transition" onClick={cancelEditSolution}>Annulla</button>}
@@ -609,6 +639,11 @@ export default function AdminPanel() {
                     <div className="font-semibold text-slate-100">{sol.name}</div>
                     <div className="text-sm text-slate-500">
                       {sol.cause_name ? <span className="text-sky-400/80">Causa: {sol.cause_name}</span> : <span className="italic">Nessuna causa associata</span>}
+                      {sol.problem_ids && sol.problem_ids.length > 0 && (
+                        <span className="ml-2 text-emerald-400/80">
+                          · Problemi: {sol.problem_ids.length}
+                        </span>
+                      )}
                       {sol.description && <span> · {sol.description}</span>}
                     </div>
                   </div>
