@@ -20,49 +20,10 @@ categoriesRoutes.get('/', authMiddleware, async (_req, res, next) => {
   }
 });
 
-// GET /categories/causes-by-problem/:problemId
-categoriesRoutes.get('/causes-by-problem/:problemId', authMiddleware, async (req, res, next) => {
-  try {
-    const { problemId } = req.params;
-    const r = await pool.query(
-      `SELECT c.id, c.type, c.name, c.description
-       FROM categories c
-       INNER JOIN problem_causes pc ON pc.cause_id = c.id
-       WHERE pc.problem_id = $1 AND c.type = 'cause'
-       ORDER BY c.name`,
-      [problemId]
-    );
-    res.json({ items: r.rows });
-  } catch (e) {
-    next(e);
-  }
-});
-
-// GET /categories/solutions-by-problem/:problemId
-categoriesRoutes.get('/solutions-by-problem/:problemId', authMiddleware, async (req, res, next) => {
-  try {
-    const { problemId } = req.params;
-    const r = await pool.query(
-      `SELECT s.id, s.name, s.description, s.cause_id
-       FROM solutions_applied s
-       INNER JOIN problem_solutions ps ON ps.solution_id = s.id
-       WHERE ps.problem_id = $1
-       ORDER BY s.name`,
-      [problemId]
-    );
-    res.json({ items: r.rows });
-  } catch (e) {
-    next(e);
-  }
-});
-
 // GET /categories/:type
 categoriesRoutes.get('/:type', authMiddleware, async (req, res, next) => {
   try {
     const { type } = req.params;
-    if (['causes-by-problem', 'solutions-by-problem'].includes(type)) {
-      return res.status(400).json({ error: 'Invalid type' });
-    }
     const r = await pool.query(
       `SELECT c.id, c.type, c.name, c.description,
         (SELECT COUNT(*) FROM cases WHERE problem_id = c.id OR cause_id = c.id) AS usage_count
@@ -82,41 +43,19 @@ categoriesRoutes.post('/', authMiddleware, async (req, res, next) => {
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
 
-    const { type, name, description, problem_ids } = req.body as {
+    const { type, name, description } = req.body as {
       type: string;
       name: string;
       description?: string;
-      problem_ids?: string[];
     };
     if (!type || !name) return res.status(400).json({ error: 'type and name are required' });
 
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      const r = await client.query(
-        'INSERT INTO categories(type,name,description) VALUES($1,$2,$3) RETURNING *',
-        [type, name, description ?? null]
-      );
-      const newItem = r.rows[0];
-
-      if (type === 'cause' && problem_ids && problem_ids.length > 0) {
-        for (const pid of problem_ids) {
-          await client.query(
-            'INSERT INTO problem_causes(problem_id, cause_id) VALUES($1,$2) ON CONFLICT DO NOTHING',
-            [pid, newItem.id]
-          );
-        }
-      }
-
-      await client.query('COMMIT');
-      emitEvent('categories_updated', { type });
-      res.json({ item: newItem });
-    } catch (e) {
-      await client.query('ROLLBACK');
-      throw e;
-    } finally {
-      client.release();
-    }
+    const r = await pool.query(
+      'INSERT INTO categories(type,name,description) VALUES($1,$2,$3) RETURNING *',
+      [type, name, description ?? null]
+    );
+    emitEvent('categories_updated', { type });
+    res.json({ item: r.rows[0] });
   } catch (e) {
     next(e);
   }
@@ -128,45 +67,18 @@ categoriesRoutes.put('/:id', authMiddleware, async (req, res, next) => {
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
 
     const { id } = req.params;
-    const { name, description, problem_ids } = req.body as {
+    const { name, description } = req.body as {
       name?: string;
       description?: string;
-      problem_ids?: string[];
     };
 
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-
-      const r = await client.query(
-        'UPDATE categories SET name = COALESCE($1, name), description = COALESCE($2, description) WHERE id = $3 RETURNING *',
-        [name ?? null, description ?? null, id]
-      );
-      if (!r.rows.length) {
-        await client.query('ROLLBACK');
-        return res.status(404).json({ error: 'Category not found' });
-      }
-      const updated = r.rows[0];
-
-      if (updated.type === 'cause' && problem_ids !== undefined) {
-        await client.query('DELETE FROM problem_causes WHERE cause_id = $1', [id]);
-        for (const pid of problem_ids) {
-          await client.query(
-            'INSERT INTO problem_causes(problem_id, cause_id) VALUES($1,$2) ON CONFLICT DO NOTHING',
-            [pid, id]
-          );
-        }
-      }
-
-      await client.query('COMMIT');
-      emitEvent('categories_updated', { type: updated.type });
-      res.json({ item: updated });
-    } catch (e) {
-      await client.query('ROLLBACK');
-      throw e;
-    } finally {
-      client.release();
-    }
+    const r = await pool.query(
+      'UPDATE categories SET name = COALESCE($1, name), description = COALESCE($2, description) WHERE id = $3 RETURNING *',
+      [name ?? null, description ?? null, id]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'Category not found' });
+    emitEvent('categories_updated', { type: r.rows[0].type });
+    res.json({ item: r.rows[0] });
   } catch (e) {
     next(e);
   }
