@@ -25,7 +25,8 @@ function MultiSelect({
   placeholder = 'Seleziona...',
   helperText,
   required = false,
-  emptyMessage
+  emptyMessage,
+  disabled = false,
 }: {
   label: string;
   options: { id: string; name: string }[];
@@ -35,6 +36,7 @@ function MultiSelect({
   helperText?: string;
   required?: boolean;
   emptyMessage?: string;
+  disabled?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -57,8 +59,8 @@ function MultiSelect({
       <div className="relative">
         <button
           type="button"
-          onClick={() => setIsOpen(!isOpen)}
-          className="w-full text-left px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 text-sm flex justify-between items-center transition duration-150"
+          onClick={() => { if (!disabled) setIsOpen(!isOpen); }}
+          className={`w-full text-left px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 text-sm flex justify-between items-center transition duration-150 ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         >
           <span className="truncate">
             {selectedValues.length > 0
@@ -70,7 +72,7 @@ function MultiSelect({
           </svg>
         </button>
 
-        {isOpen && (
+        {isOpen && !disabled && (
           <>
             <div className="fixed inset-0 z-30" onClick={() => setIsOpen(false)} />
             <div className="absolute left-0 right-0 z-40 mt-2 max-h-60 overflow-y-auto rounded-md border border-slate-600 bg-slate-800 p-2 shadow-2xl backdrop-blur-md transition-all duration-200">
@@ -107,11 +109,11 @@ export default function CreateCase() {
   const [spareParts, setSpareParts] = useState<SparePartItem[]>([]);
 
   const [machineId, setMachineId] = useState('');
-  const [operatoreId, setOperatoreId] = useState('');
+  const [operatoreIds, setOperatoreIds] = useState<string[]>([]);
   const [machineSearch, setMachineSearch] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [problemId, setProblemId] = useState('');
-  const [causeId, setCauseId] = useState('');
+  const [causeIds, setCauseIds] = useState<string[]>([]);
 
   const [soluzioniProvate, setSoluzioniProvate] = useState<string[]>([]);
   const [soluzioniApplicate, setSoluzioniApplicate] = useState<string[]>([]);
@@ -158,20 +160,20 @@ export default function CreateCase() {
     loadLookups();
   }, [token]);
 
-  // Quando cambia il problema: reset cause, soluzioni selezionate
+  // Quando cambia il problema: reset cause e soluzioni selezionate
   useEffect(() => {
-    setCauseId('');
+    setCauseIds([]);
     setSoluzioniProvate([]);
     setSoluzioniApplicate([]);
   }, [problemId]);
 
-  // Quando cambia la causa: reset soluzioni selezionate
+  // Quando cambiano le cause: reset soluzioni selezionate
   useEffect(() => {
     setSoluzioniProvate([]);
     setSoluzioniApplicate([]);
-  }, [causeId]);
+  }, [causeIds]);
 
-  // Cause filtrate per il problema selezionato (tramite problem_id sul category o cause_problems)
+  // Cause filtrate per il problema selezionato
   const filteredCauses = problemId
     ? allCauses.filter((c: any) => {
         if (c.problem_id === problemId) return true;
@@ -180,7 +182,7 @@ export default function CreateCase() {
       })
     : [];
 
-  // Soluzioni filtrate per il problema selezionato (direttamente, senza dipendere dalla causa)
+  // Soluzioni filtrate per il problema selezionato
   const filteredSolutions = problemId
     ? allSolutions.filter((s) => s.problem_ids && s.problem_ids.includes(problemId))
     : [];
@@ -219,8 +221,8 @@ export default function CreateCase() {
 
   const handleCreate = async () => {
     if (!token) return;
-    if (!machineId || !operatoreId || !problemId || !causeId || !soluzioniApplicate.length) {
-      setError('Compila tutti i campi obbligatori: operatore, macchina, problema, causa e almeno una soluzione applicata.');
+    if (!machineId || operatoreIds.length === 0 || !problemId || causeIds.length === 0 || !soluzioniApplicate.length) {
+      setError('Compila tutti i campi obbligatori: almeno un operatore, macchina, problema, almeno una causa e almeno una soluzione applicata.');
       return;
     }
     setError(null);
@@ -231,9 +233,11 @@ export default function CreateCase() {
         `${API_URL}/cases`,
         {
           machine_id: machineId,
-          operatore_id: operatoreId,
+          operatore_id: operatoreIds[0],
+          operatore_ids: operatoreIds,
           problem_id: problemId,
-          cause_id: causeId,
+          cause_id: causeIds[0],
+          cause_ids: causeIds,
           soluzioni_provate: soluzioniProvate,
           soluzioni_applicate: soluzioniApplicate,
           pezzi_ricambio: pezziRicambio,
@@ -244,7 +248,8 @@ export default function CreateCase() {
       ) as { data: CreateCaseResponse };
 
       setSuccess('Caso creato con successo! Reindirizzamento...');
-      setMachineId(''); setMachineSearch(''); setProblemId(''); setCauseId('');
+      setMachineId(''); setMachineSearch(''); setProblemId(''); setCauseIds([]);
+      setOperatoreIds([]);
       setSoluzioniProvate([]); setSoluzioniApplicate([]); setPezziRicambio([]);
       setTempoImpiego(0.5); setNotes('');
 
@@ -314,13 +319,17 @@ export default function CreateCase() {
           </div>
         </div>
 
-        {/* Operatore */}
+        {/* Operatore — multi-select */}
         <div className="flex flex-col space-y-1.5">
-          <label className="text-sm font-medium text-slate-200">Operatore <span className="text-rose-500 ml-1">*</span></label>
-          <select value={operatoreId} onChange={(e) => setOperatoreId(e.target.value)} className="w-full px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 text-sm">
-            <option value="">Seleziona operatore</option>
-            {operatori.map((op) => (<option key={op.id} value={op.id}>{op.nome}</option>))}
-          </select>
+          <MultiSelect
+            label="Operatore"
+            required
+            options={operatori.map((op) => ({ id: op.id, name: op.nome }))}
+            selectedValues={operatoreIds}
+            onChange={setOperatoreIds}
+            placeholder="Seleziona operatore/i..."
+            helperText="Puoi selezionare più operatori"
+          />
         </div>
 
         {/* Pezzi di Ricambio */}
@@ -345,18 +354,19 @@ export default function CreateCase() {
           </select>
         </div>
 
-        {/* Causa */}
+        {/* Causa — multi-select */}
         <div className="flex flex-col space-y-1.5 md:col-span-1">
-          <label className="text-sm font-medium text-slate-200">Causa <span className="text-rose-500 ml-1">*</span></label>
-          <select
-            value={causeId}
-            onChange={(e) => setCauseId(e.target.value)}
+          <MultiSelect
+            label="Causa"
+            required
+            options={filteredCauses.map((c) => ({ id: c.id, name: c.name }))}
+            selectedValues={causeIds}
+            onChange={setCauseIds}
+            placeholder={!problemId ? 'Seleziona prima un problema' : (filteredCauses.length === 0 ? 'Nessuna causa per questo problema' : 'Seleziona causa/e...')}
+            helperText="Puoi selezionare più cause"
             disabled={!problemId}
-            className="w-full px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 text-sm disabled:opacity-50"
-          >
-            <option value="">{!problemId ? 'Seleziona prima un problema' : 'Seleziona causa'}</option>
-            {filteredCauses.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
-          </select>
+            emptyMessage="Nessuna causa associata a questo problema. Aggiungila dall'Admin Panel."
+          />
           {problemId && filteredCauses.length === 0 && (
             <p className="text-xs text-amber-400">Nessuna causa associata a questo problema. Aggiungila dall'Admin Panel.</p>
           )}
