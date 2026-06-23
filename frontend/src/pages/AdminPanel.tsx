@@ -3,12 +3,12 @@ import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 import { ConfirmModal } from '../components/ConfirmModal';
 
-type Category = { id: string; type: string; name: string; description?: string; usage_count?: number };
+type Category = { id: string; type: string; name: string; description?: string; problem_id?: string | null; problem_name?: string | null; usage_count?: number };
 type Operatore = { id: string; nome: string; attivo: boolean; created_at?: string; updated_at?: string; usage_count?: number };
 type Machine = { id: string; code: string; name: string; line?: string; location?: string; tipologia?: string; type?: string; posizione?: string; usage_count?: number };
 type User = { id: string; username: string; email?: string; role: string };
 type SparePart = { id: string; name: string; tipologia?: string[]; tipologie?: string[]; type?: string; description?: string; usage_count?: number };
-type SolutionApplied = { id: string; name: string; description?: string; problem_id?: string | null; problem_name?: string | null; usage_count?: number };
+type SolutionApplied = { id: string; name: string; description?: string; problem_ids?: string[]; problem_names?: string[]; usage_count?: number };
 
 const API_URL = '/api';
 type AdminTab = 'operatori' | 'problemi' | 'cause' | 'macchine' | 'utenti' | 'ricambi' | 'soluzioni';
@@ -18,13 +18,9 @@ function DeleteButton({ itemId, usageCount, type, onDelete }: {
   type: 'categories' | 'machines' | 'users' | 'spare_parts' | 'solutions' | 'operatori';
   onDelete: (type: 'categories' | 'machines' | 'users' | 'spare_parts' | 'solutions' | 'operatori', id: string) => void;
 }) {
-  if (type === 'users') {
-    return <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400 transition" onClick={() => onDelete(type, itemId)}>Elimina</button>;
-  }
+  if (type === 'users') return <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400 transition" onClick={() => onDelete(type, itemId)}>Elimina</button>;
   const isInUse = (usageCount ?? 0) > 0;
-  if (isInUse) {
-    return <span className="text-xs text-slate-500 font-semibold bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800">In uso (Non eliminabile)</span>;
-  }
+  if (isInUse) return <span className="text-xs text-slate-500 font-semibold bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800">In uso</span>;
   return <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400 transition" onClick={() => onDelete(type, itemId)}>Elimina</button>;
 }
 
@@ -45,7 +41,7 @@ export default function AdminPanel() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
 
-  const [categoryForm, setCategoryForm] = useState({ type: 'problem', name: '', description: '' });
+  const [categoryForm, setCategoryForm] = useState({ type: 'problem', name: '', description: '', problem_id: '' });
   const [operatoreForm, setOperatoreForm] = useState({ nome: '', attivo: true });
   const [editingOperatoreId, setEditingOperatoreId] = useState<string | null>(null);
   const [machineForm, setMachineForm] = useState({ code: '', name: '', line: '', location: '', tipologia: '' });
@@ -53,15 +49,13 @@ export default function AdminPanel() {
   const [userForm, setUserForm] = useState({ username: '', email: '', password: '', role: 'user' });
   const [sparePartForm, setSparePartForm] = useState({ name: '', tipologie: [] as string[], description: '' });
   const [editingSparePartId, setEditingSparePartId] = useState<string | null>(null);
-  const [solutionForm, setSolutionForm] = useState({ name: '', description: '', problem_id: '' });
+  const [solutionForm, setSolutionForm] = useState({ name: '', description: '', problem_ids: [] as string[] });
   const [editingSolutionId, setEditingSolutionId] = useState<string | null>(null);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
-
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [userEditForm, setUserEditForm] = useState({ username: '', email: '', password: '' });
 
   const headers = useMemo(() => ({ headers: { Authorization: `Bearer ${token}` } }), [token]);
-
   const causes = useMemo(() => categories.filter((c) => c.type === 'cause').sort((a, b) => a.name.localeCompare(b.name)), [categories]);
   const problems = useMemo(() => categories.filter((c) => c.type === 'problem').sort((a, b) => a.name.localeCompare(b.name)), [categories]);
 
@@ -69,13 +63,13 @@ export default function AdminPanel() {
     if (!token) return;
     setLoading(true); setMessage(null);
     const requests = [
-      { key: 'categories' as const, promise: axios.get(`${API_URL}/categories`, headers) },
-      { key: 'operatori' as const, promise: axios.get(`${API_URL}/operatori?all=1`, headers) },
-      { key: 'machines' as const, promise: axios.get(`${API_URL}/machines`, headers) },
-      { key: 'users' as const, promise: axios.get(`${API_URL}/users`, headers) },
-      { key: 'spareParts' as const, promise: axios.get(`${API_URL}/spare-parts`, headers) },
-      { key: 'solutionsApplied' as const, promise: axios.get(`${API_URL}/solutions-applied`, headers) },
-      { key: 'tipologie' as const, promise: axios.get(`${API_URL}/machines/tipologie`, headers) }
+      { key: 'categories' as const,      promise: axios.get(`${API_URL}/categories`, headers) },
+      { key: 'operatori' as const,       promise: axios.get(`${API_URL}/operatori?all=1`, headers) },
+      { key: 'machines' as const,        promise: axios.get(`${API_URL}/machines`, headers) },
+      { key: 'users' as const,           promise: axios.get(`${API_URL}/users`, headers) },
+      { key: 'spareParts' as const,      promise: axios.get(`${API_URL}/spare-parts`, headers) },
+      { key: 'solutionsApplied' as const,promise: axios.get(`${API_URL}/solutions-applied`, headers) },
+      { key: 'tipologie' as const,       promise: axios.get(`${API_URL}/machines/tipologie`, headers) },
     ];
     const results = await Promise.allSettled(requests.map((r) => r.promise));
     const errors: string[] = [];
@@ -83,13 +77,13 @@ export default function AdminPanel() {
       const key = requests[index].key;
       if (result.status === 'fulfilled') {
         const items = result.value.data.items || [];
-        if (key === 'categories') setCategories(items);
-        if (key === 'operatori') setOperatori(items);
-        if (key === 'machines') setMachines(items);
-        if (key === 'users') setUsers(items);
-        if (key === 'spareParts') setSpareParts(items);
+        if (key === 'categories')       setCategories(items);
+        if (key === 'operatori')        setOperatori(items);
+        if (key === 'machines')         setMachines(items);
+        if (key === 'users')            setUsers(items);
+        if (key === 'spareParts')       setSpareParts(items);
         if (key === 'solutionsApplied') setSolutionsApplied(items);
-        if (key === 'tipologie') setAvailableTipologie(items);
+        if (key === 'tipologie')        setAvailableTipologie(items);
       } else {
         errors.push((result.reason as any)?.response?.data?.error ?? `Errore caricamento ${key}`);
       }
@@ -106,18 +100,16 @@ export default function AdminPanel() {
   }, [activeTab]);
 
   useEffect(() => {
-    setEditingCategoryId(null);
-    setEditingMachineId(null);
-    setEditingSparePartId(null);
-    setEditingOperatoreId(null);
-    setEditingSolutionId(null);
-    setCategoryForm((c) => ({ type: activeTab === 'cause' ? 'cause' : 'problem', name: '', description: '' }));
+    setEditingCategoryId(null); setEditingMachineId(null); setEditingSparePartId(null);
+    setEditingOperatoreId(null); setEditingSolutionId(null);
+    setCategoryForm((c) => ({ type: activeTab === 'cause' ? 'cause' : 'problem', name: '', description: '', problem_id: '' }));
     setMachineForm({ code: '', name: '', line: '', location: '', tipologia: '' });
     setSparePartForm({ name: '', tipologie: [], description: '' });
-    setSolutionForm({ name: '', description: '', problem_id: '' });
+    setSolutionForm({ name: '', description: '', problem_ids: [] });
     setOperatoreForm({ nome: '', attivo: true });
   }, [activeTab]);
 
+  // ── helpers utenti ──────────────────────────────────────────────────────
   const startEditUser = (user: User) => { setEditingUser(user); setUserEditForm({ username: user.username, email: user.email || '', password: '' }); };
   const cancelEditUser = () => { setEditingUser(null); setUserEditForm({ username: '', email: '', password: '' }); };
   const submitUserEdit = async () => {
@@ -125,14 +117,15 @@ export default function AdminPanel() {
     try {
       const payload: any = {};
       if (userEditForm.username) payload.username = userEditForm.username;
-      if (userEditForm.email) payload.email = userEditForm.email;
+      if (userEditForm.email)    payload.email    = userEditForm.email;
       if (userEditForm.password) payload.password = userEditForm.password;
-      if (Object.keys(payload).length === 0) { setMessage('Nessun campo da aggiornare.'); return; }
+      if (!Object.keys(payload).length) { setMessage('Nessun campo da aggiornare.'); return; }
       await axios.put(`${API_URL}/users/${editingUser.id}`, payload, headers);
       setMessage('Utente aggiornato.'); cancelEditUser(); loadAll();
     } catch (err: any) { setMessage(err?.response?.data?.error ?? 'Errore aggiornamento utente.'); }
   };
 
+  // ── helpers operatori ───────────────────────────────────────────────────
   const submitOperatore = async () => {
     try {
       if (!operatoreForm.nome.trim()) { setMessage('Il nome operatore è obbligatorio.'); return; }
@@ -149,9 +142,18 @@ export default function AdminPanel() {
   const startEditOperatore = (op: Operatore) => { setEditingOperatoreId(op.id); setOperatoreForm({ nome: op.nome, attivo: op.attivo }); };
   const cancelEditOperatore = () => { setEditingOperatoreId(null); setOperatoreForm({ nome: '', attivo: true }); };
 
+  // ── helpers categorie ───────────────────────────────────────────────────
   const submitCategory = async () => {
     try {
-      const payload = { ...categoryForm };
+      if (categoryForm.type === 'cause' && !categoryForm.problem_id) {
+        setMessage('Il problema collegato è obbligatorio per le cause.'); return;
+      }
+      const payload = {
+        type: categoryForm.type,
+        name: categoryForm.name,
+        description: categoryForm.description || null,
+        problem_id: categoryForm.type === 'cause' ? categoryForm.problem_id : null,
+      };
       if (editingCategoryId) {
         await axios.put(`${API_URL}/categories/${editingCategoryId}`, payload, headers);
         setMessage('Aggiornato.');
@@ -159,16 +161,17 @@ export default function AdminPanel() {
         await axios.post(`${API_URL}/categories`, payload, headers);
         setMessage('Creato.');
       }
-      setCategoryForm((prev) => ({ type: prev.type, name: '', description: '' }));
+      setCategoryForm((prev) => ({ type: prev.type, name: '', description: '', problem_id: '' }));
       setEditingCategoryId(null); loadAll();
     } catch (err: any) { setMessage(err?.response?.data?.error ?? 'Errore salvataggio.'); }
   };
   const startEditCategory = (cat: Category) => {
     setEditingCategoryId(cat.id);
-    setCategoryForm({ type: cat.type, name: cat.name, description: cat.description || '' });
+    setCategoryForm({ type: cat.type, name: cat.name, description: cat.description || '', problem_id: cat.problem_id || '' });
   };
-  const cancelEditCategory = () => { setEditingCategoryId(null); setCategoryForm((c) => ({ ...c, name: '', description: '' })); };
+  const cancelEditCategory = () => { setEditingCategoryId(null); setCategoryForm((c) => ({ ...c, name: '', description: '', problem_id: '' })); };
 
+  // ── helpers macchine ────────────────────────────────────────────────────
   const submitMachine = async () => {
     try {
       const payload = { ...machineForm, tipologia: machineForm.tipologia || undefined };
@@ -185,6 +188,7 @@ export default function AdminPanel() {
   const startEditMachine = (m: Machine) => { setEditingMachineId(m.id); setMachineForm({ code: m.code, name: m.name, line: m.line || '', location: m.location || '', tipologia: m.tipologia || m.type || '' }); };
   const cancelEditMachine = () => { setEditingMachineId(null); setMachineForm({ code: '', name: '', line: '', location: '', tipologia: '' }); };
 
+  // ── helpers ricambi ─────────────────────────────────────────────────────
   const submitSparePart = async () => {
     try {
       if (editingSparePartId) {
@@ -199,19 +203,27 @@ export default function AdminPanel() {
   };
   const startEditSparePart = (part: SparePart) => {
     setEditingSparePartId(part.id);
-    const tList = part.tipologie && part.tipologie.length ? part.tipologie : (part.tipologia && part.tipologia.length ? part.tipologia : []);
+    const tList = part.tipologie?.length ? part.tipologie : (part.tipologia?.length ? part.tipologia : []);
     setSparePartForm({ name: part.name, tipologie: tList, description: part.description || '' });
   };
   const cancelEditSparePart = () => { setEditingSparePartId(null); setSparePartForm({ name: '', tipologie: [], description: '' }); };
 
-  // ── SOLUZIONI ──────────────────────────────────────────────────────────────
+  // ── helpers soluzioni ───────────────────────────────────────────────────
+  const toggleSolutionProblem = (pid: string) => {
+    setSolutionForm((c) => ({
+      ...c,
+      problem_ids: c.problem_ids.includes(pid)
+        ? c.problem_ids.filter((x) => x !== pid)
+        : [...c.problem_ids, pid],
+    }));
+  };
   const submitSolution = async () => {
     try {
       if (!solutionForm.name.trim()) { setMessage('Il nome soluzione è obbligatorio.'); return; }
       const payload = {
         name: solutionForm.name.trim(),
         description: solutionForm.description.trim() || null,
-        problem_id: solutionForm.problem_id || null,
+        problem_ids: solutionForm.problem_ids,
       };
       if (editingSolutionId) {
         await axios.put(`${API_URL}/solutions-applied/${editingSolutionId}`, payload, headers);
@@ -220,27 +232,23 @@ export default function AdminPanel() {
         await axios.post(`${API_URL}/solutions-applied`, payload, headers);
         setMessage('Soluzione aggiunta.');
       }
-      setSolutionForm({ name: '', description: '', problem_id: '' });
-      setEditingSolutionId(null);
-      loadAll();
+      setSolutionForm({ name: '', description: '', problem_ids: [] });
+      setEditingSolutionId(null); loadAll();
     } catch (err: any) { setMessage(err?.response?.data?.error ?? 'Errore salvataggio soluzione.'); }
   };
   const startEditSolution = (sol: SolutionApplied) => {
     setEditingSolutionId(sol.id);
-    setSolutionForm({ name: sol.name, description: sol.description || '', problem_id: sol.problem_id || '' });
+    setSolutionForm({ name: sol.name, description: sol.description || '', problem_ids: sol.problem_ids || [] });
   };
-  const cancelEditSolution = () => {
-    setEditingSolutionId(null);
-    setSolutionForm({ name: '', description: '', problem_id: '' });
-  };
+  const cancelEditSolution = () => { setEditingSolutionId(null); setSolutionForm({ name: '', description: '', problem_ids: [] }); };
 
+  // ── helpers delete ──────────────────────────────────────────────────────
   const submitUser = async () => {
     try {
       await axios.post(`${API_URL}/users`, userForm, headers);
       setMessage('Utente creato.'); setUserForm({ username: '', email: '', password: '', role: 'user' }); loadAll();
     } catch (err: any) { setMessage(err?.response?.data?.error ?? 'Errore salvataggio utente.'); }
   };
-
   const deleteItem = async (type: 'categories' | 'machines' | 'users' | 'spare_parts' | 'solutions' | 'operatori', id: string) => {
     try {
       const path = type === 'spare_parts' ? 'spare-parts' : type === 'solutions' ? 'solutions-applied' : type === 'operatori' ? 'operatori' : type;
@@ -251,11 +259,9 @@ export default function AdminPanel() {
       setMessage(err?.response?.data?.error ?? (usage ? `In uso da ${usage} casi` : 'Eliminazione non consentita.'));
     }
   };
-
   const requestDelete = (type: 'categories' | 'machines' | 'users' | 'spare_parts' | 'solutions' | 'operatori', id: string) => {
     setPendingDeleteType(type); setPendingDeleteId(id); setConfirmOpen(true);
   };
-
   const confirmDelete = async () => {
     if (!pendingDeleteType || !pendingDeleteId) return;
     setConfirmOpen(false);
@@ -267,6 +273,7 @@ export default function AdminPanel() {
   const tabLabels: Record<AdminTab, string> = { operatori: 'Operatori', problemi: 'Problemi', cause: 'Cause', macchine: 'Macchine', utenti: 'Utenti', ricambi: 'Pezzi di Ricambio', soluzioni: 'Soluzioni' };
   const listTitle = activeTab === 'operatori' ? 'operatori' : activeTab === 'problemi' ? 'problemi' : activeTab === 'cause' ? 'cause' : activeTab === 'macchine' ? 'macchine' : activeTab === 'utenti' ? 'utenti' : activeTab === 'ricambi' ? 'pezzi di ricambio' : 'soluzioni applicate';
 
+  // ── RENDER ──────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6 p-4 sm:p-6">
       <div>
@@ -279,13 +286,17 @@ export default function AdminPanel() {
       <div className="flex flex-wrap gap-2 sm:gap-3">
         {(['operatori', 'problemi', 'cause', 'macchine', 'utenti', 'ricambi', 'soluzioni'] as const).map((tab) => (
           <button key={tab} type="button" onClick={() => setActiveTab(tab)}
-            className={`rounded-full px-4 py-2.5 text-xs font-semibold transition sm:px-5 sm:py-3 sm:text-sm ${activeTab === tab ? 'bg-sky-500 text-slate-950' : 'bg-slate-900 text-slate-300 hover:bg-slate-800'}`}>
+            className={`rounded-full px-4 py-2.5 text-xs font-semibold transition sm:px-5 sm:py-3 sm:text-sm ${
+              activeTab === tab ? 'bg-sky-500 text-slate-950' : 'bg-slate-900 text-slate-300 hover:bg-slate-800'
+            }`}>
             {tabLabels[tab]}
           </button>
         ))}
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.2fr_1fr]">
+
+        {/* ── FORM PANEL ── */}
         <div className="space-y-6 rounded-3xl bg-slate-950/80 p-5 shadow-xl shadow-slate-950/10 sm:p-6">
 
           {activeTab === 'operatori' && (
@@ -294,16 +305,14 @@ export default function AdminPanel() {
                 <h2 className="text-xl font-semibold text-slate-100">{editingOperatoreId ? 'Modifica operatore' : 'Nuovo operatore'}</h2>
                 <p className="text-sm text-slate-400">Gestisci gli operatori.</p>
               </div>
-              <div className="grid grid-cols-1 gap-4">
-                <div>
-                  <label className="text-sm text-slate-300">Nome operatore</label>
-                  <input value={operatoreForm.nome} onChange={(e) => setOperatoreForm((c) => ({ ...c, nome: e.target.value }))} placeholder="Nome operatore" className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
-                </div>
-                <label className="flex items-center gap-3 cursor-pointer select-none">
-                  <input type="checkbox" checked={operatoreForm.attivo} onChange={(e) => setOperatoreForm((c) => ({ ...c, attivo: e.target.checked }))} className="accent-sky-500 h-4 w-4 cursor-pointer rounded" />
-                  <span className="text-sm text-slate-300">Attivo</span>
-                </label>
+              <div>
+                <label className="text-sm text-slate-300">Nome operatore</label>
+                <input value={operatoreForm.nome} onChange={(e) => setOperatoreForm((c) => ({ ...c, nome: e.target.value }))} placeholder="Nome operatore" className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
               </div>
+              <label className="flex items-center gap-3 cursor-pointer select-none">
+                <input type="checkbox" checked={operatoreForm.attivo} onChange={(e) => setOperatoreForm((c) => ({ ...c, attivo: e.target.checked }))} className="accent-sky-500 h-4 w-4 cursor-pointer rounded" />
+                <span className="text-sm text-slate-300">Attivo</span>
+              </label>
               <div className="flex flex-wrap gap-2">
                 <button type="button" className="rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-sky-400 transition" onClick={submitOperatore}>{editingOperatoreId ? 'Salva modifiche' : 'Aggiungi operatore'}</button>
                 {editingOperatoreId && <button type="button" className="rounded-2xl border border-slate-700 bg-slate-900 px-5 py-3 text-sm font-semibold text-slate-200 hover:bg-slate-800 transition" onClick={cancelEditOperatore}>Annulla</button>}
@@ -336,11 +345,26 @@ export default function AdminPanel() {
             <>
               <div>
                 <h2 className="text-xl font-semibold text-slate-100">{editingCategoryId ? 'Modifica causa' : 'Nuova causa'}</h2>
-                <p className="text-sm text-slate-400">Aggiungi o modifica una causa.</p>
+                <p className="text-sm text-slate-400">Ogni causa deve essere collegata a un problema.</p>
               </div>
               <div>
                 <label className="text-sm text-slate-300">Nome</label>
                 <input value={categoryForm.name} onChange={(e) => setCategoryForm((c) => ({ ...c, name: e.target.value }))} placeholder="Nome causa" className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
+              </div>
+              <div>
+                <label className="text-sm text-slate-300">
+                  Problema collegato <span className="text-rose-400">*</span>
+                </label>
+                <select
+                  value={categoryForm.problem_id}
+                  onChange={(e) => setCategoryForm((c) => ({ ...c, problem_id: e.target.value }))}
+                  className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
+                >
+                  <option value="">— Seleziona un problema —</option>
+                  {problems.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="text-sm text-slate-300">Descrizione</label>
@@ -400,23 +424,18 @@ export default function AdminPanel() {
               <input value={sparePartForm.name} onChange={(e) => setSparePartForm((c) => ({ ...c, name: e.target.value }))} placeholder="Nome ricambio" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
               <div>
                 <span className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Tipologie Macchine Collegate</span>
-                {availableTipologie.length === 0 ? (
-                  <p className="text-sm text-slate-500 bg-slate-900/50 p-3 rounded-2xl border border-slate-800">Nessuna tipologia trovata.</p>
-                ) : (
-                  <div className="flex flex-wrap gap-2 p-3 rounded-2xl border border-slate-800 bg-slate-900/30">
-                    {availableTipologie.map((t) => {
-                      const isChecked = sparePartForm.tipologie.includes(t);
-                      return (
+                {availableTipologie.length === 0
+                  ? <p className="text-sm text-slate-500 bg-slate-900/50 p-3 rounded-2xl border border-slate-800">Nessuna tipologia trovata.</p>
+                  : (
+                    <div className="flex flex-wrap gap-2 p-3 rounded-2xl border border-slate-800 bg-slate-900/30">
+                      {availableTipologie.map((t) => (
                         <label key={t} className="flex items-center gap-2 cursor-pointer bg-slate-950 px-3.5 py-2 rounded-xl border border-slate-800 hover:bg-slate-800/80 transition select-none">
-                          <input type="checkbox" checked={isChecked} onChange={(e) => {
-                            setSparePartForm((c) => ({ ...c, tipologie: e.target.checked ? [...c.tipologie, t] : c.tipologie.filter((x) => x !== t) }));
-                          }} className="accent-sky-500 h-4 w-4 cursor-pointer" />
+                          <input type="checkbox" checked={sparePartForm.tipologie.includes(t)} onChange={(e) => setSparePartForm((c) => ({ ...c, tipologie: e.target.checked ? [...c.tipologie, t] : c.tipologie.filter((x) => x !== t) }))} className="accent-sky-500 h-4 w-4 cursor-pointer" />
                           <span className="text-sm text-slate-200">{t}</span>
                         </label>
-                      );
-                    })}
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  )}
               </div>
               <textarea value={sparePartForm.description} onChange={(e) => setSparePartForm((c) => ({ ...c, description: e.target.value }))} rows={3} placeholder="Descrizione (opzionale)" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
               <div className="flex flex-wrap gap-2">
@@ -430,58 +449,51 @@ export default function AdminPanel() {
             <>
               <div>
                 <h2 className="text-xl font-semibold text-slate-100">{editingSolutionId ? 'Modifica soluzione' : 'Nuova soluzione applicata'}</h2>
-                <p className="text-sm text-slate-400">{editingSolutionId ? 'Modifica nome, descrizione o problema collegato.' : 'Aggiungi una soluzione applicata e collegala a un problema.'}</p>
+                <p className="text-sm text-slate-400">Collega la soluzione a uno o più problemi.</p>
               </div>
-
               <div>
                 <label className="text-sm text-slate-300">Nome soluzione</label>
-                <input
-                  value={solutionForm.name}
-                  onChange={(e) => setSolutionForm((c) => ({ ...c, name: e.target.value }))}
-                  placeholder="Nome soluzione"
-                  className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
-                />
+                <input value={solutionForm.name} onChange={(e) => setSolutionForm((c) => ({ ...c, name: e.target.value }))} placeholder="Nome soluzione" className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
               </div>
-
               <div>
-                <label className="text-sm text-slate-300">Problema collegato <span className="text-slate-500">(opzionale)</span></label>
-                <select
-                  value={solutionForm.problem_id}
-                  onChange={(e) => setSolutionForm((c) => ({ ...c, problem_id: e.target.value }))}
-                  className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
-                >
-                  <option value="">— Nessun problema —</option>
-                  {problems.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
+                <span className="block text-sm text-slate-300 mb-2">
+                  Problemi collegati <span className="text-slate-500">(opzionale, selezione multipla)</span>
+                </span>
+                {problems.length === 0
+                  ? <p className="text-sm text-slate-500 bg-slate-900/50 p-3 rounded-2xl border border-slate-800">Nessun problema configurato.</p>
+                  : (
+                    <div className="flex flex-wrap gap-2 p-3 rounded-2xl border border-slate-800 bg-slate-900/30">
+                      {problems.map((p) => (
+                        <label key={p.id} className="flex items-center gap-2 cursor-pointer bg-slate-950 px-3.5 py-2 rounded-xl border border-slate-800 hover:bg-slate-800/80 transition select-none">
+                          <input
+                            type="checkbox"
+                            checked={solutionForm.problem_ids.includes(p.id)}
+                            onChange={() => toggleSolutionProblem(p.id)}
+                            className="accent-sky-500 h-4 w-4 cursor-pointer"
+                          />
+                          <span className="text-sm text-slate-200">{p.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
               </div>
-
               <div>
                 <label className="text-sm text-slate-300">Descrizione <span className="text-slate-500">(opzionale)</span></label>
-                <textarea
-                  value={solutionForm.description}
-                  onChange={(e) => setSolutionForm((c) => ({ ...c, description: e.target.value }))}
-                  rows={4}
-                  placeholder="Descrizione soluzione"
-                  className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
-                />
+                <textarea value={solutionForm.description} onChange={(e) => setSolutionForm((c) => ({ ...c, description: e.target.value }))} rows={4} placeholder="Descrizione soluzione" className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
               </div>
-
               <div className="flex flex-wrap gap-2">
                 <button type="button" className="rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-sky-400 transition" onClick={submitSolution}>
                   {editingSolutionId ? 'Salva modifiche' : 'Aggiungi soluzione'}
                 </button>
                 {editingSolutionId && (
-                  <button type="button" className="rounded-2xl border border-slate-700 bg-slate-900 px-5 py-3 text-sm font-semibold text-slate-200 hover:bg-slate-800 transition" onClick={cancelEditSolution}>
-                    Annulla
-                  </button>
+                  <button type="button" className="rounded-2xl border border-slate-700 bg-slate-900 px-5 py-3 text-sm font-semibold text-slate-200 hover:bg-slate-800 transition" onClick={cancelEditSolution}>Annulla</button>
                 )}
               </div>
             </>
           )}
         </div>
 
+        {/* ── LIST PANEL ── */}
         <div className="space-y-6 rounded-3xl bg-slate-950/95 p-5 shadow-xl shadow-slate-950/10 sm:p-6">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold text-slate-100">Elenco {listTitle}</h2>
@@ -530,7 +542,12 @@ export default function AdminPanel() {
                 <div key={category.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <div className="font-semibold text-slate-100">{category.name}</div>
-                    <div className="text-sm text-slate-500">{category.description || 'Nessuna descrizione'}</div>
+                    <div className="text-sm text-slate-500">
+                      {category.problem_name
+                        ? <span className="text-amber-400/80">↳ {category.problem_name}</span>
+                        : <span className="text-rose-400/70 text-xs">Problema non assegnato</span>}
+                      {category.description && <span className="ml-2">· {category.description}</span>}
+                    </div>
                   </div>
                   <div className="flex gap-2">
                     <button type="button" className="rounded-2xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition" onClick={() => startEditCategory(category)}>Modifica</button>
@@ -617,20 +634,16 @@ export default function AdminPanel() {
                   <div className="flex-1 min-w-0">
                     <div className="font-semibold text-slate-100">{sol.name}</div>
                     <div className="text-sm text-slate-500">
-                      {sol.problem_name
-                        ? <span className="text-sky-400/80">↳ {sol.problem_name}</span>
+                      {sol.problem_names && sol.problem_names.length > 0
+                        ? sol.problem_names.map((pn, i) => (
+                            <span key={i} className="inline-block bg-sky-500/10 text-sky-300 text-xs rounded-full px-2 py-0.5 mr-1">{pn}</span>
+                          ))
                         : <span>Nessun problema collegato</span>}
-                      {sol.description && <span className="ml-2">· {sol.description}</span>}
                     </div>
+                    {sol.description && <div className="text-xs text-slate-600 mt-0.5">{sol.description}</div>}
                   </div>
                   <div className="flex gap-2 shrink-0">
-                    <button
-                      type="button"
-                      className="rounded-2xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition"
-                      onClick={() => startEditSolution(sol)}
-                    >
-                      Modifica
-                    </button>
+                    <button type="button" className="rounded-2xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition" onClick={() => startEditSolution(sol)}>Modifica</button>
                     <DeleteButton itemId={sol.id} usageCount={sol.usage_count} type="solutions" onDelete={requestDelete} />
                   </div>
                 </div>
