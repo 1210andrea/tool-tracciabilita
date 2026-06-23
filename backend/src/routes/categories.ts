@@ -5,7 +5,19 @@ import { emitEvent } from '../services/socketService';
 
 export const categoriesRoutes = Router();
 
-// GET /categories - tutti (cause includono problem_id e problem_name)
+// Assicura che la tabella cause_problems esista
+async function ensureCauseProblemsTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS cause_problems (
+      cause_id   UUID NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+      problem_id UUID NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+      PRIMARY KEY (cause_id, problem_id)
+    )
+  `);
+}
+ensureCauseProblemsTable().catch(console.error);
+
+// GET /categories - tutti (cause includono problem_ids e problem_names)
 categoriesRoutes.get('/', authMiddleware, async (_req, res, next) => {
   try {
     const r = await pool.query(
@@ -16,6 +28,20 @@ categoriesRoutes.get('/', authMiddleware, async (_req, res, next) => {
               c.problem_id,
               p.name AS problem_name,
               c.created_at,
+              COALESCE(
+                (SELECT array_agg(cp.problem_id::text ORDER BY prob.name)
+                 FROM cause_problems cp
+                 JOIN categories prob ON prob.id = cp.problem_id
+                 WHERE cp.cause_id = c.id),
+                ARRAY[]::text[]
+              ) AS problem_ids,
+              COALESCE(
+                (SELECT array_agg(prob.name ORDER BY prob.name)
+                 FROM cause_problems cp
+                 JOIN categories prob ON prob.id = cp.problem_id
+                 WHERE cp.cause_id = c.id),
+                ARRAY[]::text[]
+              ) AS problem_names,
               (
                 SELECT COUNT(*)
                 FROM cases
@@ -24,6 +50,25 @@ categoriesRoutes.get('/', authMiddleware, async (_req, res, next) => {
        FROM categories c
        LEFT JOIN categories p ON p.id = c.problem_id AND p.type = 'problem'
        ORDER BY c.type, c.name ASC`
+    );
+    res.json({ items: r.rows });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// GET /categories/causes-by-problem/:problemId
+categoriesRoutes.get('/causes-by-problem/:problemId', authMiddleware, async (req, res, next) => {
+  try {
+    const { problemId } = req.params;
+    const r = await pool.query(
+      `SELECT DISTINCT c.id, c.type, c.name, c.description, c.problem_id
+       FROM categories c
+       LEFT JOIN cause_problems cp ON cp.cause_id = c.id
+       WHERE c.type = 'cause'
+         AND (c.problem_id = $1 OR cp.problem_id = $1)
+       ORDER BY c.name ASC`,
+      [problemId]
     );
     res.json({ items: r.rows });
   } catch (e) {
@@ -42,6 +87,20 @@ categoriesRoutes.get('/:type', authMiddleware, async (req, res, next) => {
               c.description,
               c.problem_id,
               p.name AS problem_name,
+              COALESCE(
+                (SELECT array_agg(cp.problem_id::text ORDER BY prob.name)
+                 FROM cause_problems cp
+                 JOIN categories prob ON prob.id = cp.problem_id
+                 WHERE cp.cause_id = c.id),
+                ARRAY[]::text[]
+              ) AS problem_ids,
+              COALESCE(
+                (SELECT array_agg(prob.name ORDER BY prob.name)
+                 FROM cause_problems cp
+                 JOIN categories prob ON prob.id = cp.problem_id
+                 WHERE cp.cause_id = c.id),
+                ARRAY[]::text[]
+              ) AS problem_names,
               (
                 SELECT COUNT(*)
                 FROM cases
@@ -61,53 +120,84 @@ categoriesRoutes.get('/:type', authMiddleware, async (req, res, next) => {
 
 // POST /categories
 categoriesRoutes.post('/', authMiddleware, async (req, res, next) => {
+  const client = await pool.connect();
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
 
-    const { type, name, description, problem_id } = req.body as {
+    const { type, name, description, problem_id, problem_ids } = req.body as {
       type: string;
       name: string;
       description?: string;
       problem_id?: string | null;
+      problem_ids?: string[];
     };
     if (!type || !name) return res.status(400).json({ error: 'type and name are required' });
-    if (type === 'cause' && !problem_id) {
-      return res.status(400).json({ error: 'problem_id è obbligatorio per le cause' });
+
+    // Per le cause: almeno un problema richiesto (vecchio problem_id o nuovo problem_ids)
+    const effectiveProblemId = type === 'cause' ? (problem_id ?? (problem_ids?.[0] ?? null)) : null;
+    if (type === 'cause' && !effectiveProblemId && (!problem_ids || problem_ids.length === 0)) {
+      return res.status(400).json({ error: 'Almeno un problema è obbligatorio per le cause' });
     }
 
-    const r = await pool.query(
+    await client.query('BEGIN');
+
+    const r = await client.query(
       'INSERT INTO categories(type, name, description, problem_id) VALUES($1,$2,$3,$4) RETURNING *',
-      [type, name, description ?? null, type === 'cause' ? (problem_id ?? null) : null]
+      [type, name, description ?? null, effectiveProblemId]
     );
+    const newCause = r.rows[0];
+
+    // Inserisce righe in cause_problems se tipo cause e problem_ids forniti
+    if (type === 'cause' && problem_ids && problem_ids.length > 0) {
+      for (const pid of problem_ids) {
+        await client.query(
+          'INSERT INTO cause_problems(cause_id, problem_id) VALUES($1, $2) ON CONFLICT DO NOTHING',
+          [newCause.id, pid]
+        );
+      }
+    } else if (type === 'cause' && effectiveProblemId) {
+      await client.query(
+        'INSERT INTO cause_problems(cause_id, problem_id) VALUES($1, $2) ON CONFLICT DO NOTHING',
+        [newCause.id, effectiveProblemId]
+      );
+    }
+
+    await client.query('COMMIT');
     emitEvent('categories_updated', { type });
-    res.json({ item: r.rows[0] });
+    res.json({ item: newCause });
   } catch (e) {
+    await client.query('ROLLBACK');
     next(e);
+  } finally {
+    client.release();
   }
 });
 
 // PUT /categories/:id
 categoriesRoutes.put('/:id', authMiddleware, async (req, res, next) => {
+  const client = await pool.connect();
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
 
     const { id } = req.params;
-    const { name, description, problem_id } = req.body as {
+    const { name, description, problem_id, problem_ids } = req.body as {
       name?: string;
       description?: string;
       problem_id?: string | null;
+      problem_ids?: string[];
     };
 
-    // Controlla il tipo corrente per validare problem_id
-    const existing = await pool.query('SELECT type FROM categories WHERE id = $1', [id]);
+    const existing = await client.query('SELECT type FROM categories WHERE id = $1', [id]);
     if (!existing.rows.length) return res.status(404).json({ error: 'Category not found' });
     const isCause = existing.rows[0].type === 'cause';
 
-    if (isCause && problem_id === null) {
-      return res.status(400).json({ error: 'problem_id è obbligatorio per le cause' });
-    }
+    const effectiveProblemId = isCause
+      ? (problem_id !== undefined ? problem_id : (problem_ids?.[0] ?? null))
+      : undefined;
 
-    const r = await pool.query(
+    await client.query('BEGIN');
+
+    const r = await client.query(
       `UPDATE categories
        SET name        = COALESCE($1, name),
            description = COALESCE($2, description),
@@ -117,16 +207,39 @@ categoriesRoutes.put('/:id', authMiddleware, async (req, res, next) => {
       [
         name ?? null,
         description ?? null,
-        problem_id !== undefined,   // $3: aggiorna problem_id solo se passato
-        problem_id ?? null,          // $4: il valore
-        id                           // $5
+        effectiveProblemId !== undefined,
+        effectiveProblemId ?? null,
+        id
       ]
     );
-    if (!r.rows.length) return res.status(404).json({ error: 'Category not found' });
+    if (!r.rows.length) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Category not found' }); }
+
+    // Aggiorna cause_problems se cause e problem_ids forniti
+    if (isCause && problem_ids !== undefined) {
+      await client.query('DELETE FROM cause_problems WHERE cause_id = $1', [id]);
+      for (const pid of problem_ids) {
+        await client.query(
+          'INSERT INTO cause_problems(cause_id, problem_id) VALUES($1, $2) ON CONFLICT DO NOTHING',
+          [id, pid]
+        );
+      }
+      // Sincronizza problem_id con il primo elemento se non già impostato
+      if (problem_ids.length > 0) {
+        await client.query(
+          'UPDATE categories SET problem_id = $1 WHERE id = $2 AND problem_id IS NULL',
+          [problem_ids[0], id]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
     emitEvent('categories_updated', { type: r.rows[0].type });
     res.json({ item: r.rows[0] });
   } catch (e) {
+    await client.query('ROLLBACK');
     next(e);
+  } finally {
+    client.release();
   }
 });
 

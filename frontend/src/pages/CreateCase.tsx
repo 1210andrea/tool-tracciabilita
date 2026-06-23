@@ -9,7 +9,7 @@ type OperatoreItem = { id: string; nome: string; attivo: boolean };
 type CategoryItem = { id: string; type: string; name: string };
 type MachineItem = { id: string; code: string; name: string; tipologia?: string; type?: string; reparto?: string };
 type SparePartItem = { id: string; name: string; tipologie?: string[]; types?: string[] };
-type SolutionItem = { id: string; name: string; description?: string; cause_id?: string };
+type SolutionItem = { id: string; name: string; description?: string; problem_ids?: string[] };
 
 type CreateCaseResponse = {
   success?: boolean;
@@ -102,8 +102,8 @@ export default function CreateCase() {
   const [machines, setMachines] = useState<MachineItem[]>([]);
   const [operatori, setOperatori] = useState<OperatoreItem[]>([]);
   const [problems, setProblems] = useState<CategoryItem[]>([]);
-  const [filteredCauses, setFilteredCauses] = useState<CategoryItem[]>([]);
-  const [filteredSolutions, setFilteredSolutions] = useState<SolutionItem[]>([]);
+  const [allCauses, setAllCauses] = useState<CategoryItem[]>([]);
+  const [allSolutions, setAllSolutions] = useState<SolutionItem[]>([]);
   const [spareParts, setSpareParts] = useState<SparePartItem[]>([]);
 
   const [machineId, setMachineId] = useState('');
@@ -122,8 +122,6 @@ export default function CreateCase() {
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingParts, setLoadingParts] = useState(false);
-  const [loadingCauses, setLoadingCauses] = useState(false);
-  const [loadingSolutions, setLoadingSolutions] = useState(false);
   const [notes, setNotes] = useState('');
 
   const filteredMachines = machineSearch.trim() === ''
@@ -137,59 +135,55 @@ export default function CreateCase() {
     if (!token) return;
     const loadLookups = async () => {
       try {
-        const [machinesResp, operatoriResp, categoriesResp] = await Promise.all([
+        const [machinesResp, operatoriResp, categoriesResp, solutionsResp] = await Promise.all([
           axios.get(`${API_URL}/machines`, { headers: { Authorization: `Bearer ${token}` } }),
           axios.get(`${API_URL}/operatori`, { headers: { Authorization: `Bearer ${token}` } }),
           axios.get(`${API_URL}/categories`, { headers: { Authorization: `Bearer ${token}` } }),
+          axios.get(`${API_URL}/solutions-applied`, { headers: { Authorization: `Bearer ${token}` } }),
         ]);
         setMachines(machinesResp.data.items || []);
         setOperatori((operatoriResp.data.items || []).sort((a: OperatoreItem, b: OperatoreItem) => a.nome.localeCompare(b.nome)));
         const items: CategoryItem[] = categoriesResp.data.items || [];
         setProblems(items.filter((i) => i.type === 'problem').sort((a, b) => a.name.localeCompare(b.name)));
+        setAllCauses(items.filter((i) => i.type === 'cause').sort((a, b) => a.name.localeCompare(b.name)));
+        setAllSolutions((solutionsResp.data.items || []).sort((a: SolutionItem, b: SolutionItem) => a.name.localeCompare(b.name)));
       } catch {
         setMachines([]);
         setOperatori([]);
         setProblems([]);
+        setAllCauses([]);
+        setAllSolutions([]);
       }
     };
     loadLookups();
   }, [token]);
 
-  // Quando cambia il problema: carica cause e soluzioni associate
+  // Quando cambia il problema: reset cause, soluzioni selezionate
   useEffect(() => {
     setCauseId('');
-    setFilteredCauses([]);
-    setFilteredSolutions([]);
     setSoluzioniProvate([]);
     setSoluzioniApplicate([]);
+  }, [problemId]);
 
-    if (!problemId || !token) return;
-
-    setLoadingCauses(true);
-    setLoadingSolutions(true);
-
-    axios
-      .get(`${API_URL}/categories/causes-by-problem/${problemId}`, { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => setFilteredCauses((r.data.items || []).sort((a: CategoryItem, b: CategoryItem) => a.name.localeCompare(b.name))))
-      .catch(() => setFilteredCauses([]))
-      .finally(() => setLoadingCauses(false));
-
-    axios
-      .get(`${API_URL}/categories/solutions-by-problem/${problemId}`, { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => setFilteredSolutions((r.data.items || []).sort((a: SolutionItem, b: SolutionItem) => a.name.localeCompare(b.name))))
-      .catch(() => setFilteredSolutions([]))
-      .finally(() => setLoadingSolutions(false));
-  }, [problemId, token]);
-
-  // Quando cambia la causa: filtra ulteriormente le soluzioni per causa
+  // Quando cambia la causa: reset soluzioni selezionate
   useEffect(() => {
     setSoluzioniProvate([]);
     setSoluzioniApplicate([]);
   }, [causeId]);
 
-  const solutionsByCurrentCause = causeId
-    ? filteredSolutions.filter((s) => s.cause_id === causeId)
-    : filteredSolutions;
+  // Cause filtrate per il problema selezionato (tramite problem_id sul category o cause_problems)
+  const filteredCauses = problemId
+    ? allCauses.filter((c: any) => {
+        if (c.problem_id === problemId) return true;
+        if (c.problem_ids && (c.problem_ids as string[]).includes(problemId)) return true;
+        return false;
+      })
+    : [];
+
+  // Soluzioni filtrate per il problema selezionato (direttamente, senza dipendere dalla causa)
+  const filteredSolutions = problemId
+    ? allSolutions.filter((s) => s.problem_ids && s.problem_ids.includes(problemId))
+    : [];
 
   // Ricambi filtrati per tipologia macchina
   useEffect(() => {
@@ -336,10 +330,9 @@ export default function CreateCase() {
             options={sparePartOptions}
             selectedValues={pezziRicambio}
             onChange={setPezziRicambio}
-            placeholder={!machineId ? 'Seleziona prima una macchina' : loadingParts ? 'Caricamento ricambi...' : spareParts.length ? 'Seleziona pezzi di ricambio' : 'Nessun ricambio per questo tipo'}
-            helperText={selectedMachine ? `Tipologia macchina: ${selectedMachine.tipologia ?? selectedMachine.type ?? selectedMachine.reparto ?? 'N/D'}` : 'Seleziona i pezzi di ricambio utilizzati'}
-            required={false}
-            emptyMessage="Nessun ricambio disponibile per questa macchina"
+            placeholder={!machineId ? 'Seleziona prima una macchina' : (loadingParts ? 'Caricamento...' : 'Seleziona ricambi...')}
+            helperText="Seleziona i pezzi di ricambio utilizzati"
+            emptyMessage={!machineId ? 'Seleziona prima una macchina' : 'Nessun ricambio disponibile per questa tipologia'}
           />
         </div>
 
@@ -348,91 +341,95 @@ export default function CreateCase() {
           <label className="text-sm font-medium text-slate-200">Problema <span className="text-rose-500 ml-1">*</span></label>
           <select value={problemId} onChange={(e) => setProblemId(e.target.value)} className="w-full px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 text-sm">
             <option value="">Seleziona problema</option>
-            {problems.map((item) => (<option key={item.id} value={item.id}>{item.name}</option>))}
+            {problems.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
           </select>
         </div>
 
-        {/* Causa - filtrata per problema */}
-        <div className="flex flex-col space-y-1.5">
+        {/* Causa */}
+        <div className="flex flex-col space-y-1.5 md:col-span-1">
           <label className="text-sm font-medium text-slate-200">Causa <span className="text-rose-500 ml-1">*</span></label>
           <select
             value={causeId}
             onChange={(e) => setCauseId(e.target.value)}
-            disabled={!problemId || loadingCauses}
+            disabled={!problemId}
             className="w-full px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 text-sm disabled:opacity-50"
           >
-            <option value="">{loadingCauses ? 'Caricamento...' : !problemId ? 'Seleziona prima un problema' : 'Seleziona causa'}</option>
-            {filteredCauses.map((item) => (<option key={item.id} value={item.id}>{item.name}</option>))}
+            <option value="">{!problemId ? 'Seleziona prima un problema' : 'Seleziona causa'}</option>
+            {filteredCauses.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
           </select>
-          {problemId && !loadingCauses && filteredCauses.length === 0 && (
-            <p className="text-xs text-amber-400 mt-0.5">Nessuna causa associata a questo problema. Aggiungila dall'Admin Panel.</p>
+          {problemId && filteredCauses.length === 0 && (
+            <p className="text-xs text-amber-400">Nessuna causa associata a questo problema. Aggiungila dall'Admin Panel.</p>
           )}
         </div>
 
-        {/* Soluzioni Provate - filtrate per problema (e causa) */}
-        <div className="col-span-1 md:col-span-2 flex flex-col space-y-1.5">
+        {/* Soluzioni Provate */}
+        <div className="flex flex-col space-y-1.5">
           <MultiSelect
             label="Soluzioni Provate"
-            options={solutionsByCurrentCause}
+            options={filteredSolutions.map((s) => ({ id: s.id, name: s.name }))}
             selectedValues={soluzioniProvate}
             onChange={setSoluzioniProvate}
-            placeholder={loadingSolutions ? 'Caricamento soluzioni...' : !problemId ? 'Seleziona prima un problema' : causeId ? 'Seleziona soluzioni provate...' : 'Seleziona una causa per filtrare'}
+            placeholder={!problemId ? 'Seleziona prima un problema' : (filteredSolutions.length === 0 ? 'Nessuna soluzione per questo problema' : 'Seleziona soluzioni provate...')}
             helperText="Soluzioni tentate ma che NON hanno risolto il problema"
-            required={false}
-            emptyMessage={!problemId ? 'Seleziona prima un problema' : 'Nessuna soluzione associata'}
+            emptyMessage={!problemId ? 'Seleziona prima un problema' : 'Nessuna soluzione collegata a questo problema'}
           />
         </div>
 
-        {/* Soluzione Applicata - filtrata per problema (e causa) */}
-        <div className="col-span-1 md:col-span-2 flex flex-col space-y-1.5">
+        {/* Soluzione Applicata */}
+        <div className="flex flex-col space-y-1.5">
           <MultiSelect
             label="Soluzione Applicata"
-            options={solutionsByCurrentCause}
+            required
+            options={filteredSolutions.map((s) => ({ id: s.id, name: s.name }))}
             selectedValues={soluzioniApplicate}
             onChange={setSoluzioniApplicate}
-            placeholder={loadingSolutions ? 'Caricamento soluzioni...' : !problemId ? 'Seleziona prima un problema' : causeId ? 'Seleziona soluzione/i applicata/e...' : 'Seleziona una causa per filtrare'}
+            placeholder={!problemId ? 'Seleziona prima un problema' : (filteredSolutions.length === 0 ? 'Nessuna soluzione per questo problema' : 'Seleziona soluzione applicata...')}
             helperText="Soluzione/i che ha/hanno effettivamente risolto il problema"
-            required={true}
-            emptyMessage={!problemId ? 'Seleziona prima un problema' : 'Nessuna soluzione associata'}
+            emptyMessage={!problemId ? 'Seleziona prima un problema' : 'Nessuna soluzione collegata a questo problema'}
           />
         </div>
 
-        {/* Tempo Impiego */}
-        <div className="col-span-1 md:col-span-2 flex flex-col space-y-1.5">
-          <label className="text-sm font-medium text-slate-200">Tempo Impiego <span className="text-rose-500 ml-1">*</span></label>
-          <div className="flex items-center gap-3">
-            <button type="button" onClick={() => setTempoImpiego((t) => Math.max(0.5, t - 0.5))} className="flex h-10 w-12 items-center justify-center rounded-md border border-slate-600 bg-slate-700 text-lg font-bold text-slate-300 hover:bg-slate-600 transition active:scale-95">-</button>
-            <div className="flex-1 h-10 rounded-md border border-slate-600 bg-slate-700 px-4 flex items-center justify-center text-slate-100 font-semibold text-sm">
-              {tempoImpiego}h ({Math.floor(tempoImpiego)}h {Math.round((tempoImpiego % 1) * 60)}m)
-            </div>
-            <button type="button" onClick={() => setTempoImpiego((t) => Math.min(999, t + 0.5))} className="flex h-10 w-12 items-center justify-center rounded-md border border-slate-600 bg-slate-700 text-lg font-bold text-slate-300 hover:bg-slate-600 transition active:scale-95">+</button>
-          </div>
-          <p className="text-xs text-slate-500">Durata totale dell'intervento manutentivo in ore.</p>
+        {/* Tempo impiego */}
+        <div className="flex flex-col space-y-1.5">
+          <label className="text-sm font-medium text-slate-200">Tempo impiego (ore) <span className="text-rose-500 ml-1">*</span></label>
+          <input
+            type="number" min="0.5" step="0.5" value={tempoImpiego}
+            onChange={(e) => setTempoImpiego(parseFloat(e.target.value) || 0.5)}
+            className="w-full px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 text-sm"
+          />
         </div>
 
         {/* Note */}
-        <div className="col-span-1 md:col-span-2 flex flex-col space-y-1.5">
-          <div className="flex justify-between items-center">
-            <label className="text-sm font-medium text-slate-200">Note aggiuntive</label>
-            <span className="text-xs text-slate-400">{notes.length}/1000 caratteri</span>
-          </div>
+        <div className="flex flex-col space-y-1.5 md:col-span-2">
+          <label className="text-sm font-medium text-slate-200">Note</label>
           <textarea
             value={notes}
-            onChange={(e) => setNotes(e.target.value.slice(0, 1000))}
-            placeholder="Aggiungi dettagli sull'intervento..."
-            className="w-full h-28 px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 resize-none text-sm"
+            onChange={(e) => setNotes(e.target.value)}
+            rows={3}
+            placeholder="Note aggiuntive (opzionale)"
+            className="w-full px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 text-sm resize-none"
           />
         </div>
+
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <button type="button" className="inline-flex items-center justify-center rounded-2xl bg-sky-500 px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-60" onClick={handleCreate} disabled={!token || loading}>
-          {loading ? 'Salvataggio...' : 'Crea caso'}
-        </button>
-        <button type="button" className="rounded-2xl border border-slate-700 bg-slate-900/90 px-6 py-3 text-sm text-slate-100 transition hover:bg-slate-800" onClick={() => navigate(user?.role === 'admin' ? '/dashboard' : '/')}>
-          Torna indietro
-        </button>
-      </div>
+      {selectedMachine && (
+        <div className="rounded-2xl border border-slate-700 bg-slate-900/50 p-3 text-xs text-slate-400">
+          <span className="font-semibold text-slate-300">Macchina selezionata:</span> {selectedMachine.code} - {selectedMachine.name}
+          {(selectedMachine.tipologia || selectedMachine.type) && (
+            <span className="ml-2 text-slate-500">· Tipologia: {selectedMachine.tipologia || selectedMachine.type}</span>
+          )}
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={handleCreate}
+        disabled={loading}
+        className="w-full rounded-2xl bg-cyan-600 px-6 py-3 text-sm font-semibold text-white hover:bg-cyan-500 disabled:opacity-50 transition sm:w-auto"
+      >
+        {loading ? 'Creazione in corso...' : 'Crea caso'}
+      </button>
     </div>
   );
 }
