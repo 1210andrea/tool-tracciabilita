@@ -109,6 +109,59 @@ sparepartsRoutes.post('/spare-parts', authMiddleware, async (req, res, next) => 
   }
 });
 
+sparepartsRoutes.put('/spare-parts/:id', authMiddleware, async (req, res, next) => {
+  try {
+    if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
+
+    const { id } = req.params;
+    const { name, description, tipologie } = req.body as {
+      name?: string;
+      description?: string;
+      tipologie?: string[];
+    };
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const r = await client.query(
+        `UPDATE spare_parts SET name = COALESCE($1, name), description = COALESCE($2, description) WHERE id = $3 RETURNING *`,
+        [name?.trim() ?? null, description?.trim() ?? null, id]
+      );
+      if (!r.rows.length) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Ricambio non trovato' });
+      }
+
+      if (Array.isArray(tipologie)) {
+        await client.query('DELETE FROM spare_part_tipologie WHERE spare_part_id = $1', [id]);
+        const cleaned = tipologie.map((t) => String(t).trim()).filter(Boolean);
+        if (cleaned.length) {
+          const vals: any[] = [];
+          const ph = cleaned.map((t, idx) => {
+            vals.push(id, t);
+            return `($${idx * 2 + 1}, $${idx * 2 + 2})`;
+          });
+          await client.query(
+            `INSERT INTO spare_part_tipologie(spare_part_id, tipologia) VALUES ${ph.join(', ')} ON CONFLICT DO NOTHING`,
+            vals
+          );
+        }
+      }
+
+      await client.query('COMMIT');
+      res.json({ item: r.rows[0] });
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  } catch (e) {
+    next(e);
+  }
+});
+
 sparepartsRoutes.delete('/spare-parts/:id', authMiddleware, async (req, res, next) => {
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
@@ -126,35 +179,15 @@ sparepartsRoutes.delete('/spare-parts/:id', authMiddleware, async (req, res, nex
   }
 });
 
-// GET tutte le soluzioni (con problemi associati)
+// GET tutte le soluzioni
 sparepartsRoutes.get('/solutions-applied', authMiddleware, async (_req, res, next) => {
   try {
     const r = await pool.query(
       `SELECT sa.id, sa.name, sa.description, sa.created_at,
               ((SELECT COUNT(*)::int FROM case_solutions_applied csa WHERE csa.solution_id = sa.id) +
-               (SELECT COUNT(*)::int FROM case_solutions_tried cst WHERE cst.solution_id = sa.id))::int AS usage_count,
-              COALESCE(
-                (SELECT ARRAY_AGG(ps.problem_id::text) FROM problem_solutions ps WHERE ps.solution_id = sa.id),
-                '{}'
-              ) AS problem_ids
+               (SELECT COUNT(*)::int FROM case_solutions_tried cst WHERE cst.solution_id = sa.id))::int AS usage_count
        FROM solutions_applied sa
        ORDER BY sa.name ASC`
-    );
-    res.json({ items: r.rows });
-  } catch (e) {
-    next(e);
-  }
-});
-
-// GET problems associati a una soluzione
-sparepartsRoutes.get('/solutions-applied/:id/problems', authMiddleware, async (req, res, next) => {
-  try {
-    const r = await pool.query(
-      `SELECT c.id, c.name FROM categories c
-       INNER JOIN problem_solutions ps ON ps.problem_id = c.id
-       WHERE ps.solution_id = $1 AND c.type = 'problem'
-       ORDER BY c.name`,
-      [req.params.id]
     );
     res.json({ items: r.rows });
   } catch (e) {
@@ -167,94 +200,23 @@ sparepartsRoutes.post('/solutions-applied', authMiddleware, async (req, res, nex
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
 
-    const { name, description, problem_ids } = req.body as {
+    const { name, description } = req.body as {
       name?: string;
       description?: string;
-      problem_ids?: string[];
     };
     if (!name?.trim()) return res.status(400).json({ error: 'name è obbligatorio' });
 
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      const r = await client.query(
-        'INSERT INTO solutions_applied(name, description) VALUES($1, $2) RETURNING *',
-        [name.trim(), description?.trim() ?? null]
-      );
-      const newSol = r.rows[0];
-
-      if (Array.isArray(problem_ids) && problem_ids.length > 0) {
-        for (const pid of problem_ids) {
-          await client.query(
-            'INSERT INTO problem_solutions(problem_id, solution_id) VALUES($1,$2) ON CONFLICT DO NOTHING',
-            [pid, newSol.id]
-          );
-        }
-      }
-
-      await client.query('COMMIT');
-      res.json({ item: { ...newSol, problem_ids: problem_ids ?? [] } });
-    } catch (e) {
-      await client.query('ROLLBACK');
-      throw e;
-    } finally {
-      client.release();
-    }
+    const r = await pool.query(
+      'INSERT INTO solutions_applied(name, description) VALUES($1, $2) RETURNING *',
+      [name.trim(), description?.trim() ?? null]
+    );
+    res.json({ item: r.rows[0] });
   } catch (e) {
     next(e);
   }
 });
 
-// PUT aggiorna soluzione
-sparepartsRoutes.put('/solutions-applied/:id', authMiddleware, async (req, res, next) => {
-  try {
-    if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
-
-    const { id } = req.params;
-    const { name, description, problem_ids } = req.body as {
-      name?: string;
-      description?: string;
-      problem_ids?: string[];
-    };
-
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      const r = await client.query(
-        `UPDATE solutions_applied
-         SET name = COALESCE($1, name),
-             description = COALESCE($2, description)
-         WHERE id = $3 RETURNING *`,
-        [name?.trim() ?? null, description?.trim() ?? null, id]
-      );
-      if (!r.rows.length) {
-        await client.query('ROLLBACK');
-        return res.status(404).json({ error: 'Soluzione non trovata' });
-      }
-
-      if (problem_ids !== undefined) {
-        await client.query('DELETE FROM problem_solutions WHERE solution_id = $1', [id]);
-        for (const pid of problem_ids) {
-          await client.query(
-            'INSERT INTO problem_solutions(problem_id, solution_id) VALUES($1,$2) ON CONFLICT DO NOTHING',
-            [pid, id]
-          );
-        }
-      }
-
-      await client.query('COMMIT');
-      res.json({ item: { ...r.rows[0], problem_ids: problem_ids ?? [] } });
-    } catch (e) {
-      await client.query('ROLLBACK');
-      throw e;
-    } finally {
-      client.release();
-    }
-  } catch (e) {
-    next(e);
-  }
-});
-
+// DELETE soluzione
 sparepartsRoutes.delete('/solutions-applied/:id', authMiddleware, async (req, res, next) => {
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
