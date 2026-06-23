@@ -8,7 +8,7 @@ type Operatore = { id: string; nome: string; attivo: boolean; created_at?: strin
 type Machine = { id: string; code: string; name: string; line?: string; location?: string; tipologia?: string; type?: string; posizione?: string; usage_count?: number };
 type User = { id: string; username: string; email?: string; role: string };
 type SparePart = { id: string; name: string; tipologia?: string[]; tipologie?: string[]; type?: string; description?: string; usage_count?: number };
-type SolutionApplied = { id: string; name: string; description?: string; usage_count?: number };
+type SolutionApplied = { id: string; name: string; description?: string; problem_id?: string | null; problem_name?: string | null; usage_count?: number };
 
 const API_URL = '/api';
 type AdminTab = 'operatori' | 'problemi' | 'cause' | 'macchine' | 'utenti' | 'ricambi' | 'soluzioni';
@@ -53,7 +53,8 @@ export default function AdminPanel() {
   const [userForm, setUserForm] = useState({ username: '', email: '', password: '', role: 'user' });
   const [sparePartForm, setSparePartForm] = useState({ name: '', tipologie: [] as string[], description: '' });
   const [editingSparePartId, setEditingSparePartId] = useState<string | null>(null);
-  const [solutionForm, setSolutionForm] = useState({ name: '', description: '' });
+  const [solutionForm, setSolutionForm] = useState({ name: '', description: '', problem_id: '' });
+  const [editingSolutionId, setEditingSolutionId] = useState<string | null>(null);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
 
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -109,10 +110,11 @@ export default function AdminPanel() {
     setEditingMachineId(null);
     setEditingSparePartId(null);
     setEditingOperatoreId(null);
+    setEditingSolutionId(null);
     setCategoryForm((c) => ({ type: activeTab === 'cause' ? 'cause' : 'problem', name: '', description: '' }));
     setMachineForm({ code: '', name: '', line: '', location: '', tipologia: '' });
     setSparePartForm({ name: '', tipologie: [], description: '' });
-    setSolutionForm({ name: '', description: '' });
+    setSolutionForm({ name: '', description: '', problem_id: '' });
     setOperatoreForm({ nome: '', attivo: true });
   }, [activeTab]);
 
@@ -202,12 +204,34 @@ export default function AdminPanel() {
   };
   const cancelEditSparePart = () => { setEditingSparePartId(null); setSparePartForm({ name: '', tipologie: [], description: '' }); };
 
+  // ── SOLUZIONI ──────────────────────────────────────────────────────────────
   const submitSolution = async () => {
     try {
-      await axios.post(`${API_URL}/solutions-applied`, { name: solutionForm.name, description: solutionForm.description }, headers);
-      setMessage('Soluzione aggiunta.');
-      setSolutionForm({ name: '', description: '' }); loadAll();
+      if (!solutionForm.name.trim()) { setMessage('Il nome soluzione è obbligatorio.'); return; }
+      const payload = {
+        name: solutionForm.name.trim(),
+        description: solutionForm.description.trim() || null,
+        problem_id: solutionForm.problem_id || null,
+      };
+      if (editingSolutionId) {
+        await axios.put(`${API_URL}/solutions-applied/${editingSolutionId}`, payload, headers);
+        setMessage('Soluzione aggiornata.');
+      } else {
+        await axios.post(`${API_URL}/solutions-applied`, payload, headers);
+        setMessage('Soluzione aggiunta.');
+      }
+      setSolutionForm({ name: '', description: '', problem_id: '' });
+      setEditingSolutionId(null);
+      loadAll();
     } catch (err: any) { setMessage(err?.response?.data?.error ?? 'Errore salvataggio soluzione.'); }
+  };
+  const startEditSolution = (sol: SolutionApplied) => {
+    setEditingSolutionId(sol.id);
+    setSolutionForm({ name: sol.name, description: sol.description || '', problem_id: sol.problem_id || '' });
+  };
+  const cancelEditSolution = () => {
+    setEditingSolutionId(null);
+    setSolutionForm({ name: '', description: '', problem_id: '' });
   };
 
   const submitUser = async () => {
@@ -405,12 +429,55 @@ export default function AdminPanel() {
           {activeTab === 'soluzioni' && (
             <>
               <div>
-                <h2 className="text-xl font-semibold text-slate-100">Nuova soluzione applicata</h2>
-                <p className="text-sm text-slate-400">Aggiungi una soluzione applicata.</p>
+                <h2 className="text-xl font-semibold text-slate-100">{editingSolutionId ? 'Modifica soluzione' : 'Nuova soluzione applicata'}</h2>
+                <p className="text-sm text-slate-400">{editingSolutionId ? 'Modifica nome, descrizione o problema collegato.' : 'Aggiungi una soluzione applicata e collegala a un problema.'}</p>
               </div>
-              <input value={solutionForm.name} onChange={(e) => setSolutionForm((c) => ({ ...c, name: e.target.value }))} placeholder="Nome soluzione" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
-              <textarea value={solutionForm.description} onChange={(e) => setSolutionForm((c) => ({ ...c, description: e.target.value }))} rows={4} placeholder="Descrizione (opzionale)" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
-              <button type="button" className="rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-sky-400 transition" onClick={submitSolution}>Aggiungi soluzione</button>
+
+              <div>
+                <label className="text-sm text-slate-300">Nome soluzione</label>
+                <input
+                  value={solutionForm.name}
+                  onChange={(e) => setSolutionForm((c) => ({ ...c, name: e.target.value }))}
+                  placeholder="Nome soluzione"
+                  className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm text-slate-300">Problema collegato <span className="text-slate-500">(opzionale)</span></label>
+                <select
+                  value={solutionForm.problem_id}
+                  onChange={(e) => setSolutionForm((c) => ({ ...c, problem_id: e.target.value }))}
+                  className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
+                >
+                  <option value="">— Nessun problema —</option>
+                  {problems.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-sm text-slate-300">Descrizione <span className="text-slate-500">(opzionale)</span></label>
+                <textarea
+                  value={solutionForm.description}
+                  onChange={(e) => setSolutionForm((c) => ({ ...c, description: e.target.value }))}
+                  rows={4}
+                  placeholder="Descrizione soluzione"
+                  className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none"
+                />
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className="rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 hover:bg-sky-400 transition" onClick={submitSolution}>
+                  {editingSolutionId ? 'Salva modifiche' : 'Aggiungi soluzione'}
+                </button>
+                {editingSolutionId && (
+                  <button type="button" className="rounded-2xl border border-slate-700 bg-slate-900 px-5 py-3 text-sm font-semibold text-slate-200 hover:bg-slate-800 transition" onClick={cancelEditSolution}>
+                    Annulla
+                  </button>
+                )}
+              </div>
             </>
           )}
         </div>
@@ -547,11 +614,25 @@ export default function AdminPanel() {
             <div className="space-y-4">
               {solutionsApplied.map((sol) => (
                 <div key={sol.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <div className="font-semibold text-slate-100">{sol.name}</div>
-                    <div className="text-sm text-slate-500">{sol.description || 'Nessuna descrizione'}</div>
+                    <div className="text-sm text-slate-500">
+                      {sol.problem_name
+                        ? <span className="text-sky-400/80">↳ {sol.problem_name}</span>
+                        : <span>Nessun problema collegato</span>}
+                      {sol.description && <span className="ml-2">· {sol.description}</span>}
+                    </div>
                   </div>
-                  <DeleteButton itemId={sol.id} usageCount={sol.usage_count} type="solutions" onDelete={requestDelete} />
+                  <div className="flex gap-2 shrink-0">
+                    <button
+                      type="button"
+                      className="rounded-2xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition"
+                      onClick={() => startEditSolution(sol)}
+                    >
+                      Modifica
+                    </button>
+                    <DeleteButton itemId={sol.id} usageCount={sol.usage_count} type="solutions" onDelete={requestDelete} />
+                  </div>
                 </div>
               ))}
               {solutionsApplied.length === 0 && <p className="text-sm text-slate-500 italic text-center py-4">Nessuna soluzione configurata.</p>}

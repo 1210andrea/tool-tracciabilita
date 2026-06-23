@@ -179,14 +179,22 @@ sparepartsRoutes.delete('/spare-parts/:id', authMiddleware, async (req, res, nex
   }
 });
 
-// GET tutte le soluzioni
+// ── SOLUZIONI APPLICATE ─────────────────────────────────────────────────────
+
+// GET tutte le soluzioni (con problema collegato se presente)
 sparepartsRoutes.get('/solutions-applied', authMiddleware, async (_req, res, next) => {
   try {
     const r = await pool.query(
-      `SELECT sa.id, sa.name, sa.description, sa.created_at,
+      `SELECT sa.id,
+              sa.name,
+              sa.description,
+              sa.problem_id,
+              c.name AS problem_name,
+              sa.created_at,
               ((SELECT COUNT(*)::int FROM case_solutions_applied csa WHERE csa.solution_id = sa.id) +
-               (SELECT COUNT(*)::int FROM case_solutions_tried cst WHERE cst.solution_id = sa.id))::int AS usage_count
+               (SELECT COUNT(*)::int FROM case_solutions_tried cst  WHERE cst.solution_id  = sa.id))::int AS usage_count
        FROM solutions_applied sa
+       LEFT JOIN categories c ON c.id = sa.problem_id AND c.type = 'problem'
        ORDER BY sa.name ASC`
     );
     res.json({ items: r.rows });
@@ -200,16 +208,46 @@ sparepartsRoutes.post('/solutions-applied', authMiddleware, async (req, res, nex
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
 
-    const { name, description } = req.body as {
+    const { name, description, problem_id } = req.body as {
       name?: string;
       description?: string;
+      problem_id?: string | null;
     };
     if (!name?.trim()) return res.status(400).json({ error: 'name è obbligatorio' });
 
     const r = await pool.query(
-      'INSERT INTO solutions_applied(name, description) VALUES($1, $2) RETURNING *',
-      [name.trim(), description?.trim() ?? null]
+      'INSERT INTO solutions_applied(name, description, problem_id) VALUES($1, $2, $3) RETURNING *',
+      [name.trim(), description?.trim() ?? null, problem_id ?? null]
     );
+    res.json({ item: r.rows[0] });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// PUT aggiorna soluzione
+sparepartsRoutes.put('/solutions-applied/:id', authMiddleware, async (req, res, next) => {
+  try {
+    if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
+
+    const { id } = req.params;
+    const { name, description, problem_id } = req.body as {
+      name?: string;
+      description?: string;
+      problem_id?: string | null;
+    };
+
+    const r = await pool.query(
+      `UPDATE solutions_applied
+       SET name        = COALESCE($1, name),
+           description = COALESCE($2, description),
+           problem_id  = $3
+       WHERE id = $4
+       RETURNING *`,
+      [name?.trim() ?? null, description?.trim() ?? null, problem_id ?? null, id]
+    );
+
+    if (!r.rows.length) return res.status(404).json({ error: 'Soluzione non trovata' });
     res.json({ item: r.rows[0] });
   } catch (e) {
     next(e);
