@@ -209,6 +209,10 @@ export default function AdminPanel() {
   const cancelEditMachine = () => { setEditingMachineId(null); setMachineForm({ code: '', name: '', line: '', location: '', tipologia: '' }); };
 
   // ── helpers ricambi ─────────────────────────────────────────────────────
+  const selectTipologieAll = () => setSparePartForm((c) => ({ ...c, tipologie: [...availableTipologie] }));
+  const selectTipologieSR  = () => setSparePartForm((c) => ({ ...c, tipologie: availableTipologie.filter((t) => t.toLowerCase().startsWith('sr')) }));
+  const selectTipologieSIMM = () => setSparePartForm((c) => ({ ...c, tipologie: availableTipologie.filter((t) => t.toLowerCase().startsWith('simm')) }));
+
   const submitSparePart = async () => {
     try {
       if (editingSparePartId) {
@@ -450,7 +454,34 @@ export default function AdminPanel() {
               </div>
               <input value={sparePartForm.name} onChange={(e) => setSparePartForm((c) => ({ ...c, name: e.target.value }))} placeholder="Nome ricambio" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
               <div>
-                <span className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Tipologie Macchine Collegate</span>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Tipologie Macchine Collegate</span>
+                  {availableTipologie.length > 0 && (
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={selectTipologieAll}
+                        className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-slate-100 transition"
+                      >
+                        Tutte
+                      </button>
+                      <button
+                        type="button"
+                        onClick={selectTipologieSR}
+                        className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-slate-100 transition"
+                      >
+                        SR
+                      </button>
+                      <button
+                        type="button"
+                        onClick={selectTipologieSIMM}
+                        className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-slate-100 transition"
+                      >
+                        SIMM
+                      </button>
+                    </div>
+                  )}
+                </div>
                 {availableTipologie.length === 0
                   ? <p className="text-sm text-slate-500 bg-slate-900/50 p-3 rounded-2xl border border-slate-800">Nessuna tipologia trovata.</p>
                   : (
