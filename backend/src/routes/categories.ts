@@ -5,7 +5,6 @@ import { emitEvent } from '../services/socketService';
 
 export const categoriesRoutes = Router();
 
-// Assicura che la tabella cause_problems esista
 async function ensureCauseProblemsTable() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS cause_problems (
@@ -17,7 +16,7 @@ async function ensureCauseProblemsTable() {
 }
 ensureCauseProblemsTable().catch(console.error);
 
-// GET /categories - tutti (cause includono problem_ids e problem_names)
+// GET /categories
 categoriesRoutes.get('/', authMiddleware, async (_req, res, next) => {
   try {
     const r = await pool.query(
@@ -76,7 +75,33 @@ categoriesRoutes.get('/causes-by-problem/:problemId', authMiddleware, async (req
   }
 });
 
-// GET /categories/:type
+// GET /categories/solutions-by-problem/:problemId
+// DEVE stare prima di /:type altrimenti Express intercetta 'solutions-by-problem' come :type
+categoriesRoutes.get('/solutions-by-problem/:problemId', authMiddleware, async (req, res, next) => {
+  try {
+    const { problemId } = req.params;
+    const r = await pool.query(
+      `SELECT DISTINCT
+              sa.id,
+              sa.name,
+              sa.description,
+              sp.problem_id AS cause_id
+       FROM solutions_applied sa
+       LEFT JOIN solution_problems sp ON sp.solution_id = sa.id
+       WHERE sp.problem_id = $1
+          OR NOT EXISTS (
+               SELECT 1 FROM solution_problems sp2 WHERE sp2.solution_id = sa.id
+             )
+       ORDER BY sa.name ASC`,
+      [problemId]
+    );
+    res.json({ items: r.rows });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// GET /categories/:type  <- DEVE stare dopo le route specifiche
 categoriesRoutes.get('/:type', authMiddleware, async (req, res, next) => {
   try {
     const { type } = req.params;
@@ -133,7 +158,6 @@ categoriesRoutes.post('/', authMiddleware, async (req, res, next) => {
     };
     if (!type || !name) return res.status(400).json({ error: 'type and name are required' });
 
-    // Per le cause: almeno un problema richiesto (vecchio problem_id o nuovo problem_ids)
     const effectiveProblemId = type === 'cause' ? (problem_id ?? (problem_ids?.[0] ?? null)) : null;
     if (type === 'cause' && !effectiveProblemId && (!problem_ids || problem_ids.length === 0)) {
       return res.status(400).json({ error: 'Almeno un problema è obbligatorio per le cause' });
@@ -147,7 +171,6 @@ categoriesRoutes.post('/', authMiddleware, async (req, res, next) => {
     );
     const newCause = r.rows[0];
 
-    // Inserisce righe in cause_problems se tipo cause e problem_ids forniti
     if (type === 'cause' && problem_ids && problem_ids.length > 0) {
       for (const pid of problem_ids) {
         await client.query(
@@ -214,7 +237,6 @@ categoriesRoutes.put('/:id', authMiddleware, async (req, res, next) => {
     );
     if (!r.rows.length) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Category not found' }); }
 
-    // Aggiorna cause_problems se cause e problem_ids forniti
     if (isCause && problem_ids !== undefined) {
       await client.query('DELETE FROM cause_problems WHERE cause_id = $1', [id]);
       for (const pid of problem_ids) {
@@ -223,7 +245,6 @@ categoriesRoutes.put('/:id', authMiddleware, async (req, res, next) => {
           [id, pid]
         );
       }
-      // Sincronizza problem_id con il primo elemento se non già impostato
       if (problem_ids.length > 0) {
         await client.query(
           'UPDATE categories SET problem_id = $1 WHERE id = $2 AND problem_id IS NULL',

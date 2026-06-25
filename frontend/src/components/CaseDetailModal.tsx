@@ -25,7 +25,6 @@ export type CaseDetail = {
   cause_name?: string;
   spare_part_name?: string;
   solution_applied_name?: string;
-  operator_name?: string;
   created_at?: string;
   notes?: string | null;
   tempo_impiego?: number;
@@ -85,21 +84,6 @@ function MultiSelect({
   );
 }
 
-// Helper per normalizzare i valori JSON che possono arrivare come stringa o array
-function parseJsonArray(val: any): { id: string; name: string }[] {
-  if (!val) return [];
-  if (Array.isArray(val)) return val;
-  if (typeof val === 'string') {
-    try {
-      const parsed = JSON.parse(val);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
-  return [];
-}
-
 export function CaseDetailModal({
   open, token, caseItem, machines, categories, canEdit, onClose, onSaved,
 }: {
@@ -131,16 +115,14 @@ export function CaseDetailModal({
     setMachineId(caseItem.machine_id);
     setProblemId(caseItem.problem_id ?? '');
     setCauseId(caseItem.cause_id ?? '');
-    // Usa parseJsonArray per gestire sia il caso lista (stringa JSON) che dettaglio (array)
-    setSoluzioniProvate(parseJsonArray(caseItem.soluzioni_provate).map((s) => s.id));
-    setSoluzioniApplicate(parseJsonArray(caseItem.soluzioni_applicate).map((s) => s.id));
-    setPezziRicambio(parseJsonArray(caseItem.pezzi_ricambio).map((p) => p.id));
+    setSoluzioniProvate((caseItem.soluzioni_provate || []).map((s) => s.id));
+    setSoluzioniApplicate((caseItem.soluzioni_applicate || []).map((s) => s.id));
+    setPezziRicambio((caseItem.pezzi_ricambio || []).map((p) => p.id));
     setTempoImpiego(Number(caseItem.tempo_impiego) || 0.5);
     setNotes(caseItem.notes ?? '');
     setError(null);
   }, [caseItem]);
 
-  // Carica cause filtrate per problema selezionato
   useEffect(() => {
     setFilteredCauses([]);
     setFilteredSolutions([]);
@@ -175,8 +157,11 @@ export function CaseDetailModal({
     setSoluzioniApplicate([]);
   };
 
+  // Soluzioni gia' filtrate per problema dal BE.
+  // Se e' selezionata una causa, filtra per cause_id.
+  // Soluzioni senza cause_id vengono sempre mostrate.
   const solutionsByCurrentCause = causeId
-    ? filteredSolutions.filter((s) => s.cause_id === causeId)
+    ? filteredSolutions.filter((s) => !s.cause_id || s.cause_id === causeId)
     : filteredSolutions;
 
   useEffect(() => {
@@ -191,11 +176,6 @@ export function CaseDetailModal({
 
   if (!open || !caseItem) return null;
 
-  // Dati visualizzazione: normalizza sempre con parseJsonArray
-  const soluzioniProvateDisplay = parseJsonArray(caseItem.soluzioni_provate);
-  const soluzioniApplicateDisplay = parseJsonArray(caseItem.soluzioni_applicate);
-  const pezziRicambioDisplay = parseJsonArray(caseItem.pezzi_ricambio);
-
   const handleSave = async () => {
     if (!canEdit) return;
     if (!machineId || !problemId || !causeId || !soluzioniApplicate.length) {
@@ -206,20 +186,10 @@ export function CaseDetailModal({
     try {
       await axios.put(
         `${API_URL}/cases/${caseItem.id}`,
-        {
-          machine_id: machineId,
-          problem_id: problemId,
-          cause_id: causeId,
-          soluzioni_provate: soluzioniProvate,
-          soluzioni_applicate: soluzioniApplicate,
-          pezzi_ricambio: pezziRicambio,
-          tempo_impiego: tempoImpiego,
-          notes: notes.trim() || null
-        },
+        { machine_id: machineId, problem_id: problemId, cause_id: causeId, soluzioni_provate: soluzioniProvate, soluzioni_applicate: soluzioniApplicate, pezzi_ricambio: pezziRicambio, tempo_impiego: tempoImpiego, notes: notes.trim() || null },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      onSaved();
-      onClose();
+      onSaved(); onClose();
     } catch (err: any) {
       setError(err?.response?.data?.error ?? 'Errore durante il salvataggio.');
     } finally {
@@ -260,12 +230,7 @@ export function CaseDetailModal({
 
               <div>
                 <label className="text-xs text-slate-400">Causa {loadingCauses && <span className="text-slate-500">(caricamento...)</span>}</label>
-                <select
-                  value={causeId}
-                  onChange={(e) => handleCauseChange(e.target.value)}
-                  disabled={!problemId || loadingCauses}
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-xs text-slate-100 outline-none disabled:opacity-50"
-                >
+                <select value={causeId} onChange={(e) => handleCauseChange(e.target.value)} disabled={!problemId || loadingCauses} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-xs text-slate-100 outline-none disabled:opacity-50">
                   <option value="">{!problemId ? 'Seleziona prima un problema' : 'Seleziona causa'}</option>
                   {filteredCauses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
@@ -313,6 +278,17 @@ export function CaseDetailModal({
                   <button type="button" onClick={() => setTempoImpiego((t) => Math.min(999, t + 0.5))} className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-700 bg-slate-950 text-md font-bold text-slate-300 hover:bg-slate-800 transition">+</button>
                 </div>
               </div>
+
+              <div className="sm:col-span-2">
+                <label className="text-xs text-slate-400">Note</label>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={3}
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-xs text-slate-100 outline-none resize-none focus:border-sky-500/40 focus:ring-2 focus:ring-sky-500/10 transition"
+                  placeholder="Aggiungi note..."
+                />
+              </div>
             </>
           ) : (
             <>
@@ -328,79 +304,66 @@ export function CaseDetailModal({
                 <span className="text-xs text-slate-500">Causa</span>
                 <div className="text-sm font-medium text-slate-200 mt-1">{caseItem.cause_name || 'N.D.'}</div>
               </div>
-              {caseItem.operator_name && (
-                <div className="sm:col-span-2">
-                  <span className="text-xs text-slate-500">Operatore</span>
-                  <div className="text-sm font-medium text-slate-200 mt-1">{caseItem.operator_name}</div>
-                </div>
-              )}
               <div className="sm:col-span-2">
                 <span className="text-xs text-slate-500">Pezzi di Ricambio</span>
-                <div className="text-sm font-medium text-slate-200 mt-1">
-                  {pezziRicambioDisplay.length > 0
-                    ? pezziRicambioDisplay.map((p) => p.name).join(', ')
-                    : (caseItem.spare_part_name && caseItem.spare_part_name !== 'N.D.' ? caseItem.spare_part_name : 'Nessuno')}
-                </div>
+                <div className="text-sm font-medium text-slate-200 mt-1">{(caseItem.pezzi_ricambio || []).map((p) => p.name).join(', ') || caseItem.spare_part_name || 'Nessuno'}</div>
               </div>
               <div className="sm:col-span-2">
                 <span className="text-xs text-slate-500">Soluzioni Provate</span>
-                <div className="text-sm font-medium text-slate-200 mt-1">
-                  {soluzioniProvateDisplay.length > 0
-                    ? soluzioniProvateDisplay.map((s) => s.name).join(', ')
-                    : 'Nessuna'}
-                </div>
+                <div className="text-sm font-medium text-slate-200 mt-1">{(caseItem.soluzioni_provate || []).map((s) => s.name).join(', ') || 'Nessuna'}</div>
               </div>
               <div className="sm:col-span-2">
                 <span className="text-xs text-slate-500">Soluzioni Applicate</span>
-                <div className="text-sm font-medium text-slate-200 mt-1">
-                  {soluzioniApplicateDisplay.length > 0
-                    ? soluzioniApplicateDisplay.map((s) => s.name).join(', ')
-                    : (caseItem.solution_applied_name && caseItem.solution_applied_name !== 'N.D.' ? caseItem.solution_applied_name : 'Nessuna')}
-                </div>
+                <div className="text-sm font-medium text-slate-200 mt-1">{(caseItem.soluzioni_applicate || []).map((s) => s.name).join(', ') || caseItem.solution_applied_name || 'Nessuna'}</div>
               </div>
-              <div className="sm:col-span-2">
+              <div>
                 <span className="text-xs text-slate-500">Tempo Impiego</span>
                 <div className="text-sm font-medium text-slate-200 mt-1">
                   {caseItem.tempo_impiego
-                    ? `${caseItem.tempo_impiego}h (${Math.floor(caseItem.tempo_impiego)}h ${Math.round((caseItem.tempo_impiego % 1) * 60)}m)`
-                    : '—'}
+                    ? `${caseItem.tempo_impiego}h (${Math.floor(Number(caseItem.tempo_impiego))}h ${Math.round((Number(caseItem.tempo_impiego) % 1) * 60)}m)`
+                    : 'N.D.'}
                 </div>
               </div>
+              <div>
+                <span className="text-xs text-slate-500">Data apertura</span>
+                <div className="text-sm font-medium text-slate-200 mt-1">
+                  {caseItem.created_at ? new Date(caseItem.created_at).toLocaleString('it-IT') : 'N.D.'}
+                </div>
+              </div>
+              {caseItem.notes && (
+                <div className="sm:col-span-2">
+                  <span className="text-xs text-slate-500">Note</span>
+                  <div className="text-sm font-medium text-slate-200 mt-1 whitespace-pre-wrap">{caseItem.notes}</div>
+                </div>
+              )}
             </>
           )}
-
-          <div className="sm:col-span-2">
-            <div className="flex justify-between items-center">
-              <label className="text-xs text-slate-400">Note aggiuntive</label>
-              {canEdit && <span className="text-[10px] text-slate-500">{notes.length}/1000 caratteri</span>}
-            </div>
-            {isEditing ? (
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value.slice(0, 1000))}
-                placeholder="Aggiungi dettagli aggiuntivi..."
-                className="mt-1 w-full h-24 rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2 text-xs text-slate-100 outline-none resize-none focus:border-sky-500/50 transition-colors"
-              />
-            ) : (
-              <div className="mt-1 w-full rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-2.5 text-xs text-slate-300 min-h-[4rem] whitespace-pre-wrap">
-                {notes || <span className="text-slate-500 italic">Nessuna nota aggiuntiva</span>}
-              </div>
-            )}
-          </div>
         </div>
 
-        <div className="mt-6 flex flex-wrap justify-end gap-3">
-          <button type="button" onClick={onClose} className="rounded-2xl border border-slate-700 px-4 py-2 text-xs text-slate-100 hover:bg-slate-800">Chiudi</button>
+        <div className="mt-6 flex justify-end gap-3">
           {canEdit && !isEditing && (
-            <button type="button" onClick={() => setIsEditing(true)} className="rounded-2xl bg-sky-500 px-4 py-2 text-xs font-semibold text-slate-950 hover:bg-sky-400">Modifica</button>
+            <button type="button" onClick={() => setIsEditing(true)}
+              className="rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-500 transition">
+              Modifica
+            </button>
           )}
           {isEditing && (
             <>
-              <button type="button" onClick={() => setIsEditing(false)} className="rounded-2xl border border-slate-700 px-4 py-2 text-xs text-slate-100 hover:bg-slate-800">Annulla</button>
-              <button type="button" onClick={handleSave} disabled={loading} className="rounded-2xl bg-sky-500 px-4 py-2 text-xs font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-60">
-                {loading ? 'Salvataggio...' : 'Salva modifiche'}
+              <button type="button" onClick={() => setIsEditing(false)} disabled={loading}
+                className="rounded-xl border border-slate-700 px-4 py-2 text-xs text-slate-300 hover:bg-slate-800 transition">
+                Annulla
+              </button>
+              <button type="button" onClick={handleSave} disabled={loading}
+                className="rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-50 transition">
+                {loading ? 'Salvataggio...' : 'Salva'}
               </button>
             </>
+          )}
+          {!isEditing && (
+            <button type="button" onClick={onClose}
+              className="rounded-xl border border-slate-700 px-4 py-2 text-xs text-slate-300 hover:bg-slate-800 transition">
+              Chiudi
+            </button>
           )}
         </div>
       </div>
