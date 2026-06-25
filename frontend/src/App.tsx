@@ -7,6 +7,8 @@ import UserHome from './pages/UserHome';
 import CreateCase from './pages/CreateCase';
 import AdminPanel from './pages/AdminPanel';
 import AiAnalysis from './pages/AiAnalysis';
+import Magazzino from './pages/Magazzino';
+import Ordini from './pages/Ordini';
 
 function AuthLoading() {
   return (
@@ -50,10 +52,20 @@ function Layout({ children }: { children: ReactNode }) {
             {isAdmin ? (
               <>
                 <Link
-                  className={`rounded border px-3 py-2 text-sm hover:bg-slate-700 ${location.pathname === '/dashboard' ? 'border-sky-500 bg-slate-800' : 'border-slate-700 bg-slate-800'}`}
+                  className={`rounded border px-3 py-2 text-sm hover:bg-slate-700 ${
+                    location.pathname === '/dashboard' ? 'border-sky-500 bg-slate-800' : 'border-slate-700 bg-slate-800'
+                  }`}
                   to="/dashboard"
                 >
                   Dashboard
+                </Link>
+                <Link
+                  className={`rounded border px-3 py-2 text-sm hover:bg-slate-700 ${
+                    location.pathname === '/magazzino' ? 'border-emerald-500 bg-slate-800' : 'border-slate-700 bg-slate-800'
+                  }`}
+                  to="/magazzino"
+                >
+                  Magazzino
                 </Link>
                 <Link className="rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm hover:bg-slate-700" to="/admin">
                   Admin
@@ -61,14 +73,18 @@ function Layout({ children }: { children: ReactNode }) {
               </>
             ) : (
               <Link
-                className={`rounded border px-3 py-2 text-sm hover:bg-slate-700 ${location.pathname === '/' ? 'border-sky-500 bg-slate-800' : 'border-slate-700 bg-slate-800'}`}
+                className={`rounded border px-3 py-2 text-sm hover:bg-slate-700 ${
+                  location.pathname === '/' ? 'border-sky-500 bg-slate-800' : 'border-slate-700 bg-slate-800'
+                }`}
                 to="/"
               >
                 I miei casi
               </Link>
             )}
             <Link
-              className={`rounded border px-3 py-2 text-sm hover:bg-slate-700 ${location.pathname === '/ai' ? 'border-violet-500 bg-slate-800' : 'border-slate-700 bg-slate-800'}`}
+              className={`rounded border px-3 py-2 text-sm hover:bg-slate-700 ${
+                location.pathname === '/ai' ? 'border-violet-500 bg-slate-800' : 'border-slate-700 bg-slate-800'
+              }`}
               to="/ai"
             >
               Analisi IA
@@ -112,6 +128,26 @@ export default function App() {
             <Protected role="admin">
               <Layout>
                 <Dashboard />
+              </Layout>
+            </Protected>
+          }
+        />
+        <Route
+          path="/magazzino"
+          element={
+            <Protected role="admin">
+              <Layout>
+                <Magazzino />
+              </Layout>
+            </Protected>
+          }
+        />
+        <Route
+          path="/ordini"
+          element={
+            <Protected role="admin">
+              <Layout>
+                <Ordini />
               </Layout>
             </Protected>
           }
