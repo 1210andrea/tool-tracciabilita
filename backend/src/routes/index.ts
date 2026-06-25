@@ -28,8 +28,8 @@ export function registerRoutes(app: Express) {
   app.use('/api/stats', statsRoutes);
   app.use('/api/stats', problemTimeRoutes);
   app.use('/api', sparepartsRoutes);
-  app.use('/api', reordersRoutes);
-  
+  app.use('/api/reorders', reordersRoutes);
+
   app.post('/api/analisi-ia', authMiddleware, async (req, res, next) => {
     try {
       const {
