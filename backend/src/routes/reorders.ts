@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware } from '../middleware/auth';
 import { pool } from '../db';
+import PDFDocument from 'pdfkit';
 
 export const reordersRoutes = Router();
 
@@ -114,7 +115,6 @@ reordersRoutes.post('/generate', authMiddleware, async (req, res, next) => {
   try {
     const { note } = req.body as { note?: string };
 
-    // Recupera tutti i pezzi sotto scorta minima
     const rParts = await pool.query(
       `SELECT id, qty_riordino
        FROM spare_parts
@@ -160,7 +160,6 @@ reordersRoutes.patch('/:id/items/:itemId', authMiddleware, async (req, res, next
     try {
       await client.query('BEGIN');
 
-      // Verifica che la riga appartenga all'ordine
       const rCheck = await client.query(
         `SELECT ri.*, sp.id AS sp_id
          FROM reorder_items ri
@@ -176,19 +175,16 @@ reordersRoutes.patch('/:id/items/:itemId', authMiddleware, async (req, res, next
       const row = rCheck.rows[0];
       const prevRicevuta = Number(row.quantita_ricevuta);
       const delta = quantita_ricevuta - prevRicevuta;
-      const newRicevuta = quantita_ricevuta;
-      const newStatus = newRicevuta >= Number(row.quantita_ordinata) ? 'completed'
-        : newRicevuta > 0 ? 'partial' : 'pending';
+      const newStatus = quantita_ricevuta >= Number(row.quantita_ordinata) ? 'completed'
+        : quantita_ricevuta > 0 ? 'partial' : 'pending';
 
-      // Aggiorna la riga
       await client.query(
         `UPDATE reorder_items
          SET quantita_ricevuta = $1, status = $2, updated_at = now()
          WHERE id = $3`,
-        [newRicevuta, newStatus, itemId]
+        [quantita_ricevuta, newStatus, itemId]
       );
 
-      // Aggiorna la giacenza in spare_parts solo se delta > 0
       if (delta > 0) {
         await client.query(
           `UPDATE spare_parts SET quantita = quantita + $1, updated_at = now() WHERE id = $2`,
@@ -196,9 +192,7 @@ reordersRoutes.patch('/:id/items/:itemId', authMiddleware, async (req, res, next
         );
       }
 
-      // Aggiorna lo status dell'ordine testata
       await client.query('SELECT refresh_reorder_status($1)', [reorderId]);
-
       await client.query('COMMIT');
       res.json({ ok: true });
     } catch (e) { await client.query('ROLLBACK'); throw e; }
@@ -218,5 +212,123 @@ reordersRoutes.patch('/:id/cancel', authMiddleware, async (req, res, next) => {
     if (!r.rows.length)
       return res.status(400).json({ error: 'Ordine non trovato o non annullabile' });
     res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// ── GET /api/reorders/:id/pdf  (genera e scarica PDF ordine) ─────────────
+reordersRoutes.get('/:id/pdf', authMiddleware, async (req, res, next) => {
+  try {
+    // Dati testata
+    const rHead = await pool.query(
+      `SELECT r.*, u.username AS created_by_username
+       FROM reorders r LEFT JOIN users u ON u.id = r.created_by
+       WHERE r.id = $1`,
+      [req.params.id]
+    );
+    if (!rHead.rows.length) return res.status(404).json({ error: 'Ordine non trovato' });
+    const order = rHead.rows[0];
+
+    // Righe ordine
+    const rItems = await pool.query(
+      `SELECT sp.codice, sp.name, sp.description,
+              COALESCE(ARRAY_AGG(spt.tipologia) FILTER (WHERE spt.tipologia IS NOT NULL), '{}') AS tipologie,
+              ri.quantita_ordinata, ri.quantita_ricevuta, ri.status
+       FROM reorder_items ri
+       JOIN spare_parts sp ON sp.id = ri.spare_part_id
+       LEFT JOIN spare_part_tipologie spt ON spt.spare_part_id = sp.id
+       WHERE ri.reorder_id = $1
+       GROUP BY sp.codice, sp.name, sp.description, ri.quantita_ordinata, ri.quantita_ricevuta, ri.status
+       ORDER BY sp.name ASC`,
+      [req.params.id]
+    );
+    const items = rItems.rows;
+
+    // Genera PDF
+    const doc = new PDFDocument({ margin: 50, size: 'A4' });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="ordine-${order.numero_ordine}.pdf"`
+    );
+    doc.pipe(res);
+
+    const GRAY  = '#6b7280';
+    const BLACK = '#111827';
+    const ACCENT = '#0f766e';
+
+    // — Intestazione —
+    doc.fontSize(20).fillColor(ACCENT).text('ORDINE DI RIAPPROVVIGIONAMENTO', { align: 'center' });
+    doc.moveDown(0.5);
+    doc.fontSize(10).fillColor(GRAY);
+    doc.text(`N° Ordine: ${order.numero_ordine}`, { align: 'center' });
+    doc.text(
+      `Data: ${new Date(order.created_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' })}`,
+      { align: 'center' }
+    );
+    if (order.created_by_username)
+      doc.text(`Creato da: ${order.created_by_username}`, { align: 'center' });
+
+    doc.moveDown(0.5);
+    doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor(ACCENT).lineWidth(1).stroke();
+    doc.moveDown(1);
+
+    // — Stato ordine —
+    const statusLabel: Record<string, string> = {
+      pending: 'IN SOSPESO', partial: 'PARZIALMENTE RICEVUTO',
+      completed: 'COMPLETATO', cancelled: 'ANNULLATO'
+    };
+    doc.fontSize(11).fillColor(BLACK)
+      .text('Stato ordine: ', { continued: true })
+      .fillColor(ACCENT)
+      .text(statusLabel[order.status] ?? order.status);
+
+    if (order.note) {
+      doc.moveDown(0.3);
+      doc.fontSize(10).fillColor(GRAY).text(`Note: ${order.note}`);
+    }
+
+    doc.moveDown(1);
+
+    // — Tabella righe —
+    const colX = { codice: 50, descrizione: 130, tipologia: 330, qta: 460, ricevuta: 510 };
+    const rowH = 22;
+
+    // Intestazione colonne
+    doc.fontSize(9).fillColor(GRAY);
+    doc.text('CODICE',      colX.codice,      doc.y, { width: 75 });
+    const headerY = doc.y - rowH;
+    doc.text('DESCRIZIONE', colX.descrizione, headerY, { width: 195 });
+    doc.text('TIPOLOGIA',   colX.tipologia,   headerY, { width: 120 });
+    doc.text('Q.TÀ ORD.',   colX.qta,         headerY, { width: 45, align: 'right' });
+    doc.text('RICEVUTA',    colX.ricevuta,    headerY, { width: 45, align: 'right' });
+
+    doc.moveDown(0.3);
+    doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor('#e5e7eb').lineWidth(0.5).stroke();
+    doc.moveDown(0.3);
+
+    // Righe
+    for (const item of items) {
+      const y = doc.y;
+      doc.fontSize(9).fillColor(BLACK);
+      doc.text(item.codice ?? '-',              colX.codice,      y, { width: 75 });
+      doc.text(item.name ?? '-',                colX.descrizione, y, { width: 195 });
+      doc.text((item.tipologie ?? []).join(', ') || '-', colX.tipologia, y, { width: 120 });
+      doc.text(String(item.quantita_ordinata),  colX.qta,         y, { width: 45, align: 'right' });
+      doc.text(String(item.quantita_ricevuta),  colX.ricevuta,    y, { width: 45, align: 'right' });
+
+      doc.moveDown(0.5);
+      doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor('#f3f4f6').lineWidth(0.5).stroke();
+      doc.moveDown(0.3);
+    }
+
+    // — Footer —
+    doc.moveDown(2);
+    doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor(ACCENT).lineWidth(0.5).stroke();
+    doc.moveDown(0.5);
+    doc.fontSize(8).fillColor(GRAY)
+      .text(`Documento generato il ${new Date().toLocaleString('it-IT')}`, { align: 'right' });
+
+    doc.end();
   } catch (e) { next(e); }
 });
