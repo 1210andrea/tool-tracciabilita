@@ -1,204 +1,316 @@
 import { Router } from 'express';
-import { authMiddleware } from '../middleware/auth';
+import { authMiddleware, requireRole } from '../middleware/auth';
 import { pool } from '../db';
 
 export const sparepartsRoutes = Router();
 
-// ── GET /api/spare-parts ─────────────────────────────────────────────────────────────────────
-sparepartsRoutes.get('/spare-parts', authMiddleware, async (_req, res, next) => {
-  try {
-    const r = await pool.query(
-      `SELECT sp.id,
-              sp.name,
-              sp.description,
-              sp.codice,
-              sp.quantita,
-              sp.scorta_minima,
-              sp.qty_riordino,
-              sp.created_at,
-              (sp.quantita <= sp.scorta_minima) AS sotto_scorta,
-              COUNT(csp.id)::int AS usage_count,
-              COALESCE(ARRAY_AGG(spt.tipologia) FILTER (WHERE spt.tipologia IS NOT NULL), '{}') AS tipologie
-       FROM spare_parts sp
-       LEFT JOIN spare_part_tipologie spt ON spt.spare_part_id = sp.id
-       LEFT JOIN case_spare_parts csp ON csp.spare_part_id = sp.id
-       GROUP BY sp.id
-       ORDER BY sp.name ASC`
-    );
-    res.json({ items: r.rows });
-  } catch (e) {
-    next(e);
+// ── helpers ──────────────────────────────────────────────────────────────────
+const WAREHOUSE_ROLES = ['admin', 'magazziniere'] as const;
+
+// ── GET /api/spare-parts ────────────────────────────────────────────────────
+sparepartsRoutes.get(
+  '/spare-parts',
+  authMiddleware,
+  requireRole(...WAREHOUSE_ROLES),
+  async (_req, res, next) => {
+    try {
+      const r = await pool.query(
+        `SELECT sp.id,
+                sp.name,
+                sp.description,
+                sp.codice,
+                sp.tipologia,
+                sp.quantita,
+                sp.scorta_minima,
+                COALESCE(sp.quantita_riordino, sp.qty_riordino, 10) AS quantita_riordino,
+                sp.created_at,
+                (sp.quantita < 0)                                    AS giacenza_negativa,
+                (sp.quantita >= 0 AND sp.quantita <= sp.scorta_minima) AS sotto_scorta,
+                EXISTS (
+                  SELECT 1 FROM reorders r
+                  WHERE r.spare_part_id = sp.id
+                    AND r.status IN ('in_lavorazione','partial')
+                )                                                     AS ordine_aperto,
+                COUNT(csp.id)::int                                    AS usage_count
+         FROM spare_parts sp
+         LEFT JOIN case_spare_parts csp ON csp.spare_part_id = sp.id
+         GROUP BY sp.id
+         ORDER BY sp.name ASC`
+      );
+      res.json({ items: r.rows });
+    } catch (e) { next(e); }
   }
-});
+);
 
-// ── GET /api/spare-parts/sotto-scorta ───────────────────────────────────────────────
-sparepartsRoutes.get('/spare-parts/sotto-scorta', authMiddleware, async (_req, res, next) => {
-  try {
-    const r = await pool.query(
-      `SELECT sp.id, sp.codice, sp.name, sp.quantita, sp.scorta_minima, sp.qty_riordino,
-              COALESCE(ARRAY_AGG(spt.tipologia) FILTER (WHERE spt.tipologia IS NOT NULL), '{}') AS tipologie
-       FROM spare_parts sp
-       LEFT JOIN spare_part_tipologie spt ON spt.spare_part_id = sp.id
-       WHERE sp.quantita <= sp.scorta_minima
-       GROUP BY sp.id
-       ORDER BY sp.name ASC`
-    );
-    res.json({ items: r.rows });
-  } catch (e) { next(e); }
-});
+// ── GET /api/spare-parts/sotto-scorta ───────────────────────────────────────
+sparepartsRoutes.get(
+  '/spare-parts/sotto-scorta',
+  authMiddleware,
+  async (_req, res, next) => {
+    try {
+      const r = await pool.query(
+        `SELECT sp.id, sp.codice, sp.name, sp.quantita, sp.scorta_minima,
+                COALESCE(sp.quantita_riordino, sp.qty_riordino, 10) AS quantita_riordino,
+                (sp.quantita < 0) AS giacenza_negativa,
+                (sp.quantita >= 0 AND sp.quantita <= sp.scorta_minima) AS sotto_scorta,
+                EXISTS (
+                  SELECT 1 FROM reorders r
+                  WHERE r.spare_part_id = sp.id AND r.status IN ('in_lavorazione','partial')
+                ) AS ordine_aperto
+         FROM spare_parts sp
+         WHERE sp.quantita <= sp.scorta_minima
+         ORDER BY sp.name ASC`
+      );
+      res.json({ items: r.rows });
+    } catch (e) { next(e); }
+  }
+);
 
-// ── GET /api/spare-parts/by-type/:type ───────────────────────────────────────────────
+// ── GET /api/spare-parts/:id ─────────────────────────────────────────────────
+sparepartsRoutes.get(
+  '/spare-parts/:id',
+  authMiddleware,
+  requireRole(...WAREHOUSE_ROLES),
+  async (req, res, next) => {
+    try {
+      const r = await pool.query(
+        `SELECT sp.*,
+                (sp.quantita < 0) AS giacenza_negativa,
+                (sp.quantita >= 0 AND sp.quantita <= sp.scorta_minima) AS sotto_scorta,
+                EXISTS (
+                  SELECT 1 FROM reorders r
+                  WHERE r.spare_part_id = sp.id AND r.status IN ('in_lavorazione','partial')
+                ) AS ordine_aperto
+         FROM spare_parts sp WHERE sp.id = $1`,
+        [req.params.id]
+      );
+      if (!r.rows.length) return res.status(404).json({ error: 'Ricambio non trovato' });
+      res.json({ item: r.rows[0] });
+    } catch (e) { next(e); }
+  }
+);
+
+// ── GET /api/spare-parts/by-type/:type ─────────────────────────────────────
 sparepartsRoutes.get('/spare-parts/by-type/:type', authMiddleware, async (req, res, next) => {
   try {
     const r = await pool.query(
-      `SELECT sp.id, sp.name, sp.description, sp.codice, sp.quantita, sp.scorta_minima, sp.qty_riordino, sp.created_at,
-              COALESCE(ARRAY_AGG(spt.tipologia) FILTER (WHERE spt.tipologia IS NOT NULL), '{}') AS tipologie
+      `SELECT sp.id, sp.name, sp.description, sp.codice, sp.quantita, sp.scorta_minima,
+              COALESCE(sp.quantita_riordino, sp.qty_riordino, 10) AS quantita_riordino, sp.created_at
        FROM spare_parts sp
-       JOIN spare_part_tipologie spt ON spt.spare_part_id = sp.id AND spt.tipologia = $1
-       GROUP BY sp.id
+       WHERE sp.tipologia = $1
        ORDER BY sp.name ASC`,
       [req.params.type]
     );
     res.json({ items: r.rows });
-  } catch (e) {
-    next(e);
-  }
-});
-
-// ── POST /api/spare-parts ─────────────────────────────────────────────────────────────────
-sparepartsRoutes.post('/spare-parts', authMiddleware, async (req, res, next) => {
-  try {
-    if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
-    const { name, description, tipologie, types, codice, quantita, scorta_minima, qty_riordino } = req.body as {
-      name?: string; description?: string; tipologie?: string[]; types?: string[];
-      codice?: string; quantita?: number; scorta_minima?: number; qty_riordino?: number;
-    };
-    if (!name?.trim()) return res.status(400).json({ error: 'name è obbligatorio' });
-    const raw = Array.isArray(tipologie) && tipologie.length ? tipologie : (Array.isArray(types) ? types : []);
-    const cleanedTipologie = raw.map((t) => String(t).trim()).filter(Boolean);
-    if (!cleanedTipologie.length) return res.status(400).json({ error: 'tipologie (array) è obbligatorio' });
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      const spR = await client.query(
-        `INSERT INTO spare_parts(name, description, codice, quantita, scorta_minima, qty_riordino)
-         VALUES($1,$2,$3,$4,$5,$6)
-         RETURNING id, name, description, codice, quantita, scorta_minima, qty_riordino, created_at`,
-        [
-          name.trim(),
-          description?.trim() ?? null,
-          codice?.trim() ?? null,
-          quantita ?? 0,
-          scorta_minima ?? 1,
-          qty_riordino ?? 10
-        ]
-      );
-      const sparePartId = spR.rows[0].id as string;
-      const values: any[] = [];
-      const placeholders = cleanedTipologie.map((t, idx) => {
-        values.push(sparePartId, t);
-        return `($${idx * 2 + 1}, $${idx * 2 + 2})`;
-      });
-      await client.query(
-        `INSERT INTO spare_part_tipologie(spare_part_id, tipologia) VALUES ${placeholders.join(', ')} ON CONFLICT(spare_part_id, tipologia) DO NOTHING`,
-        values
-      );
-      await client.query('COMMIT');
-      res.json({ item: { ...spR.rows[0], tipologie: cleanedTipologie } });
-    } catch (e) {
-      await client.query('ROLLBACK'); throw e;
-    } finally { client.release(); }
   } catch (e) { next(e); }
 });
 
-// ── PUT /api/spare-parts/:id ─────────────────────────────────────────────────────────────
-sparepartsRoutes.put('/spare-parts/:id', authMiddleware, async (req, res, next) => {
-  try {
-    if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
-    const { id } = req.params;
-    const { name, description, tipologie, codice, quantita, scorta_minima, qty_riordino } = req.body as {
-      name?: string; description?: string; tipologie?: string[];
-      codice?: string; quantita?: number; scorta_minima?: number; qty_riordino?: number;
-    };
-    const client = await pool.connect();
+// ── POST /api/spare-parts ────────────────────────────────────────────────────
+sparepartsRoutes.post(
+  '/spare-parts',
+  authMiddleware,
+  requireRole('admin'),
+  async (req, res, next) => {
     try {
-      await client.query('BEGIN');
-      const r = await client.query(
+      const { name, description, codice, tipologia, quantita, scorta_minima, quantita_riordino } = req.body as {
+        name?: string; description?: string; codice?: string; tipologia?: string;
+        quantita?: number; scorta_minima?: number; quantita_riordino?: number;
+      };
+      if (!name?.trim()) return res.status(400).json({ error: 'name è obbligatorio' });
+      const r = await pool.query(
+        `INSERT INTO spare_parts(name, description, codice, tipologia, quantita, scorta_minima, quantita_riordino)
+         VALUES($1,$2,$3,$4,$5,$6,$7)
+         RETURNING *`,
+        [name.trim(), description?.trim() ?? null, codice?.trim() ?? null,
+         tipologia?.trim() ?? null, quantita ?? 0, scorta_minima ?? 1, quantita_riordino ?? 10]
+      );
+      res.json({ item: r.rows[0] });
+    } catch (e) { next(e); }
+  }
+);
+
+// ── PUT /api/spare-parts/:id ─────────────────────────────────────────────────
+sparepartsRoutes.put(
+  '/spare-parts/:id',
+  authMiddleware,
+  requireRole(...WAREHOUSE_ROLES),
+  async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const { name, description, codice, tipologia, scorta_minima, quantita_riordino } = req.body as {
+        name?: string; description?: string; codice?: string; tipologia?: string;
+        scorta_minima?: number; quantita_riordino?: number;
+      };
+      const r = await pool.query(
         `UPDATE spare_parts SET
-           name          = COALESCE($1, name),
-           description   = COALESCE($2, description),
-           codice        = COALESCE($3, codice),
-           quantita      = COALESCE($4, quantita),
-           scorta_minima = COALESCE($5, scorta_minima),
-           qty_riordino  = COALESCE($6, qty_riordino),
-           updated_at    = now()
+           name               = COALESCE($1, name),
+           description        = COALESCE($2, description),
+           codice             = COALESCE($3, codice),
+           tipologia          = COALESCE($4, tipologia),
+           scorta_minima      = COALESCE($5, scorta_minima),
+           quantita_riordino  = COALESCE($6, COALESCE(quantita_riordino, qty_riordino, 10)),
+           updated_at         = now()
          WHERE id = $7 RETURNING *`,
         [name?.trim() ?? null, description?.trim() ?? null, codice?.trim() ?? null,
-         quantita ?? null, scorta_minima ?? null, qty_riordino ?? null, id]
+         tipologia?.trim() ?? null, scorta_minima ?? null, quantita_riordino ?? null, id]
       );
-      if (!r.rows.length) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Ricambio non trovato' }); }
-      if (Array.isArray(tipologie)) {
-        await client.query('DELETE FROM spare_part_tipologie WHERE spare_part_id = $1', [id]);
-        const cleaned = tipologie.map((t) => String(t).trim()).filter(Boolean);
-        if (cleaned.length) {
-          const vals: any[] = [];
-          const ph = cleaned.map((t, idx) => { vals.push(id, t); return `($${idx * 2 + 1}, $${idx * 2 + 2})`; });
-          await client.query(`INSERT INTO spare_part_tipologie(spare_part_id, tipologia) VALUES ${ph.join(', ')} ON CONFLICT DO NOTHING`, vals);
-        }
-      }
-      await client.query('COMMIT');
+      if (!r.rows.length) return res.status(404).json({ error: 'Ricambio non trovato' });
       res.json({ item: r.rows[0] });
-    } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
-  } catch (e) { next(e); }
-});
+    } catch (e) { next(e); }
+  }
+);
 
-// ── PATCH /api/spare-parts/:id/scala  (scala giacenza dopo manutenzione) ────────
-sparepartsRoutes.patch('/spare-parts/:id/scala', authMiddleware, async (req, res, next) => {
+// ── PATCH /api/spare-parts/:id/scalare  (scarico post-manutenzione) ─────────
+// Chiamato dalla chiusura caso — accessibile a tutti gli autenticati
+sparepartsRoutes.patch('/spare-parts/:id/scalare', authMiddleware, async (req, res, next) => {
   try {
-    const { quantita } = req.body as { quantita?: number };
+    const { quantita, caso_id } = req.body as { quantita?: number; caso_id?: string };
     if (!quantita || quantita <= 0) return res.status(400).json({ error: 'quantita deve essere > 0' });
+
     const r = await pool.query(
       `UPDATE spare_parts
-       SET quantita = GREATEST(0, quantita - $1), updated_at = now()
+       SET quantita = quantita - $1, updated_at = now()
        WHERE id = $2
-       RETURNING id, name, quantita, scorta_minima, (quantita <= scorta_minima) AS sotto_scorta`,
+       RETURNING id, name, codice, quantita, scorta_minima,
+                 (quantita - $1 < 0)                                            AS giacenza_negativa,
+                 (quantita - $1 >= 0 AND quantita - $1 <= scorta_minima)        AS sotto_scorta`,
       [quantita, req.params.id]
     );
     if (!r.rows.length) return res.status(404).json({ error: 'Ricambio non trovato' });
-    res.json({ item: r.rows[0] });
+
+    const part = r.rows[0];
+    // Movimento scarico
+    await pool.query(
+      `INSERT INTO spare_parts_movimenti
+         (spare_part_id, tipo, delta, quantita_dopo, riferimento_id, riferimento_tipo, actor_id)
+       VALUES ($1,'scarico_manutenzione',$2,$3,$4,'case',$5)`,
+      [part.id, -quantita, part.quantita, caso_id ?? null, req.user!.id]
+    );
+
+    res.json({ item: part });
   } catch (e) { next(e); }
 });
 
-// ── DELETE /api/spare-parts/:id ────────────────────────────────────────────────────────────
-sparepartsRoutes.delete('/spare-parts/:id', authMiddleware, async (req, res, next) => {
-  try {
-    if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
-    const usedR = await pool.query('SELECT COUNT(*)::int AS count FROM case_spare_parts WHERE spare_part_id = $1', [req.params.id]);
-    const count = usedR.rows[0]?.count ?? 0;
-    if (count > 0) return res.status(400).json({ error: `In uso da ${count} casi`, usage_count: count });
-    await pool.query('DELETE FROM spare_parts WHERE id = $1', [req.params.id]);
-    res.json({ ok: true });
-  } catch (e) { next(e); }
-});
+// ── PATCH /api/spare-parts/:id/rettifica ────────────────────────────────────
+sparepartsRoutes.patch(
+  '/spare-parts/:id/rettifica',
+  authMiddleware,
+  requireRole(...WAREHOUSE_ROLES),
+  async (req, res, next) => {
+    try {
+      const { delta, note } = req.body as { delta?: number; note?: string };
+      if (delta === undefined || delta === 0)
+        return res.status(400).json({ error: 'delta deve essere diverso da 0' });
+      if (!note || note.trim() === '')
+        return res.status(400).json({ error: 'La nota è obbligatoria' });
 
-// ──────────────────────────────────────────────────────────────────────────────
-// SOLUZIONI APPLICATE
-// ──────────────────────────────────────────────────────────────────────────────
+      const r = await pool.query(
+        `UPDATE spare_parts
+         SET quantita = quantita + $1, updated_at = now()
+         WHERE id = $2
+         RETURNING id, name, codice, quantita, scorta_minima,
+                   (quantita + $1 < 0)                                           AS giacenza_negativa,
+                   (quantita + $1 >= 0 AND quantita + $1 <= scorta_minima)       AS sotto_scorta`,
+        [delta, req.params.id]
+      );
+      if (!r.rows.length) return res.status(404).json({ error: 'Ricambio non trovato' });
+
+      const part = r.rows[0];
+      await pool.query(
+        `INSERT INTO spare_parts_movimenti
+           (spare_part_id, tipo, delta, quantita_dopo, riferimento_tipo, note, actor_id)
+         VALUES ($1,'rettifica_manuale',$2,$3,'manuale',$4,$5)`,
+        [part.id, delta, part.quantita, note.trim(), req.user!.id]
+      );
+
+      res.json({ item: part });
+    } catch (e) { next(e); }
+  }
+);
+
+// ── GET /api/spare-parts/:id/movimenti ──────────────────────────────────────
+sparepartsRoutes.get(
+  '/spare-parts/:id/movimenti',
+  authMiddleware,
+  requireRole(...WAREHOUSE_ROLES),
+  async (req, res, next) => {
+    try {
+      const { tipo, from, to, actor_id } = req.query as Record<string, string>;
+      const page  = Math.max(1, parseInt((req.query.page  as string) || '1'));
+      const limit = Math.min(100, Math.max(1, parseInt((req.query.limit as string) || '20')));
+      const offset = (page - 1) * limit;
+
+      const conditions: string[] = ['m.spare_part_id = $1'];
+      const params: any[]        = [req.params.id];
+      let idx = 2;
+
+      if (tipo)     { conditions.push(`m.tipo = $${idx++}`);         params.push(tipo); }
+      if (from)     { conditions.push(`m.created_at >= $${idx++}`);  params.push(from); }
+      if (to)       { conditions.push(`m.created_at <= $${idx++}`);  params.push(to); }
+      if (actor_id) { conditions.push(`m.actor_id = $${idx++}`);     params.push(actor_id); }
+
+      const where = conditions.join(' AND ');
+
+      const countR = await pool.query(
+        `SELECT COUNT(*)::int AS total FROM spare_parts_movimenti m WHERE ${where}`,
+        params
+      );
+      const total = countR.rows[0].total;
+
+      const r = await pool.query(
+        `SELECT m.*,
+                u.username AS actor_username,
+                CASE
+                  WHEN m.riferimento_tipo = 'reorder'
+                    THEN (SELECT ro.numero_ordine::text FROM reorders ro WHERE ro.id = m.riferimento_id)
+                  WHEN m.riferimento_tipo = 'case'
+                    THEN LEFT(m.riferimento_id::text, 8)
+                  ELSE NULL
+                END AS riferimento_numero
+         FROM spare_parts_movimenti m
+         LEFT JOIN users u ON u.id = m.actor_id
+         WHERE ${where}
+         ORDER BY m.created_at DESC
+         LIMIT $${idx++} OFFSET $${idx++}`,
+        [...params, limit, offset]
+      );
+
+      res.json({
+        items: r.rows,
+        total,
+        page,
+        pages: Math.ceil(total / limit),
+      });
+    } catch (e) { next(e); }
+  }
+);
+
+// ── DELETE /api/spare-parts/:id ──────────────────────────────────────────────
+sparepartsRoutes.delete(
+  '/spare-parts/:id',
+  authMiddleware,
+  requireRole('admin'),
+  async (req, res, next) => {
+    try {
+      const usedR = await pool.query(
+        'SELECT COUNT(*)::int AS count FROM case_spare_parts WHERE spare_part_id = $1',
+        [req.params.id]
+      );
+      const count = usedR.rows[0]?.count ?? 0;
+      if (count > 0) return res.status(400).json({ error: `In uso da ${count} casi`, usage_count: count });
+      await pool.query('DELETE FROM spare_parts WHERE id = $1', [req.params.id]);
+      res.json({ ok: true });
+    } catch (e) { next(e); }
+  }
+);
+
+// ── SOLUZIONI APPLICATE (invariato) ─────────────────────────────────────────
 sparepartsRoutes.get('/solutions-applied', authMiddleware, async (_req, res, next) => {
   try {
     const r = await pool.query(
-      `SELECT sa.id,
-              sa.name,
-              sa.description,
-              sa.created_at,
-              COALESCE(
-                ARRAY_AGG(sp.problem_id::text ORDER BY c.name) FILTER (WHERE sp.problem_id IS NOT NULL),
-                '{}'
-              ) AS problem_ids,
-              COALESCE(
-                ARRAY_AGG(c.name ORDER BY c.name) FILTER (WHERE c.name IS NOT NULL),
-                '{}'
-              ) AS problem_names,
+      `SELECT sa.id, sa.name, sa.description, sa.created_at,
+              COALESCE(ARRAY_AGG(sp.problem_id::text ORDER BY c.name) FILTER (WHERE sp.problem_id IS NOT NULL),'{}') AS problem_ids,
+              COALESCE(ARRAY_AGG(c.name ORDER BY c.name) FILTER (WHERE c.name IS NOT NULL),'{}') AS problem_names,
               (
                 (SELECT COUNT(*)::int FROM case_solutions_applied csa WHERE csa.solution_id = sa.id) +
                 (SELECT COUNT(*)::int FROM case_solutions_tried  cst  WHERE cst.solution_id  = sa.id)
@@ -216,9 +328,7 @@ sparepartsRoutes.get('/solutions-applied', authMiddleware, async (_req, res, nex
 sparepartsRoutes.post('/solutions-applied', authMiddleware, async (req, res, next) => {
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
-    const { name, description, problem_ids } = req.body as {
-      name?: string; description?: string; problem_ids?: string[];
-    };
+    const { name, description, problem_ids } = req.body as { name?: string; description?: string; problem_ids?: string[] };
     if (!name?.trim()) return res.status(400).json({ error: 'name è obbligatorio' });
     const client = await pool.connect();
     try {
@@ -231,10 +341,7 @@ sparepartsRoutes.post('/solutions-applied', authMiddleware, async (req, res, nex
       if (Array.isArray(problem_ids) && problem_ids.length) {
         const vals: any[] = [];
         const ph = problem_ids.map((pid, idx) => { vals.push(solId, pid); return `($${idx * 2 + 1}, $${idx * 2 + 2})`; });
-        await client.query(
-          `INSERT INTO solution_problems(solution_id, problem_id) VALUES ${ph.join(', ')} ON CONFLICT DO NOTHING`,
-          vals
-        );
+        await client.query(`INSERT INTO solution_problems(solution_id, problem_id) VALUES ${ph.join(', ')} ON CONFLICT DO NOTHING`, vals);
       }
       await client.query('COMMIT');
       res.json({ item: r.rows[0] });
@@ -246,9 +353,7 @@ sparepartsRoutes.put('/solutions-applied/:id', authMiddleware, async (req, res, 
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
     const { id } = req.params;
-    const { name, description, problem_ids } = req.body as {
-      name?: string; description?: string; problem_ids?: string[];
-    };
+    const { name, description, problem_ids } = req.body as { name?: string; description?: string; problem_ids?: string[] };
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -262,10 +367,7 @@ sparepartsRoutes.put('/solutions-applied/:id', authMiddleware, async (req, res, 
         if (problem_ids.length) {
           const vals: any[] = [];
           const ph = problem_ids.map((pid, idx) => { vals.push(id, pid); return `($${idx * 2 + 1}, $${idx * 2 + 2})`; });
-          await client.query(
-            `INSERT INTO solution_problems(solution_id, problem_id) VALUES ${ph.join(', ')} ON CONFLICT DO NOTHING`,
-            vals
-          );
+          await client.query(`INSERT INTO solution_problems(solution_id, problem_id) VALUES ${ph.join(', ')} ON CONFLICT DO NOTHING`, vals);
         }
       }
       await client.query('COMMIT');
@@ -278,7 +380,8 @@ sparepartsRoutes.delete('/solutions-applied/:id', authMiddleware, async (req, re
   try {
     if (req.user?.role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
     const usedR = await pool.query(
-      `SELECT ((SELECT COUNT(*)::int FROM case_solutions_applied WHERE solution_id = $1) + (SELECT COUNT(*)::int FROM case_solutions_tried WHERE solution_id = $1)) AS count`,
+      `SELECT ((SELECT COUNT(*)::int FROM case_solutions_applied WHERE solution_id = $1) +
+               (SELECT COUNT(*)::int FROM case_solutions_tried  WHERE solution_id = $1)) AS count`,
       [req.params.id]
     );
     const count = usedR.rows[0]?.count ?? 0;
