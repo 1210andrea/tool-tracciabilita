@@ -5,9 +5,24 @@ import { emitEvent } from '../services/socketService';
 
 export const casesRoutes = Router();
 
+// Legge gli operatori dalla tabella ponte case_operatori (molti-a-molti)
 const CASE_FIELDS = `c.id, c.machine_id, c.problem_id, c.cause_id, c.category_id, c.operatore_id,
   c.description, c.solution, c.ai_solution, c.status, c.created_by, c.assigned_to,
   c.notes, c.created_at, c.updated_at, c.tempo_impiego,
+  COALESCE(
+    (SELECT json_agg(json_build_object('id', o.id, 'nome', o.nome))
+     FROM case_operatori co
+     JOIN operatori o ON o.id = co.operatore_id
+     WHERE co.case_id = c.id),
+    '[]'::json
+  ) AS operatori,
+  COALESCE(
+    (SELECT string_agg(o.nome, ', ')
+     FROM case_operatori co
+     JOIN operatori o ON o.id = co.operatore_id
+     WHERE co.case_id = c.id),
+    'N.D.'
+  ) AS operator_name,
   COALESCE(
     (SELECT string_agg(sp.name, ', ')
      FROM case_spare_parts csp
@@ -44,16 +59,11 @@ const CASE_FIELDS = `c.id, c.machine_id, c.problem_id, c.cause_id, c.category_id
     '[]'::json
   ) AS pezzi_ricambio`;
 
-
 const CASE_JOINS = `
   JOIN machines m ON m.id = c.machine_id
   LEFT JOIN users u ON u.id = c.created_by
   LEFT JOIN categories prob ON prob.id = c.problem_id
-  LEFT JOIN categories cause ON cause.id = c.cause_id
-  LEFT JOIN operatori oper ON oper.id = c.operatore_id`;
-
-
-
+  LEFT JOIN categories cause ON cause.id = c.cause_id`;
 
 async function getCaseRow(caseId: string) {
   const r = await pool.query('SELECT * FROM cases WHERE id = $1', [caseId]);
@@ -64,10 +74,26 @@ function canAccessCase(caseRow: { created_by: string | null }, userId: string, r
   return role === 'admin' || caseRow.created_by === userId;
 }
 
-async function lookupName(table: 'categories' | 'spare_parts', id?: string | null) {
-  if (!id) return 'N/D';
-  const r = await pool.query(`SELECT name FROM ${table} WHERE id = $1`, [id]);
-  return r.rows[0]?.name ?? 'N/D';
+async function validateOperatoreId(client: { query: typeof pool.query }, operatoreId: string): Promise<string | null> {
+  const r = await client.query(
+    'SELECT id FROM operatori WHERE id = $1 AND attivo = true',
+    [operatoreId]
+  );
+  if (!r.rows.length) return 'Operatore non valido o non attivo';
+  return null;
+}
+
+// Inserisce gli operatori nella tabella ponte case_operatori
+async function syncCaseOperatori(client: { query: typeof pool.query }, caseId: string, operatoreIds: string[]) {
+  await client.query('DELETE FROM case_operatori WHERE case_id = $1', [caseId]);
+  for (const opId of operatoreIds) {
+    if (opId) {
+      await client.query(
+        'INSERT INTO case_operatori(case_id, operatore_id) VALUES($1, $2) ON CONFLICT DO NOTHING',
+        [caseId, opId]
+      );
+    }
+  }
 }
 
 casesRoutes.get('/', authMiddleware, async (req, res, next) => {
@@ -125,39 +151,40 @@ casesRoutes.get('/', authMiddleware, async (req, res, next) => {
       conditions.push(`EXTRACT(YEAR FROM c.created_at)::int = $${values.length}`);
     }
     if (problem_id) {
-      values.push(problem_id as string);
+      values.push(problem_id);
       conditions.push(`c.problem_id = $${values.length}`);
     }
     if (cause_id) {
-      values.push(cause_id as string);
+      values.push(cause_id);
       conditions.push(`c.cause_id = $${values.length}`);
     }
     if (date_from) {
-      values.push(date_from as string);
+      values.push(date_from);
       conditions.push(`c.created_at::date >= $${values.length}`);
     }
     if (date_to) {
-      values.push(date_to as string);
+      values.push(date_to);
       conditions.push(`c.created_at::date <= $${values.length}`);
     }
     if (time_from) {
-      values.push(time_from as string);
+      values.push(time_from);
       conditions.push(`TO_CHAR(c.created_at, 'HH24:MI') >= $${values.length}`);
     }
     if (time_to) {
-      values.push(time_to as string);
+      values.push(time_to);
       conditions.push(`TO_CHAR(c.created_at, 'HH24:MI') <= $${values.length}`);
     }
     if (line) {
-      values.push(line as string);
+      values.push(line);
       conditions.push(`m.line = $${values.length}`);
     }
 
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const r = await pool.query(
-      `SELECT ${CASE_FIELDS}, m.code as machine_code, m.name as machine_name, u.username as created_by_username,
-              COALESCE(oper.nome, 'N.D.') as operator_name,
+      `SELECT ${CASE_FIELDS},
+              m.code as machine_code, m.name as machine_name,
+              u.username as created_by_username,
               prob.name as problem_name, cause.name as cause_name,
               COUNT(*) OVER() AS total_count
        FROM cases c
@@ -208,56 +235,29 @@ casesRoutes.get('/export-csv', authMiddleware, async (req, res, next) => {
       values.push(status);
       conditions.push(`c.status = $${values.length}`);
     }
-    if (machine_id) {
-      values.push(machine_id);
-      conditions.push(`c.machine_id = $${values.length}`);
-    }
-    if (assigned_to) {
-      values.push(assigned_to);
-      conditions.push(`c.assigned_to = $${values.length}`);
-    }
-    if (req.query.month) {
-      values.push(Number(req.query.month));
-      conditions.push(`EXTRACT(MONTH FROM c.created_at)::int = $${values.length}`);
-    }
-    if (req.query.year) {
-      values.push(Number(req.query.year));
-      conditions.push(`EXTRACT(YEAR FROM c.created_at)::int = $${values.length}`);
-    }
-    if (problem_id) {
-      values.push(problem_id as string);
-      conditions.push(`c.problem_id = $${values.length}`);
-    }
-    if (cause_id) {
-      values.push(cause_id as string);
-      conditions.push(`c.cause_id = $${values.length}`);
-    }
-    if (date_from) {
-      values.push(date_from as string);
-      conditions.push(`c.created_at::date >= $${values.length}`);
-    }
-    if (date_to) {
-      values.push(date_to as string);
-      conditions.push(`c.created_at::date <= $${values.length}`);
-    }
-    if (time_from) {
-      values.push(time_from as string);
-      conditions.push(`TO_CHAR(c.created_at, 'HH24:MI') >= $${values.length}`);
-    }
-    if (time_to) {
-      values.push(time_to as string);
-      conditions.push(`TO_CHAR(c.created_at, 'HH24:MI') <= $${values.length}`);
-    }
-    if (line) {
-      values.push(line as string);
-      conditions.push(`m.line = $${values.length}`);
-    }
+    if (machine_id) { values.push(machine_id); conditions.push(`c.machine_id = $${values.length}`); }
+    if (assigned_to) { values.push(assigned_to); conditions.push(`c.assigned_to = $${values.length}`); }
+    if (req.query.month) { values.push(Number(req.query.month)); conditions.push(`EXTRACT(MONTH FROM c.created_at)::int = $${values.length}`); }
+    if (req.query.year) { values.push(Number(req.query.year)); conditions.push(`EXTRACT(YEAR FROM c.created_at)::int = $${values.length}`); }
+    if (problem_id) { values.push(problem_id); conditions.push(`c.problem_id = $${values.length}`); }
+    if (cause_id) { values.push(cause_id); conditions.push(`c.cause_id = $${values.length}`); }
+    if (date_from) { values.push(date_from); conditions.push(`c.created_at::date >= $${values.length}`); }
+    if (date_to) { values.push(date_to); conditions.push(`c.created_at::date <= $${values.length}`); }
+    if (time_from) { values.push(time_from); conditions.push(`TO_CHAR(c.created_at, 'HH24:MI') >= $${values.length}`); }
+    if (time_to) { values.push(time_to); conditions.push(`TO_CHAR(c.created_at, 'HH24:MI') <= $${values.length}`); }
+    if (line) { values.push(line); conditions.push(`m.line = $${values.length}`); }
 
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const r = await pool.query(
       `SELECT c.id, m.code as machine_code, m.name as machine_name, u.username as created_by_username,
-              COALESCE(oper.nome, 'N.D.') as operator_name,
+              COALESCE(
+                (SELECT string_agg(o.nome, ', ')
+                 FROM case_operatori co
+                 JOIN operatori o ON o.id = co.operatore_id
+                 WHERE co.case_id = c.id),
+                'N.D.'
+              ) AS operator_name,
               prob.name as problem_name, cause.name as cause_name,
               COALESCE(
                 (SELECT string_agg(sp.name, ', ')
@@ -282,19 +282,9 @@ casesRoutes.get('/export-csv', authMiddleware, async (req, res, next) => {
     );
 
     const headers = [
-      'ID Caso',
-      'Codice Macchina',
-      'Nome Macchina',
-      'Operatore',
-      'Problema',
-      'Causa',
-      'Ricambio Usato',
-      'Soluzione Applicata',
-      'Descrizione',
-      'Note',
-      'Soluzione AI',
-      'Stato',
-      'Data Creazione'
+      'ID Caso', 'Codice Macchina', 'Nome Macchina', 'Operatore',
+      'Problema', 'Causa', 'Ricambio Usato', 'Soluzione Applicata',
+      'Descrizione', 'Note', 'Soluzione AI', 'Stato', 'Data Creazione'
     ];
 
     const escapeCSV = (val: any) => {
@@ -306,18 +296,9 @@ casesRoutes.get('/export-csv', authMiddleware, async (req, res, next) => {
     let csvContent = headers.join(',') + '\n';
     for (const row of r.rows) {
       const lineData = [
-        row.id,
-        row.machine_code,
-        row.machine_name,
-        row.operator_name,
-        row.problem_name,
-        row.cause_name,
-        row.spare_part_name,
-        row.solution_applied_name,
-        row.description || row.solution,
-        row.notes,
-        row.ai_solution,
-        row.status,
+        row.id, row.machine_code, row.machine_name, row.operator_name,
+        row.problem_name, row.cause_name, row.spare_part_name, row.solution_applied_name,
+        row.description || row.solution, row.notes, row.ai_solution, row.status,
         row.created_at ? new Date(row.created_at).toISOString() : ''
       ];
       csvContent += lineData.map(escapeCSV).join(',') + '\n';
@@ -340,8 +321,9 @@ casesRoutes.get('/:id', authMiddleware, async (req, res, next) => {
     }
 
     const r = await pool.query(
-      `SELECT ${CASE_FIELDS}, m.code as machine_code, m.name as machine_name, u.username as created_by_username,
-              COALESCE(oper.nome, 'N.D.') as operator_name,
+      `SELECT ${CASE_FIELDS},
+              m.code as machine_code, m.name as machine_name,
+              u.username as created_by_username,
               prob.name as problem_name, cause.name as cause_name
        FROM cases c
        ${CASE_JOINS}
@@ -355,15 +337,6 @@ casesRoutes.get('/:id', authMiddleware, async (req, res, next) => {
   }
 });
 
-async function validateOperatoreId(client: { query: typeof pool.query }, operatoreId: string): Promise<string | null> {
-  const r = await client.query(
-    'SELECT id FROM operatori WHERE id = $1 AND attivo = true',
-    [operatoreId]
-  );
-  if (!r.rows.length) return 'Operatore non valido o non attivo';
-  return null;
-}
-
 casesRoutes.post('/', authMiddleware, async (req, res, next) => {
   try {
     const body = req.body as {
@@ -376,7 +349,9 @@ casesRoutes.post('/', authMiddleware, async (req, res, next) => {
       pezzi_ricambio?: string[];
       tempo_impiego?: number;
       utente_id?: string;
+      // Supporta sia singolo operatore_id (legacy) che array operatore_ids
       operatore_id?: string;
+      operatore_ids?: string[];
       notes?: string | null;
       note_aggiuntive?: string | null;
     };
@@ -384,21 +359,23 @@ casesRoutes.post('/', authMiddleware, async (req, res, next) => {
     const finalMachineId = body.machine_id || body.macchina_id;
     const finalUtenteId = body.utente_id || req.user!.id;
     const finalNotes = body.notes || body.note_aggiuntive;
+    // Normalizza: accetta array o singolo id
+    const operatoreIds: string[] = body.operatore_ids?.length
+      ? body.operatore_ids
+      : body.operatore_id ? [body.operatore_id] : [];
 
     const missing: string[] = [];
     if (!finalMachineId) missing.push('macchina');
     if (!body.problem_id) missing.push('problema');
     if (!body.cause_id) missing.push('causa');
     if (!body.soluzioni_applicate || !body.soluzioni_applicate.length) missing.push('soluzione applicata');
-    if (!body.operatore_id) missing.push('operatore');
+    if (!operatoreIds.length) missing.push('operatore');
     if (body.tempo_impiego === undefined || body.tempo_impiego < 0.5) {
       return res.status(400).json({ error: 'Tempo impiego deve essere maggiore o uguale a 0.5 ore' });
     }
-
     if (missing.length) {
       return res.status(400).json({ error: `Campo obbligatorio mancante: ${missing[0]}` });
     }
-
     if (finalNotes && finalNotes.length > 1000) {
       return res.status(400).json({ error: 'Le note non possono superare i 1000 caratteri.' });
     }
@@ -408,29 +385,31 @@ casesRoutes.post('/', authMiddleware, async (req, res, next) => {
       await client.query('BEGIN');
 
       const machineQuery = await client.query('SELECT code, name, line, type FROM machines WHERE id = $1', [finalMachineId]);
-      const machineRecord = machineQuery.rows[0];
-      if (!machineRecord) {
+      if (!machineQuery.rows[0]) {
         await client.query('ROLLBACK');
         return res.status(400).json({ error: 'Macchina non trovata' });
       }
 
-      const operatoreError = await validateOperatoreId(client, body.operatore_id!);
-      if (operatoreError) {
-        await client.query('ROLLBACK');
-        return res.status(400).json({ error: operatoreError });
+      // Valida tutti gli operatori
+      for (const opId of operatoreIds) {
+        const err = await validateOperatoreId(client, opId);
+        if (err) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ error: err });
+        }
       }
 
       let solutionAppliedDesc = '';
-      if (body.soluzioni_applicate && body.soluzioni_applicate.length > 0) {
+      if (body.soluzioni_applicate?.length) {
         const saR = await client.query(
           `SELECT name, description FROM solutions_applied WHERE id = ANY($1::uuid[])`,
           [body.soluzioni_applicate]
         );
-        solutionAppliedDesc = saR.rows
-          .map((row) => row.description ?? row.name)
-          .filter(Boolean)
-          .join(', ');
+        solutionAppliedDesc = saR.rows.map((row) => row.description ?? row.name).filter(Boolean).join(', ');
       }
+
+      // Il primo operatore va anche in operatore_id per compatibilità legacy
+      const primaryOperatoreId = operatoreIds[0] ?? null;
 
       const r = await client.query(
         `INSERT INTO cases(machine_id, problem_id, cause_id, description, solution, ai_solution,
@@ -438,68 +417,53 @@ casesRoutes.post('/', authMiddleware, async (req, res, next) => {
          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
          RETURNING *`,
         [
-          finalMachineId,
-          body.problem_id ?? null,
-          body.cause_id ?? null,
-          solutionAppliedDesc || null,
-          solutionAppliedDesc || null,
-          null,
-          'closed',
-          finalUtenteId,
-          null,
-          finalNotes?.trim() || null,
-          body.tempo_impiego,
-          body.operatore_id
+          finalMachineId, body.problem_id ?? null, body.cause_id ?? null,
+          solutionAppliedDesc || null, solutionAppliedDesc || null, null,
+          'closed', finalUtenteId, null,
+          finalNotes?.trim() || null, body.tempo_impiego, primaryOperatoreId
         ]
       );
 
       const caseId = r.rows[0].id;
 
-      // Insert junction tables
-      if (body.soluzioni_provate && body.soluzioni_provate.length > 0) {
+      // Inserisci tutti gli operatori nella tabella ponte
+      await syncCaseOperatori(client, caseId, operatoreIds);
+
+      if (body.soluzioni_provate?.length) {
         for (const solId of body.soluzioni_provate) {
-          if (solId) {
-            await client.query(
-              `INSERT INTO case_solutions_tried(case_id, solution_id) VALUES($1, $2) ON CONFLICT DO NOTHING`,
-              [caseId, solId]
-            );
-          }
+          if (solId) await client.query(
+            `INSERT INTO case_solutions_tried(case_id, solution_id) VALUES($1, $2) ON CONFLICT DO NOTHING`,
+            [caseId, solId]
+          );
         }
       }
 
-      if (body.soluzioni_applicate && body.soluzioni_applicate.length > 0) {
+      if (body.soluzioni_applicate?.length) {
         for (const solId of body.soluzioni_applicate) {
-          if (solId) {
-            await client.query(
-              `INSERT INTO case_solutions_applied(case_id, solution_id) VALUES($1, $2) ON CONFLICT DO NOTHING`,
-              [caseId, solId]
-            );
-          }
+          if (solId) await client.query(
+            `INSERT INTO case_solutions_applied(case_id, solution_id) VALUES($1, $2) ON CONFLICT DO NOTHING`,
+            [caseId, solId]
+          );
         }
       }
 
-      if (body.pezzi_ricambio && body.pezzi_ricambio.length > 0) {
+      if (body.pezzi_ricambio?.length) {
         for (const spId of body.pezzi_ricambio) {
-          if (spId) {
-            await client.query(
-              `INSERT INTO case_spare_parts(case_id, spare_part_id) VALUES($1, $2) ON CONFLICT DO NOTHING`,
-              [caseId, spId]
-            );
-          }
+          if (spId) await client.query(
+            `INSERT INTO case_spare_parts(case_id, spare_part_id) VALUES($1, $2) ON CONFLICT DO NOTHING`,
+            [caseId, spId]
+          );
         }
       }
 
       await client.query(
-        `INSERT INTO case_events(case_id,event_type,message,actor_id)
-         VALUES($1,'system','case created',$2)`,
+        `INSERT INTO case_events(case_id,event_type,message,actor_id) VALUES($1,'system','case created',$2)`,
         [caseId, finalUtenteId]
       );
 
       await client.query('COMMIT');
-
       emitEvent('case_created', { caseId });
       emitEvent('case-updated', { caseId });
-
       res.json({ success: true, case_id: caseId, message: 'Caso creato con successo', item: r.rows[0] });
     } catch (e) {
       await client.query('ROLLBACK');
@@ -530,29 +494,29 @@ casesRoutes.put('/:id', authMiddleware, async (req, res, next) => {
       pezzi_ricambio?: string[];
       tempo_impiego?: number;
       operatore_id?: string;
+      operatore_ids?: string[];
       notes?: string | null;
       note_aggiuntive?: string | null;
     };
 
     const finalMachineId = body.machine_id || body.macchina_id;
     const finalNotes = body.notes || body.note_aggiuntive;
+    const operatoreIds: string[] = body.operatore_ids?.length
+      ? body.operatore_ids
+      : body.operatore_id ? [body.operatore_id] : [];
 
-    // 🟢 Campi obbligatori per l'UPDATE (operatore_id NON è obbligatorio)
     const missing: string[] = [];
     if (!finalMachineId) missing.push('macchina');
     if (!body.problem_id) missing.push('problema');
     if (!body.cause_id) missing.push('causa');
     if (!body.soluzioni_applicate || !body.soluzioni_applicate.length) missing.push('soluzione applicata');
-    
-    // 🟢 tempo_impiego è opzionale: se viene passato, deve essere >= 0.5, altrimenti lo ignoriamo
+
     if (body.tempo_impiego !== undefined && body.tempo_impiego < 0.5) {
       return res.status(400).json({ error: 'Tempo impiego deve essere maggiore o uguale a 0.5 ore' });
     }
-
     if (missing.length) {
       return res.status(400).json({ error: `Campo obbligatorio mancante: ${missing[0]}` });
     }
-
     if (finalNotes && finalNotes.length > 1000) {
       return res.status(400).json({ error: 'Le note non possono superare i 1000 caratteri.' });
     }
@@ -561,127 +525,95 @@ casesRoutes.put('/:id', authMiddleware, async (req, res, next) => {
     try {
       await client.query('BEGIN');
 
-      // 🟢 Valida operatore SOLO SE viene passato
-      if (body.operatore_id) {
-        const operatoreError = await validateOperatoreId(client, body.operatore_id);
-        if (operatoreError) {
+      // Valida operatori se passati
+      for (const opId of operatoreIds) {
+        const err = await validateOperatoreId(client, opId);
+        if (err) {
           await client.query('ROLLBACK');
-          return res.status(400).json({ error: operatoreError });
+          return res.status(400).json({ error: err });
         }
       }
 
       let solutionAppliedDesc = '';
-      if (body.soluzioni_applicate && body.soluzioni_applicate.length > 0) {
+      if (body.soluzioni_applicate?.length) {
         const saR = await client.query(
           `SELECT name, description FROM solutions_applied WHERE id = ANY($1::uuid[])`,
           [body.soluzioni_applicate]
         );
-        solutionAppliedDesc = saR.rows
-          .map((row) => row.description ?? row.name)
-          .filter(Boolean)
-          .join(', ');
+        solutionAppliedDesc = saR.rows.map((row) => row.description ?? row.name).filter(Boolean).join(', ');
       }
 
-      // 🟢 Costruisci la query di UPDATE dinamicamente (operatore_id e tempo_impiego opzionali)
       const updates: string[] = [];
       const values: any[] = [];
       let paramIndex = 1;
 
-      // Campi sempre aggiornati
-      updates.push(`machine_id = $${paramIndex++}`);
-      values.push(finalMachineId);
-      
-      updates.push(`problem_id = $${paramIndex++}`);
-      values.push(body.problem_id ?? null);
-      
-      updates.push(`cause_id = $${paramIndex++}`);
-      values.push(body.cause_id ?? null);
-      
-      updates.push(`description = $${paramIndex++}`);
-      values.push(solutionAppliedDesc || null);
-      
-      updates.push(`solution = $${paramIndex++}`);
-      values.push(solutionAppliedDesc || null);
-      
+      updates.push(`machine_id = $${paramIndex++}`); values.push(finalMachineId);
+      updates.push(`problem_id = $${paramIndex++}`); values.push(body.problem_id ?? null);
+      updates.push(`cause_id = $${paramIndex++}`); values.push(body.cause_id ?? null);
+      updates.push(`description = $${paramIndex++}`); values.push(solutionAppliedDesc || null);
+      updates.push(`solution = $${paramIndex++}`); values.push(solutionAppliedDesc || null);
+
       if (finalNotes !== undefined) {
         updates.push(`notes = $${paramIndex++}`);
         values.push(finalNotes?.trim() || null);
       }
-      
-      // 🟢 tempo_impiego: opzionale
       if (body.tempo_impiego !== undefined) {
         updates.push(`tempo_impiego = $${paramIndex++}`);
         values.push(body.tempo_impiego);
       }
-      
-      // 🟢 operatore_id: opzionale (se non passato, non lo aggiorna)
-      if (body.operatore_id !== undefined) {
+      // Aggiorna anche operatore_id (legacy) col primo operatore
+      if (operatoreIds.length > 0) {
         updates.push(`operatore_id = $${paramIndex++}`);
-        values.push(body.operatore_id);
+        values.push(operatoreIds[0]);
       }
 
       updates.push(`updated_at = now()`);
-
       values.push(req.params.id);
-      
-      const query = `
-        UPDATE cases
-        SET ${updates.join(', ')}
-        WHERE id = $${paramIndex}
-        RETURNING *
-      `;
 
-      const r = await client.query(query, values);
+      const r = await client.query(
+        `UPDATE cases SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+        values
+      );
+
+      // Sync tabella ponte operatori
+      if (operatoreIds.length > 0) {
+        await syncCaseOperatori(client, req.params.id, operatoreIds);
+      }
 
       // Update solutions tried
       await client.query(`DELETE FROM case_solutions_tried WHERE case_id = $1`, [req.params.id]);
-      if (body.soluzioni_provate && body.soluzioni_provate.length > 0) {
-        for (const solId of body.soluzioni_provate) {
-          if (solId) {
-            await client.query(
-              `INSERT INTO case_solutions_tried(case_id, solution_id) VALUES($1, $2) ON CONFLICT DO NOTHING`,
-              [req.params.id, solId]
-            );
-          }
-        }
+      for (const solId of body.soluzioni_provate ?? []) {
+        if (solId) await client.query(
+          `INSERT INTO case_solutions_tried(case_id, solution_id) VALUES($1, $2) ON CONFLICT DO NOTHING`,
+          [req.params.id, solId]
+        );
       }
 
       // Update solutions applied
       await client.query(`DELETE FROM case_solutions_applied WHERE case_id = $1`, [req.params.id]);
-      if (body.soluzioni_applicate && body.soluzioni_applicate.length > 0) {
-        for (const solId of body.soluzioni_applicate) {
-          if (solId) {
-            await client.query(
-              `INSERT INTO case_solutions_applied(case_id, solution_id) VALUES($1, $2) ON CONFLICT DO NOTHING`,
-              [req.params.id, solId]
-            );
-          }
-        }
+      for (const solId of body.soluzioni_applicate ?? []) {
+        if (solId) await client.query(
+          `INSERT INTO case_solutions_applied(case_id, solution_id) VALUES($1, $2) ON CONFLICT DO NOTHING`,
+          [req.params.id, solId]
+        );
       }
 
       // Update spare parts
       await client.query(`DELETE FROM case_spare_parts WHERE case_id = $1`, [req.params.id]);
-      if (body.pezzi_ricambio && body.pezzi_ricambio.length > 0) {
-        for (const spId of body.pezzi_ricambio) {
-          if (spId) {
-            await client.query(
-              `INSERT INTO case_spare_parts(case_id, spare_part_id) VALUES($1, $2) ON CONFLICT DO NOTHING`,
-              [req.params.id, spId]
-            );
-          }
-        }
+      for (const spId of body.pezzi_ricambio ?? []) {
+        if (spId) await client.query(
+          `INSERT INTO case_spare_parts(case_id, spare_part_id) VALUES($1, $2) ON CONFLICT DO NOTHING`,
+          [req.params.id, spId]
+        );
       }
 
       await client.query(
-        `INSERT INTO case_events(case_id,event_type,message,actor_id)
-         VALUES($1,'update','case updated',$2)`,
+        `INSERT INTO case_events(case_id,event_type,message,actor_id) VALUES($1,'update','case updated',$2)`,
         [req.params.id, req.user!.id]
       );
 
       await client.query('COMMIT');
-
       emitEvent('case-updated', { caseId: req.params.id });
-
       res.json({ item: r.rows[0] });
     } catch (e) {
       await client.query('ROLLBACK');
@@ -694,19 +626,16 @@ casesRoutes.put('/:id', authMiddleware, async (req, res, next) => {
   }
 });
 
-
 casesRoutes.delete('/:id', authMiddleware, async (req, res, next) => {
   try {
     if (req.user!.role !== 'admin') {
       return res.status(403).json({ error: 'Solo gli admin possono eliminare i casi' });
     }
-
     const caseRow = await getCaseRow(req.params.id);
     if (!caseRow) return res.status(404).json({ error: 'Case not found' });
 
     await pool.query('DELETE FROM cases WHERE id = $1', [req.params.id]);
     emitEvent('case-updated', { caseId: req.params.id, action: 'deleted' });
-
     res.json({ ok: true });
   } catch (e) {
     next(e);
