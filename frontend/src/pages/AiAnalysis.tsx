@@ -31,7 +31,6 @@ export default function AiAnalysis() {
   const [categories, setCategories] = useState<CategoryItem[]>([]);
   const [machineId, setMachineId] = useState('');
   const [problemId, setProblemId] = useState('');
-  const [causeId, setCauseId] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AiResult | null>(null);
@@ -51,7 +50,6 @@ export default function AiAnalysis() {
   }, [token]);
 
   const problems = categories.filter((c) => c.type === 'problem');
-  const causes = categories.filter((c) => c.type === 'cause');
   const selectedMachine = machines.find((m) => m.id === machineId);
 
   const runAnalysis = async () => {
@@ -68,20 +66,11 @@ export default function AiAnalysis() {
     try {
       const resp = await axios.post(
         `${API_URL}/ai/analyze`,
-        {
-          machine_id: machineId,
-          problem_id: problemId,
-          cause_id: causeId || undefined
-        },
-        {
-          headers: { Authorization: `Bearer ${token}` },
-          timeout: 120000
-        }
+        { machine_id: machineId, problem_id: problemId },
+        { headers: { Authorization: `Bearer ${token}` }, timeout: 120000 }
       );
       const data = resp.data as AiResult;
-      if (data.error && data.insufficient) {
-        setError(data.error);
-      }
+      if (data.error && data.insufficient) setError(data.error);
       setResult(data);
     } catch (err: any) {
       const isTimeout = err?.code === 'ECONNABORTED' || err?.response?.status === 408;
@@ -117,18 +106,15 @@ export default function AiAnalysis() {
               />
             </div>
           </div>
-          <div>
+          <div className="sm:col-span-2">
             <label className="text-xs text-slate-400">Problema <span className="text-red-400">*</span></label>
-            <select value={problemId} onChange={(e) => setProblemId(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none">
+            <select
+              value={problemId}
+              onChange={(e) => setProblemId(e.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none"
+            >
               <option value="">Seleziona problema</option>
               {problems.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </div>
-          <div className="sm:col-span-2">
-            <label className="text-xs text-slate-400">Causa</label>
-            <select value={causeId} onChange={(e) => setCauseId(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none">
-              <option value="">Opzionale</option>
-              {causes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
         </div>
@@ -171,7 +157,7 @@ export default function AiAnalysis() {
                   {result.stats.machine ? result.stats.machine.count : result.stats.same_machine_problem}
                 </div>
                 <div className="mt-1 text-xs text-slate-400">
-                  {result.stats.machine ? result.stats.machine.label : (problemId ? "Casi con stesso problema su questa macchina" : "Casi su questa macchina")}
+                  {result.stats.machine ? result.stats.machine.label : 'Casi con stesso problema su questa macchina'}
                 </div>
               </div>
               <div className="rounded-2xl bg-slate-900/80 p-4 text-center">
@@ -187,7 +173,7 @@ export default function AiAnalysis() {
                   {result.stats.total ? result.stats.total.count : result.stats.total_similar}
                 </div>
                 <div className="mt-1 text-xs text-slate-400">
-                  {result.stats.total ? result.stats.total.label : "Casi simili totali"}
+                  {result.stats.total ? result.stats.total.label : 'Casi simili totali'}
                 </div>
               </div>
             </div>
