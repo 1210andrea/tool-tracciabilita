@@ -7,6 +7,8 @@ const API_URL = '/api';
 type CategoryItem = { id: string; type: string; name: string };
 type MachineItem = { id: string; code: string; name: string; type?: string; tipologia?: string };
 type SparePartItem = { id: string; name: string };
+// cause_id qui è il problem_id restituito dalla join solution_problems
+// (usato per filtrare le soluzioni per causa nel MultiSelect)
 type SolutionItem = { id: string; name: string; cause_id?: string };
 
 export type CaseDetail = {
@@ -123,7 +125,8 @@ export function CaseDetailModal({
     setError(null);
   }, [caseItem]);
 
-  // Carica cause e soluzioni filtrate per problema (anche in visualizzazione per averle pronte)
+  // Carica cause e soluzioni filtrate per problema
+  // La route solutions-by-problem esiste ora in categories.ts (sopra /:type)
   useEffect(() => {
     setFilteredCauses([]);
     setFilteredSolutions([]);
@@ -160,8 +163,12 @@ export function CaseDetailModal({
     setSoluzioniApplicate([]);
   };
 
+  // Le soluzioni sono già filtrate per problema dalla BE.
+  // Se è selezionata una causa, filtra ulteriormente per cause_id.
+  // Le soluzioni senza cause_id (non associate a nessun problema) vengono
+  // sempre mostrate per non escluderle per errore.
   const solutionsByCurrentCause = causeId
-    ? filteredSolutions.filter((s) => s.cause_id === causeId)
+    ? filteredSolutions.filter((s) => !s.cause_id || s.cause_id === causeId)
     : filteredSolutions;
 
   useEffect(() => {
@@ -278,6 +285,17 @@ export function CaseDetailModal({
                   <button type="button" onClick={() => setTempoImpiego((t) => Math.min(999, t + 0.5))} className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-700 bg-slate-950 text-md font-bold text-slate-300 hover:bg-slate-800 transition">+</button>
                 </div>
               </div>
+
+              <div className="sm:col-span-2">
+                <label className="text-xs text-slate-400">Note</label>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={3}
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-xs text-slate-100 outline-none resize-none focus:border-sky-500/40 focus:ring-2 focus:ring-sky-500/10 transition"
+                  placeholder="Aggiungi note..."
+                />
+              </div>
             </>
           ) : (
             <>
@@ -305,38 +323,54 @@ export function CaseDetailModal({
                 <span className="text-xs text-slate-500">Soluzioni Applicate</span>
                 <div className="text-sm font-medium text-slate-200 mt-1">{(caseItem.soluzioni_applicate || []).map((s) => s.name).join(', ') || caseItem.solution_applied_name || 'Nessuna'}</div>
               </div>
-              <div className="sm:col-span-2">
+              <div>
                 <span className="text-xs text-slate-500">Tempo Impiego</span>
-                <div className="text-sm font-medium text-slate-200 mt-1">{caseItem.tempo_impiego ? `${caseItem.tempo_impiego}h (${Math.floor(caseItem.tempo_impiego)}h ${Math.round((caseItem.tempo_impiego % 1) * 60)}m)` : '—'}</div>
+                <div className="text-sm font-medium text-slate-200 mt-1">
+                  {caseItem.tempo_impiego
+                    ? `${caseItem.tempo_impiego}h (${Math.floor(Number(caseItem.tempo_impiego))}h ${Math.round((Number(caseItem.tempo_impiego) % 1) * 60)}m)`
+                    : 'N.D.'}
+                </div>
               </div>
+              <div>
+                <span className="text-xs text-slate-500">Data apertura</span>
+                <div className="text-sm font-medium text-slate-200 mt-1">
+                  {caseItem.created_at ? new Date(caseItem.created_at).toLocaleString('it-IT') : 'N.D.'}
+                </div>
+              </div>
+              {caseItem.notes && (
+                <div className="sm:col-span-2">
+                  <span className="text-xs text-slate-500">Note</span>
+                  <div className="text-sm font-medium text-slate-200 mt-1 whitespace-pre-wrap">{caseItem.notes}</div>
+                </div>
+              )}
             </>
           )}
-
-          <div className="sm:col-span-2">
-            <div className="flex justify-between items-center">
-              <label className="text-xs text-slate-400">Note aggiuntive</label>
-              {canEdit && <span className="text-[10px] text-slate-500">{notes.length}/1000 caratteri</span>}
-            </div>
-            {isEditing ? (
-              <textarea value={notes} onChange={(e) => setNotes(e.target.value.slice(0, 1000))} placeholder="Aggiungi dettagli aggiuntivi..." className="mt-1 w-full h-24 rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2 text-xs text-slate-100 outline-none resize-none focus:border-sky-500/50 transition-colors" />
-            ) : (
-              <div className="mt-1 w-full rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-2.5 text-xs text-slate-300 min-h-[4rem] whitespace-pre-wrap">
-                {notes || <span className="text-slate-500 italic">Nessuna nota aggiuntiva</span>}
-              </div>
-            )}
-          </div>
         </div>
 
-        <div className="mt-6 flex flex-wrap justify-end gap-3">
-          <button type="button" onClick={onClose} className="rounded-2xl border border-slate-700 px-4 py-2 text-xs text-slate-100 hover:bg-slate-800">Chiudi</button>
+        <div className="mt-6 flex justify-end gap-3">
           {canEdit && !isEditing && (
-            <button type="button" onClick={() => setIsEditing(true)} className="rounded-2xl bg-sky-500 px-4 py-2 text-xs font-semibold text-slate-950 hover:bg-sky-400">Modifica</button>
+            <button type="button" onClick={() => setIsEditing(true)}
+              className="rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-500 transition">
+              Modifica
+            </button>
           )}
           {isEditing && (
             <>
-              <button type="button" onClick={() => setIsEditing(false)} className="rounded-2xl border border-slate-700 px-4 py-2 text-xs text-slate-100 hover:bg-slate-800">Annulla</button>
-              <button type="button" onClick={handleSave} disabled={loading} className="rounded-2xl bg-sky-500 px-4 py-2 text-xs font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-60">{loading ? 'Salvataggio...' : 'Salva modifiche'}</button>
+              <button type="button" onClick={() => setIsEditing(false)} disabled={loading}
+                className="rounded-xl border border-slate-700 px-4 py-2 text-xs text-slate-300 hover:bg-slate-800 transition">
+                Annulla
+              </button>
+              <button type="button" onClick={handleSave} disabled={loading}
+                className="rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-50 transition">
+                {loading ? 'Salvataggio...' : 'Salva'}
+              </button>
             </>
+          )}
+          {!isEditing && (
+            <button type="button" onClick={onClose}
+              className="rounded-xl border border-slate-700 px-4 py-2 text-xs text-slate-300 hover:bg-slate-800 transition">
+              Chiudi
+            </button>
           )}
         </div>
       </div>
