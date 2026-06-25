@@ -24,6 +24,12 @@ function DeleteButton({ itemId, usageCount, type, onDelete }: {
   return <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-rose-400 transition" onClick={() => onDelete(type, itemId)}>Elimina</button>;
 }
 
+const ROLE_LABEL: Record<string, string> = {
+  user: 'Utente',
+  magazziniere: 'Magazziniere',
+  admin: 'Admin',
+};
+
 export default function AdminPanel() {
   const { token } = useAuth();
   const [activeTab, setActiveTab] = useState<AdminTab>('operatori');
@@ -439,6 +445,7 @@ export default function AdminPanel() {
                 <input type="password" value={userForm.password} onChange={(e) => setUserForm((c) => ({ ...c, password: e.target.value }))} placeholder="Password" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
                 <select value={userForm.role} onChange={(e) => setUserForm((c) => ({ ...c, role: e.target.value }))} className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none">
                   <option value="user">Utente</option>
+                  <option value="magazziniere">Magazziniere</option>
                   <option value="admin">Admin</option>
                 </select>
               </div>
@@ -458,27 +465,9 @@ export default function AdminPanel() {
                   <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Tipologie Macchine Collegate</span>
                   {availableTipologie.length > 0 && (
                     <div className="flex gap-1.5">
-                      <button
-                        type="button"
-                        onClick={selectTipologieAll}
-                        className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-slate-100 transition"
-                      >
-                        Tutte
-                      </button>
-                      <button
-                        type="button"
-                        onClick={selectTipologieSR}
-                        className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-slate-100 transition"
-                      >
-                        SR
-                      </button>
-                      <button
-                        type="button"
-                        onClick={selectTipologieSIMM}
-                        className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-slate-100 transition"
-                      >
-                        SIMM
-                      </button>
+                      <button type="button" onClick={selectTipologieAll} className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-slate-100 transition">Tutte</button>
+                      <button type="button" onClick={selectTipologieSR} className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-slate-100 transition">SR</button>
+                      <button type="button" onClick={selectTipologieSIMM} className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-slate-100 transition">SIMM</button>
                     </div>
                   )}
                 </div>
@@ -657,7 +646,14 @@ export default function AdminPanel() {
                 <div key={userItem.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <div className="font-semibold text-slate-100">{userItem.username}</div>
-                    <div className="text-sm text-slate-500">{userItem.email || 'Email non fornita'} · ruolo: {userItem.role}</div>
+                    <div className="text-sm text-slate-500">
+                      {userItem.email || 'Email non fornita'} ·{' '}
+                      <span className={`font-semibold ${
+                        userItem.role === 'admin' ? 'text-rose-400'
+                        : userItem.role === 'magazziniere' ? 'text-amber-400'
+                        : 'text-slate-400'
+                      }`}>{ROLE_LABEL[userItem.role] ?? userItem.role}</span>
+                    </div>
                   </div>
                   <div className="flex gap-2">
                     <button type="button" className="rounded-2xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition" onClick={() => startEditUser(userItem)}>Modifica</button>
