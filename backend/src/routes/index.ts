@@ -9,6 +9,7 @@ import { dashboardRoutes } from './dashboard';
 import { statsRoutes } from './stats';
 import { aiRoutes } from './ai';
 import { sparepartsRoutes } from './spareparts';
+import { sparePartsMagazzinoRoutes } from './spare-parts-magazzino';
 import { operatoriRoutes } from './operatori';
 import { problemTimeRoutes } from './problem_time';
 import { reordersRoutes } from './reorders';
@@ -27,6 +28,8 @@ export function registerRoutes(app: Express) {
   app.use('/api/dashboard', dashboardRoutes);
   app.use('/api/stats', statsRoutes);
   app.use('/api/stats', problemTimeRoutes);
+  // magazzino-ricambi va PRIMA del vecchio sparepartsRoutes per override di /api/spare-parts
+  app.use('/api', sparePartsMagazzinoRoutes);
   app.use('/api', sparepartsRoutes);
   app.use('/api/reorders', reordersRoutes);
 
@@ -43,7 +46,7 @@ export function registerRoutes(app: Express) {
       } = req.body as {
         problem_name?: string;
         problem_description?: string;
-        solutions_tried?: string[];
+        solutions_tried?: string[]
         solutions_applied?: string[];
         spare_parts_used?: string[];
         tempo_impiego?: number;
