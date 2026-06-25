@@ -76,14 +76,18 @@ categoriesRoutes.get('/causes-by-problem/:problemId', authMiddleware, async (req
 });
 
 // GET /categories/solutions-by-problem/:problemId
-// Restituisce tutte le solutions_applied (non hanno relazione diretta con il problema)
+// Filtra le soluzioni tramite la tabella ponte solution_problems
 // DEVE stare prima di /:type
-categoriesRoutes.get('/solutions-by-problem/:problemId', authMiddleware, async (_req, res, next) => {
+categoriesRoutes.get('/solutions-by-problem/:problemId', authMiddleware, async (req, res, next) => {
   try {
+    const { problemId } = req.params;
     const r = await pool.query(
-      `SELECT id, name, description
-       FROM solutions_applied
-       ORDER BY name ASC`
+      `SELECT sa.id, sa.name, sa.description
+       FROM solutions_applied sa
+       JOIN solution_problems sp ON sp.solution_id = sa.id
+       WHERE sp.problem_id = $1
+       ORDER BY sa.name ASC`,
+      [problemId]
     );
     res.json({ items: r.rows });
   } catch (e) {
