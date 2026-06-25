@@ -97,6 +97,53 @@ function MultiSelect({
   );
 }
 
+// Stepper touch-friendly per valori in step 0.5
+function HourStepper({
+  value,
+  onChange,
+  min = 0.5,
+  step = 0.5,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  min?: number;
+  step?: number;
+}) {
+  const fmt = (v: number) => {
+    if (v % 1 === 0) return `${v}h`;
+    const h = Math.floor(v);
+    return h > 0 ? `${h}h 30m` : '30m';
+  };
+
+  const decrement = () => onChange(Math.max(min, parseFloat((value - step).toFixed(1))));
+  const increment = () => onChange(parseFloat((value + step).toFixed(1)));
+
+  return (
+    <div className="flex items-center gap-0 rounded-md overflow-hidden border border-slate-600 bg-slate-700 h-11 w-full">
+      <button
+        type="button"
+        onClick={decrement}
+        disabled={value <= min}
+        aria-label="Diminuisci"
+        className="flex items-center justify-center w-14 h-full text-2xl font-bold text-slate-200 hover:bg-slate-600 active:bg-slate-500 disabled:opacity-30 disabled:cursor-not-allowed transition select-none touch-manipulation"
+      >
+        −
+      </button>
+      <div className="flex-1 text-center text-base font-semibold text-white select-none">
+        {fmt(value)}
+      </div>
+      <button
+        type="button"
+        onClick={increment}
+        aria-label="Aumenta"
+        className="flex items-center justify-center w-14 h-full text-2xl font-bold text-slate-200 hover:bg-slate-600 active:bg-slate-500 transition select-none touch-manipulation"
+      >
+        +
+      </button>
+    </div>
+  );
+}
+
 export default function CreateCase() {
   const { token, user } = useAuth();
   const navigate = useNavigate();
@@ -132,7 +179,6 @@ export default function CreateCase() {
         .filter((m) => `${m.code} - ${m.name}`.toLowerCase().includes(machineSearch.toLowerCase()))
         .sort((a, b) => `${a.code} ${a.name}`.localeCompare(`${b.code} ${b.name}`));
 
-  // Caricamento dati iniziali
   useEffect(() => {
     if (!token) return;
     const loadLookups = async () => {
@@ -160,20 +206,17 @@ export default function CreateCase() {
     loadLookups();
   }, [token]);
 
-  // Quando cambia il problema: reset cause e soluzioni selezionate
   useEffect(() => {
     setCauseIds([]);
     setSoluzioniProvate([]);
     setSoluzioniApplicate([]);
   }, [problemId]);
 
-  // Quando cambiano le cause: reset soluzioni selezionate
   useEffect(() => {
     setSoluzioniProvate([]);
     setSoluzioniApplicate([]);
   }, [causeIds]);
 
-  // Cause filtrate per il problema selezionato
   const filteredCauses = problemId
     ? allCauses.filter((c: any) => {
         if (c.problem_id === problemId) return true;
@@ -182,12 +225,10 @@ export default function CreateCase() {
       })
     : [];
 
-  // Soluzioni filtrate per il problema selezionato
   const filteredSolutions = problemId
     ? allSolutions.filter((s) => s.problem_ids && s.problem_ids.includes(problemId))
     : [];
 
-  // Ricambi filtrati per tipologia macchina
   useEffect(() => {
     if (!token || !machineId) {
       setSpareParts([]);
@@ -319,7 +360,7 @@ export default function CreateCase() {
           </div>
         </div>
 
-        {/* Operatore — multi-select */}
+        {/* Operatore */}
         <div className="flex flex-col space-y-1.5">
           <MultiSelect
             label="Operatore"
@@ -354,7 +395,7 @@ export default function CreateCase() {
           </select>
         </div>
 
-        {/* Causa — multi-select */}
+        {/* Causa */}
         <div className="flex flex-col space-y-1.5 md:col-span-1">
           <MultiSelect
             label="Causa"
@@ -399,14 +440,13 @@ export default function CreateCase() {
           />
         </div>
 
-        {/* Tempo impiego */}
+        {/* Tempo impiego — stepper touch-friendly */}
         <div className="flex flex-col space-y-1.5">
-          <label className="text-sm font-medium text-slate-200">Tempo impiego (ore) <span className="text-rose-500 ml-1">*</span></label>
-          <input
-            type="number" min="0.5" step="0.5" value={tempoImpiego}
-            onChange={(e) => setTempoImpiego(parseFloat(e.target.value) || 0.5)}
-            className="w-full px-3 py-2 rounded-md bg-slate-700 border border-slate-600 text-white focus:outline-none focus:border-cyan-500 text-sm"
-          />
+          <label className="text-sm font-medium text-slate-200">
+            Tempo impiego <span className="text-rose-500 ml-1">*</span>
+          </label>
+          <HourStepper value={tempoImpiego} onChange={setTempoImpiego} />
+          <p className="text-xs text-slate-500">Passo: 30 minuti</p>
         </div>
 
         {/* Note */}
