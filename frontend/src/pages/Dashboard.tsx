@@ -21,7 +21,6 @@ import { ConfirmModal } from '../components/ConfirmModal';
 const API_URL = '/api';
 
 type CaseItem = {
-
   id: string;
   machine_id: string;
   machine_code: string;
@@ -86,13 +85,10 @@ export default function Dashboard() {
 
   const [topProblemsLimit, setTopProblemsLimit] = useState(5);
   const [topProblemsByLineLimit, setTopProblemsByLineLimit] = useState(5);
-
   const [topCausesLimit, setTopCausesLimit] = useState(5);
-
   const [topMachinesLimit, setTopMachinesLimit] = useState(5);
   const [topSparePartsLimit, setTopSparePartsLimit] = useState(5);
   const [topProblemiTempoLimit, setTopProblemiTempoLimit] = useState(5);
-
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [page, setPage] = useState(1);
@@ -101,6 +97,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [eventMessage, setEventMessage] = useState('');
   const [editingCase, setEditingCase] = useState<CaseDetail | null>(null);
+  const [loadingCaseDetail, setLoadingCaseDetail] = useState(false);
   const [deletingCase, setDeletingCase] = useState<CaseItem | null>(null);
 
   const filterParams = useMemo(
@@ -136,12 +133,9 @@ export default function Dashboard() {
         axios.get(`${API_URL}/stats/top-machines`, { headers, params: { ...filterParams, limit: topMachinesLimit } }),
         axios.get(`${API_URL}/stats/top-spare-parts`, { headers, params: { ...filterParams, limit: topSparePartsLimit } }),
         axios.get(`${API_URL}/dashboard/problemi-tempo`, {
-  headers,
-  params: {
-    ...filterParams,        // Passa TUTTI i filtri (mese, anno, data, ora, macchina, linea, problema, causa)
-    limit: topProblemiTempoLimit
-  }
-})
+          headers,
+          params: { ...filterParams, limit: topProblemiTempoLimit }
+        })
       ]);
 
       setCases(casesResp.data.items || []);
@@ -198,7 +192,6 @@ export default function Dashboard() {
     loadData();
   }, [token, caseParams, filterParams, topProblemsLimit, topProblemsByLineLimit, topCausesLimit, topMachinesLimit, topSparePartsLimit, topProblemiTempoLimit]);
 
-
   useEffect(() => {
     setPage(1);
   }, [monthFilter, yearFilter, machineIdFilter, dateFrom, dateTo, timeFrom, timeTo, lineFilter, problemIdFilter, causeIdFilter]);
@@ -224,6 +217,26 @@ export default function Dashboard() {
 
   const canEditCase = (item: CaseItem) => user?.role === 'admin' || item.created_by === user?.id;
   const canDeleteCase = user?.role === 'admin';
+
+  // FIX: fetch il dettaglio completo del caso prima di aprire il modal
+  // La lista /cases non include soluzioni_provate/applicate/pezzi_ricambio come oggetti JSON
+  // ma solo come stringhe aggregate. Il GET /cases/:id restituisce gli array completi.
+  const handleOpenCase = async (item: CaseItem) => {
+    if (!token) return;
+    setLoadingCaseDetail(true);
+    try {
+      const resp = await axios.get(`${API_URL}/cases/${item.id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const detail = resp.data.item as CaseDetail;
+      setEditingCase(detail);
+    } catch {
+      // fallback: apri con i dati parziali della lista
+      setEditingCase(item as unknown as CaseDetail);
+    } finally {
+      setLoadingCaseDetail(false);
+    }
+  };
 
   const handleDelete = async () => {
     if (!token || !deletingCase) return;
@@ -429,7 +442,6 @@ export default function Dashboard() {
             <TopSelector value={topProblemsByLineLimit} onChange={setTopProblemsByLineLimit} />
           </div>
           <div className="w-full" style={{ height: 280 }}>
-
             {problemsByLine.length === 0 ? (
               <div className="flex h-full items-center justify-center text-sm text-slate-500">Nessun dato.</div>
             ) : (
@@ -605,8 +617,13 @@ export default function Dashboard() {
                       </td>
                       <td className="px-3 py-3 sm:px-4 sm:py-4">
                         <div className="flex flex-wrap gap-2">
-                          <button type="button" className="rounded-xl border border-slate-600 px-2.5 py-1 text-xs text-slate-100 hover:bg-slate-800" onClick={() => setEditingCase(item)}>
-                            Apri
+                          <button
+                            type="button"
+                            disabled={loadingCaseDetail}
+                            className="rounded-xl border border-slate-600 px-2.5 py-1 text-xs text-slate-100 hover:bg-slate-800 disabled:opacity-50"
+                            onClick={() => handleOpenCase(item)}
+                          >
+                            {loadingCaseDetail ? '...' : 'Apri'}
                           </button>
                           {canDeleteCase && (
                             <button type="button" className="rounded-xl border border-rose-500/40 px-2.5 py-1 text-xs text-rose-300 hover:bg-rose-500/10" onClick={() => setDeletingCase(item)}>
@@ -643,7 +660,7 @@ export default function Dashboard() {
           caseItem={editingCase}
           machines={machines}
           categories={categories}
-          canEdit={!!editingCase && canEditCase(editingCase as CaseItem)}
+          canEdit={!!editingCase && canEditCase(editingCase as unknown as CaseItem)}
           isAdmin={user?.role === 'admin'}
           onClose={() => setEditingCase(null)}
           onSaved={loadData}
