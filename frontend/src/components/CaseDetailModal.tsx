@@ -8,6 +8,7 @@ type CategoryItem = { id: string; type: string; name: string };
 type MachineItem = { id: string; code: string; name: string; type?: string; tipologia?: string };
 type SparePartItem = { id: string; name: string };
 type SolutionItem = { id: string; name: string; cause_id?: string };
+type OperatoreItem = { id: string; nome: string };
 
 export type CaseDetail = {
   id: string;
@@ -31,6 +32,8 @@ export type CaseDetail = {
   soluzioni_provate?: { id: string; name: string }[];
   soluzioni_applicate?: { id: string; name: string }[];
   pezzi_ricambio?: { id: string; name: string }[];
+  operatori?: { id: string; nome: string }[];
+  operator_name?: string;
 };
 
 function MultiSelect({
@@ -97,8 +100,10 @@ export function CaseDetailModal({
   const [soluzioniProvate, setSoluzioniProvate] = useState<string[]>([]);
   const [soluzioniApplicate, setSoluzioniApplicate] = useState<string[]>([]);
   const [pezziRicambio, setPezziRicambio] = useState<string[]>([]);
+  const [operatoreIds, setOperatoreIds] = useState<string[]>([]);
   const [tempoImpiego, setTempoImpiego] = useState(0.5);
   const [spareParts, setSpareParts] = useState<SparePartItem[]>([]);
+  const [allOperatori, setAllOperatori] = useState<OperatoreItem[]>([]);
   const [filteredCauses, setFilteredCauses] = useState<CategoryItem[]>([]);
   const [filteredSolutions, setFilteredSolutions] = useState<SolutionItem[]>([]);
   const [loadingCauses, setLoadingCauses] = useState(false);
@@ -109,6 +114,15 @@ export function CaseDetailModal({
 
   const problems = categories.filter((c) => c.type === 'problem');
 
+  // Carica tutti gli operatori attivi una sola volta
+  useEffect(() => {
+    if (!token) return;
+    axios
+      .get(`${API_URL}/operatori`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => setAllOperatori(r.data.items || r.data || []))
+      .catch(() => setAllOperatori([]));
+  }, [token]);
+
   useEffect(() => {
     if (!caseItem) return;
     setIsEditing(false);
@@ -118,6 +132,7 @@ export function CaseDetailModal({
     setSoluzioniProvate((caseItem.soluzioni_provate || []).map((s) => s.id));
     setSoluzioniApplicate((caseItem.soluzioni_applicate || []).map((s) => s.id));
     setPezziRicambio((caseItem.pezzi_ricambio || []).map((p) => p.id));
+    setOperatoreIds((caseItem.operatori || []).map((o) => o.id));
     setTempoImpiego(Number(caseItem.tempo_impiego) || 0.5);
     setNotes(caseItem.notes ?? '');
     setError(null);
@@ -153,16 +168,7 @@ export function CaseDetailModal({
 
   const handleCauseChange = (newCauseId: string) => {
     setCauseId(newCauseId);
-    setSoluzioniProvate([]);
-    setSoluzioniApplicate([]);
   };
-
-  // Soluzioni gia' filtrate per problema dal BE.
-  // Se e' selezionata una causa, filtra per cause_id.
-  // Soluzioni senza cause_id vengono sempre mostrate.
-  const solutionsByCurrentCause = causeId
-    ? filteredSolutions.filter((s) => !s.cause_id || s.cause_id === causeId)
-    : filteredSolutions;
 
   useEffect(() => {
     if (!token || !machineId) { setSpareParts([]); return; }
@@ -176,6 +182,9 @@ export function CaseDetailModal({
 
   if (!open || !caseItem) return null;
 
+  // Adatta operatori per MultiSelect (usa 'nome' invece di 'name')
+  const operatoriOptions = allOperatori.map((o) => ({ id: o.id, name: o.nome }));
+
   const handleSave = async () => {
     if (!canEdit) return;
     if (!machineId || !problemId || !causeId || !soluzioniApplicate.length) {
@@ -186,7 +195,17 @@ export function CaseDetailModal({
     try {
       await axios.put(
         `${API_URL}/cases/${caseItem.id}`,
-        { machine_id: machineId, problem_id: problemId, cause_id: causeId, soluzioni_provate: soluzioniProvate, soluzioni_applicate: soluzioniApplicate, pezzi_ricambio: pezziRicambio, tempo_impiego: tempoImpiego, notes: notes.trim() || null },
+        {
+          machine_id: machineId,
+          problem_id: problemId,
+          cause_id: causeId,
+          soluzioni_provate: soluzioniProvate,
+          soluzioni_applicate: soluzioniApplicate,
+          pezzi_ricambio: pezziRicambio,
+          operatore_ids: operatoreIds,
+          tempo_impiego: tempoImpiego,
+          notes: notes.trim() || null,
+        },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       onSaved(); onClose();
@@ -238,6 +257,17 @@ export function CaseDetailModal({
 
               <div className="sm:col-span-2">
                 <MultiSelect
+                  label="Operatori"
+                  options={operatoriOptions}
+                  selectedValues={operatoreIds}
+                  onChange={setOperatoreIds}
+                  placeholder="Seleziona operatori..."
+                  required={false}
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <MultiSelect
                   label="Pezzi di Ricambio"
                   options={spareParts}
                   selectedValues={pezziRicambio}
@@ -250,10 +280,10 @@ export function CaseDetailModal({
               <div className="sm:col-span-2">
                 <MultiSelect
                   label="Soluzioni Provate"
-                  options={solutionsByCurrentCause}
+                  options={filteredSolutions}
                   selectedValues={soluzioniProvate}
                   onChange={setSoluzioniProvate}
-                  placeholder={loadingSolutions ? 'Caricamento...' : !problemId ? 'Seleziona prima un problema' : !causeId ? 'Seleziona una causa per filtrare' : 'Seleziona soluzioni provate...'}
+                  placeholder={loadingSolutions ? 'Caricamento...' : !problemId ? 'Seleziona prima un problema' : 'Seleziona soluzioni provate...'}
                   disabled={!problemId}
                 />
               </div>
@@ -261,10 +291,10 @@ export function CaseDetailModal({
               <div className="sm:col-span-2">
                 <MultiSelect
                   label="Soluzioni Applicate"
-                  options={solutionsByCurrentCause}
+                  options={filteredSolutions}
                   selectedValues={soluzioniApplicate}
                   onChange={setSoluzioniApplicate}
-                  placeholder={loadingSolutions ? 'Caricamento...' : !problemId ? 'Seleziona prima un problema' : !causeId ? 'Seleziona una causa per filtrare' : 'Seleziona soluzioni applicate...'}
+                  placeholder={loadingSolutions ? 'Caricamento...' : !problemId ? 'Seleziona prima un problema' : 'Seleziona soluzioni applicate...'}
                   required={true}
                   disabled={!problemId}
                 />
@@ -305,12 +335,20 @@ export function CaseDetailModal({
                 <div className="text-sm font-medium text-slate-200 mt-1">{caseItem.cause_name || 'N.D.'}</div>
               </div>
               <div className="sm:col-span-2">
+                <span className="text-xs text-slate-500">Operatori</span>
+                <div className="text-sm font-medium text-slate-200 mt-1">
+                  {(caseItem.operatori || []).length > 0
+                    ? caseItem.operatori!.map((o) => o.nome).join(', ')
+                    : caseItem.operator_name || 'N.D.'}
+                </div>
+              </div>
+              <div className="sm:col-span-2">
                 <span className="text-xs text-slate-500">Pezzi di Ricambio</span>
                 <div className="text-sm font-medium text-slate-200 mt-1">{(caseItem.pezzi_ricambio || []).map((p) => p.name).join(', ') || caseItem.spare_part_name || 'Nessuno'}</div>
               </div>
               <div className="sm:col-span-2">
                 <span className="text-xs text-slate-500">Soluzioni Provate</span>
-                <div className="text-sm font-medium text-slate-200 mt-1">{(caseItem.soluzioni_provate || []).map((s) => s.name).join(', ') || 'Nessuna'}</div>
+<div className="text-sm font-medium text-slate-200 mt-1">{(caseItem.soluzioni_provate || []).map((s) => s.name).join(', ') || 'Nessuna'}</div>
               </div>
               <div className="sm:col-span-2">
                 <span className="text-xs text-slate-500">Soluzioni Applicate</span>

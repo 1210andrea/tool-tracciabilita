@@ -76,24 +76,14 @@ categoriesRoutes.get('/causes-by-problem/:problemId', authMiddleware, async (req
 });
 
 // GET /categories/solutions-by-problem/:problemId
-// DEVE stare prima di /:type altrimenti Express intercetta 'solutions-by-problem' come :type
-categoriesRoutes.get('/solutions-by-problem/:problemId', authMiddleware, async (req, res, next) => {
+// Restituisce tutte le solutions_applied (non hanno relazione diretta con il problema)
+// DEVE stare prima di /:type
+categoriesRoutes.get('/solutions-by-problem/:problemId', authMiddleware, async (_req, res, next) => {
   try {
-    const { problemId } = req.params;
     const r = await pool.query(
-      `SELECT DISTINCT
-              sa.id,
-              sa.name,
-              sa.description,
-              sp.problem_id AS cause_id
-       FROM solutions_applied sa
-       LEFT JOIN solution_problems sp ON sp.solution_id = sa.id
-       WHERE sp.problem_id = $1
-          OR NOT EXISTS (
-               SELECT 1 FROM solution_problems sp2 WHERE sp2.solution_id = sa.id
-             )
-       ORDER BY sa.name ASC`,
-      [problemId]
+      `SELECT id, name, description
+       FROM solutions_applied
+       ORDER BY name ASC`
     );
     res.json({ items: r.rows });
   } catch (e) {
