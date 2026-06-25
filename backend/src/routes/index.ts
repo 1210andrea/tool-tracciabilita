@@ -11,6 +11,7 @@ import { aiRoutes } from './ai';
 import { sparepartsRoutes } from './spareparts';
 import { operatoriRoutes } from './operatori';
 import { problemTimeRoutes } from './problem_time';
+import { reordersRoutes } from './reorders';
 
 import { authMiddleware } from '../middleware/auth';
 import { generateTechnicalAnalysis, formatOllamaUnavailableMessage } from '../services/aiService';
@@ -27,6 +28,7 @@ export function registerRoutes(app: Express) {
   app.use('/api/stats', statsRoutes);
   app.use('/api/stats', problemTimeRoutes);
   app.use('/api', sparepartsRoutes);
+  app.use('/api', reordersRoutes);
   
   app.post('/api/analisi-ia', authMiddleware, async (req, res, next) => {
     try {
@@ -74,5 +76,3 @@ export function registerRoutes(app: Express) {
 
   app.use('/', healthRoutes);
 }
-
-
