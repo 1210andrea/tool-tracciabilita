@@ -21,24 +21,31 @@ function AuthLoading() {
   );
 }
 
+/** Componente di protezione route. role può essere un singolo ruolo o una lista separata da | */
 function Protected({ children, role }: { children: ReactNode; role?: string }) {
   const { user, initializing } = useAuth();
   if (initializing) return <AuthLoading />;
   if (!user) return <Navigate to="/login" replace />;
-  if (role && user.role !== role) return <Navigate to="/" replace />;
+  if (role) {
+    const allowed = role.split('|').map((r) => r.trim());
+    if (!allowed.includes(user.role)) return <Navigate to="/" replace />;
+  }
   return <>{children}</>;
 }
 
 function HomeRoute() {
   const { user } = useAuth();
   if (user?.role === 'admin') return <Navigate to="/dashboard" replace />;
+  if (user?.role === 'magazziniere') return <Navigate to="/magazzino" replace />;
   return <UserHome />;
 }
 
 function Layout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
   const location = useLocation();
-  const isAdmin = user?.role === 'admin';
+  const isAdmin      = user?.role === 'admin';
+  const isMagazziniere = user?.role === 'magazziniere';
+  const hasWarehouse = isAdmin || isMagazziniere;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -49,16 +56,18 @@ function Layout({ children }: { children: ReactNode }) {
             <div className="text-sm text-slate-400">Gestione problemi macchine industriali</div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {isAdmin ? (
+            {isAdmin && (
+              <Link
+                className={`rounded border px-3 py-2 text-sm hover:bg-slate-700 ${
+                  location.pathname === '/dashboard' ? 'border-sky-500 bg-slate-800' : 'border-slate-700 bg-slate-800'
+                }`}
+                to="/dashboard"
+              >
+                Dashboard
+              </Link>
+            )}
+            {hasWarehouse && (
               <>
-                <Link
-                  className={`rounded border px-3 py-2 text-sm hover:bg-slate-700 ${
-                    location.pathname === '/dashboard' ? 'border-sky-500 bg-slate-800' : 'border-slate-700 bg-slate-800'
-                  }`}
-                  to="/dashboard"
-                >
-                  Dashboard
-                </Link>
                 <Link
                   className={`rounded border px-3 py-2 text-sm hover:bg-slate-700 ${
                     location.pathname === '/magazzino' ? 'border-emerald-500 bg-slate-800' : 'border-slate-700 bg-slate-800'
@@ -67,11 +76,27 @@ function Layout({ children }: { children: ReactNode }) {
                 >
                   Magazzino
                 </Link>
-                <Link className="rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm hover:bg-slate-700" to="/admin">
-                  Admin
+                <Link
+                  className={`rounded border px-3 py-2 text-sm hover:bg-slate-700 ${
+                    location.pathname === '/ordini' ? 'border-emerald-500 bg-slate-800' : 'border-slate-700 bg-slate-800'
+                  }`}
+                  to="/ordini"
+                >
+                  Ordini
                 </Link>
               </>
-            ) : (
+            )}
+            {isAdmin && (
+              <Link
+                className={`rounded border px-3 py-2 text-sm hover:bg-slate-700 ${
+                  location.pathname === '/admin' ? 'border-sky-500 bg-slate-800' : 'border-slate-700 bg-slate-800'
+                }`}
+                to="/admin"
+              >
+                Admin
+              </Link>
+            )}
+            {!isAdmin && !isMagazziniere && (
               <Link
                 className={`rounded border px-3 py-2 text-sm hover:bg-slate-700 ${
                   location.pathname === '/' ? 'border-sky-500 bg-slate-800' : 'border-slate-700 bg-slate-800'
@@ -89,9 +114,14 @@ function Layout({ children }: { children: ReactNode }) {
             >
               Analisi IA
             </Link>
-            <Link className="rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm hover:bg-slate-700" to="/cases/new">
-              Nuovo caso
-            </Link>
+            {!isMagazziniere && (
+              <Link
+                className="rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm hover:bg-slate-700"
+                to="/cases/new"
+              >
+                Nuovo caso
+              </Link>
+            )}
             <button
               type="button"
               className="rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm hover:bg-slate-700"
@@ -135,7 +165,7 @@ export default function App() {
         <Route
           path="/magazzino"
           element={
-            <Protected role="admin">
+            <Protected role="admin|magazziniere">
               <Layout>
                 <Magazzino />
               </Layout>
@@ -145,7 +175,7 @@ export default function App() {
         <Route
           path="/ordini"
           element={
-            <Protected role="admin">
+            <Protected role="admin|magazziniere">
               <Layout>
                 <Ordini />
               </Layout>
@@ -165,7 +195,7 @@ export default function App() {
         <Route
           path="/cases/new"
           element={
-            <Protected>
+            <Protected role="admin|user">
               <Layout>
                 <CreateCase />
               </Layout>

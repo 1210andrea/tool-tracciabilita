@@ -8,19 +8,19 @@ export const reordersRoutes = Router();
 const WAREHOUSE = ['admin', 'magazziniere'] as const;
 
 const STATUS_LABEL: Record<string, string> = {
-  in_lavorazione: 'IN LAVORAZIONE',
-  partial:        'PARZIALMENTE RICEVUTO',
-  completed:      'COMPLETATO',
-  cancelled:      'ANNULLATO',
+  pending:   'IN SOSPESO',
+  partial:   'PARZIALMENTE RICEVUTO',
+  completed: 'COMPLETATO',
+  cancelled: 'ANNULLATO',
 };
 
-// ── Genera PDF in memoria ─────────────────────────────────────────────────────
+// ── PDF multi-riga ────────────────────────────────────────────────────────────
 async function buildPdf(
   res: any,
   order: Record<string, any>,
-  part: Record<string, any>
+  items: Record<string, any>[]
 ) {
-  const doc = new PDFDocument({ margin: 50, size: 'A4' });
+  const doc    = new PDFDocument({ margin: 50, size: 'A4' });
   const GRAY   = '#6b7280';
   const BLACK  = '#111827';
   const ACCENT = '#0f766e';
@@ -33,7 +33,7 @@ async function buildPdf(
   doc.pipe(res);
 
   // Intestazione
-  doc.fontSize(20).fillColor(ACCENT).text('ORDINE INTERNO', { align: 'center' });
+  doc.fontSize(20).fillColor(ACCENT).text('ORDINE DI RIORDINO', { align: 'center' });
   doc.moveDown(0.3);
   doc.fontSize(13).fillColor(BLACK).text(`N° ${order.numero_ordine}`, { align: 'center' });
   doc.moveDown(0.5);
@@ -51,35 +51,55 @@ async function buildPdf(
     .fillColor(ACCENT)
     .text(STATUS_LABEL[order.status] ?? order.status);
 
+  if (order.note) {
+    doc.moveDown(0.2);
+    doc.fontSize(9).fillColor(GRAY).text(`Note: ${order.note}`);
+  }
+
   doc.moveDown(0.5);
   doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor(ACCENT).lineWidth(1).stroke();
   doc.moveDown(0.8);
 
-  // Corpo articolo
-  const field = (label: string, value: string) => {
-    doc.fontSize(10).fillColor(GRAY).text(label, { continued: true });
-    doc.fillColor(BLACK).text(` ${value}`);
-  };
+  // Intestazione tabella
+  const colX = [50, 130, 320, 410, 480];
+  doc.fontSize(9).fillColor(GRAY);
+  doc.text('Codice',    colX[0], doc.y, { width: 75 });
+  const headerY = doc.y - doc.currentLineHeight();
+  doc.text('Descrizione',   colX[1], headerY, { width: 185 });
+  doc.text('Tipologia',     colX[2], headerY, { width: 85 });
+  doc.text('Q.tà ord.',     colX[3], headerY, { width: 65 });
+  doc.text('Q.tà ric.',     colX[4], headerY, { width: 65 });
 
-  field('Codice articolo :', part.codice ?? '—');
-  field('Descrizione     :', part.name ?? '—');
-  field('Tipologia       :', part.tipologia ?? '—');
-  doc.moveDown(0.3);
-  field('Q.tà ordinata   :', String(order.quantita_ordinata));
-  if (order.quantita_ricevuta > 0)
-    field('Q.tà già versata:', String(order.quantita_ricevuta));
+  doc.moveDown(0.4);
+  doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor('#e5e7eb').lineWidth(0.5).stroke();
+  doc.moveDown(0.4);
 
-  if (order.note) {
-    doc.moveDown(0.5);
-    doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor('#e5e7eb').lineWidth(0.5).stroke();
-    doc.moveDown(0.5);
-    doc.fontSize(9).fillColor(GRAY).text(`Note: ${order.note}`);
+  // Righe
+  for (const it of items) {
+    const rowY = doc.y;
+    doc.fontSize(9).fillColor(BLACK);
+    doc.text(it.codice ?? '—',            colX[0], rowY, { width: 75 });
+    doc.text(it.spare_part_name ?? '—',   colX[1], rowY, { width: 185 });
+    doc.text(it.tipologia ?? '—',         colX[2], rowY, { width: 85 });
+    doc.text(String(it.quantita_ordinata), colX[3], rowY, { width: 65 });
+    doc.text(String(it.quantita_ricevuta), colX[4], rowY, { width: 65 });
+    doc.moveDown(0.3);
+    doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor('#f3f4f6').lineWidth(0.3).stroke();
+    doc.moveDown(0.3);
   }
 
-  // Footer
-  doc.moveDown(2);
-  doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor(ACCENT).lineWidth(0.5).stroke();
+  // Totali
+  const totOrd = items.reduce((s, i) => s + (i.quantita_ordinata ?? 0), 0);
+  const totRic = items.reduce((s, i) => s + (i.quantita_ricevuta ?? 0), 0);
   doc.moveDown(0.5);
+  doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor(ACCENT).lineWidth(0.5).stroke();
+  doc.moveDown(0.4);
+  doc.fontSize(9).fillColor(GRAY)
+    .text(`Totale righe: ${items.length}   Totale ordinato: ${totOrd} pz   Totale ricevuto: ${totRic} pz`,
+      { align: 'right' });
+
+  // Footer
+  doc.moveDown(1.5);
   doc.fontSize(8).fillColor(GRAY)
     .text(`Documento generato il ${new Date().toLocaleString('it-IT')}`, { align: 'right' });
 
@@ -89,7 +109,7 @@ async function buildPdf(
 // ── GET /api/reorders ─────────────────────────────────────────────────────────
 reordersRoutes.get('/', authMiddleware, requireRole(...WAREHOUSE), async (req, res, next) => {
   try {
-    const { status, from, to, spare_part_id } = req.query as Record<string, string>;
+    const { status } = req.query as Record<string, string>;
     const page  = Math.max(1, parseInt((req.query.page  as string) || '1'));
     const limit = Math.min(100, Math.max(1, parseInt((req.query.limit as string) || '20')));
     const offset = (page - 1) * limit;
@@ -98,10 +118,7 @@ reordersRoutes.get('/', authMiddleware, requireRole(...WAREHOUSE), async (req, r
     const params: any[] = [];
     let idx = 1;
 
-    if (status)        { conditions.push(`r.status = $${idx++}`);                params.push(status); }
-    if (from)          { conditions.push(`r.created_at >= $${idx++}`);           params.push(from); }
-    if (to)            { conditions.push(`r.created_at <= $${idx++}`);           params.push(to); }
-    if (spare_part_id) { conditions.push(`r.spare_part_id = $${idx++}`);         params.push(spare_part_id); }
+    if (status) { conditions.push(`r.status = $${idx++}`); params.push(status); }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
@@ -111,15 +128,16 @@ reordersRoutes.get('/', authMiddleware, requireRole(...WAREHOUSE), async (req, r
     const total = countR.rows[0].total;
 
     const r = await pool.query(
-      `SELECT r.id, r.numero_ordine, r.status, r.note,
-              r.quantita_ordinata, r.quantita_ricevuta,
-              r.created_at, r.updated_at,
+      `SELECT r.id, r.numero_ordine, r.status, r.note, r.created_at,
               u.username AS created_by_username,
-              sp.codice, sp.name AS spare_part_name, sp.tipologia
+              COALESCE(SUM(i.quantita_ordinata),0)::int  AS total_qty_ordinata,
+              COALESCE(SUM(i.quantita_ricevuta),0)::int  AS total_qty_ricevuta,
+              COUNT(i.id)::int                            AS total_items
        FROM reorders r
-       LEFT JOIN users       u  ON u.id  = r.created_by
-       LEFT JOIN spare_parts sp ON sp.id = r.spare_part_id
+       LEFT JOIN users        u ON u.id = r.created_by
+       LEFT JOIN reorder_items i ON i.reorder_id = r.id
        ${where}
+       GROUP BY r.id, u.username
        ORDER BY r.created_at DESC
        LIMIT $${idx++} OFFSET $${idx++}`,
       [...params, limit, offset]
@@ -129,69 +147,102 @@ reordersRoutes.get('/', authMiddleware, requireRole(...WAREHOUSE), async (req, r
   } catch (e) { next(e); }
 });
 
-// ── POST /api/reorders ────────────────────────────────────────────────────────
-// Crea ordine (1 articolo) + genera PDF inline
-reordersRoutes.post('/', authMiddleware, requireRole(...WAREHOUSE), async (req, res, next) => {
+// ── POST /api/reorders/generate ───────────────────────────────────────────────
+// Genera ordine multi-riga da tutti i ricambi sotto scorta senza ordine aperto
+reordersRoutes.post('/generate', authMiddleware, requireRole(...WAREHOUSE), async (req, res, next) => {
   try {
-    const { spare_part_id, quantita_ordinata, note } = req.body as {
-      spare_part_id?: string;
-      quantita_ordinata?: number;
-      note?: string;
-    };
-
-    if (!spare_part_id)
-      return res.status(400).json({ error: 'spare_part_id è obbligatorio' });
-    if (!quantita_ordinata || quantita_ordinata <= 0)
-      return res.status(400).json({ error: 'quantita_ordinata deve essere > 0' });
-
-    // Controlla ordine aperto duplicato
-    const dupR = await pool.query(
-      `SELECT id FROM reorders
-       WHERE spare_part_id = $1 AND status IN ('in_lavorazione','partial')`,
-      [spare_part_id]
+    // Ricambi sotto scorta senza ordine aperto
+    const partsR = await pool.query(
+      `SELECT sp.id, sp.name, sp.codice, sp.tipologia,
+              sp.quantita, sp.scorta_minima,
+              COALESCE(sp.quantita_riordino, 10) AS quantita_riordino
+       FROM spare_parts sp
+       WHERE sp.quantita <= sp.scorta_minima
+         AND NOT EXISTS (
+           SELECT 1 FROM reorders r
+           JOIN reorder_items ri ON ri.reorder_id = r.id
+           WHERE ri.spare_part_id = sp.id
+             AND r.status IN ('pending','partial')
+         )
+       ORDER BY sp.name ASC`
     );
-    if (dupR.rows.length)
-      return res.status(409).json({ error: 'Esiste già un ordine aperto per questo articolo' });
 
-    // Recupera articolo
-    const partR = await pool.query('SELECT * FROM spare_parts WHERE id = $1', [spare_part_id]);
-    if (!partR.rows.length)
-      return res.status(404).json({ error: 'Ricambio non trovato' });
-    const part = partR.rows[0];
+    if (!partsR.rows.length) {
+      return res.json({ message: 'Nessun ricambio sotto scorta senza ordine aperto.' });
+    }
 
-    // Crea ordine
-    const ordR = await pool.query(
-      `INSERT INTO reorders(spare_part_id, quantita_ordinata, status, note, created_by)
-       VALUES($1, $2, 'in_lavorazione', $3, $4)
-       RETURNING *`,
-      [spare_part_id, quantita_ordinata, note?.trim() ?? null, req.user!.id]
-    );
-    const order = ordR.rows[0];
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
 
-    // Recupera username
-    const userR = await pool.query('SELECT username FROM users WHERE id = $1', [req.user!.id]);
-    order.created_by_username = userR.rows[0]?.username ?? '';
+      // Crea header ordine
+      const ordR = await client.query(
+        `INSERT INTO reorders(status, note, created_by)
+         VALUES('pending', $1, $2)
+         RETURNING *`,
+        [req.body.note?.trim() ?? null, req.user!.id]
+      );
+      const order = ordR.rows[0];
 
-    // Genera PDF in memoria e invia
-    await buildPdf(res, order, part);
+      // Crea righe
+      const itemRows: any[] = [];
+      for (const sp of partsR.rows) {
+        const qty = Math.max(1, sp.quantita_riordino - sp.quantita);
+        const iR = await client.query(
+          `INSERT INTO reorder_items(reorder_id, spare_part_id, quantita_ordinata)
+           VALUES($1, $2, $3)
+           RETURNING *`,
+          [order.id, sp.id, qty]
+        );
+        itemRows.push({
+          ...iR.rows[0],
+          spare_part_name: sp.name,
+          codice: sp.codice,
+          tipologia: sp.tipologia,
+        });
+      }
+
+      await client.query('COMMIT');
+
+      // Recupera username
+      const userR = await pool.query('SELECT username FROM users WHERE id = $1', [req.user!.id]);
+      order.created_by_username = userR.rows[0]?.username ?? '';
+
+      // Restituisce PDF
+      await buildPdf(res, order, itemRows);
+    } catch (e) { await client.query('ROLLBACK'); throw e; }
+    finally { client.release(); }
   } catch (e) { next(e); }
 });
 
 // ── GET /api/reorders/:id ─────────────────────────────────────────────────────
 reordersRoutes.get('/:id', authMiddleware, requireRole(...WAREHOUSE), async (req, res, next) => {
   try {
-    const r = await pool.query(
+    const rHead = await pool.query(
       `SELECT r.*, u.username AS created_by_username,
-              sp.codice, sp.name AS spare_part_name, sp.tipologia,
-              sp.quantita AS spare_part_quantita, sp.scorta_minima
+              COALESCE(SUM(i.quantita_ordinata),0)::int AS total_qty_ordinata,
+              COALESCE(SUM(i.quantita_ricevuta),0)::int AS total_qty_ricevuta,
+              COUNT(i.id)::int                           AS total_items
        FROM reorders r
-       LEFT JOIN users u       ON u.id  = r.created_by
-       LEFT JOIN spare_parts sp ON sp.id = r.spare_part_id
-       WHERE r.id = $1`,
+       LEFT JOIN users u          ON u.id = r.created_by
+       LEFT JOIN reorder_items i  ON i.reorder_id = r.id
+       WHERE r.id = $1
+       GROUP BY r.id, u.username`,
       [req.params.id]
     );
-    if (!r.rows.length) return res.status(404).json({ error: 'Ordine non trovato' });
-    res.json({ item: r.rows[0] });
+    if (!rHead.rows.length) return res.status(404).json({ error: 'Ordine non trovato' });
+
+    const rItems = await pool.query(
+      `SELECT i.id, i.spare_part_id, i.quantita_ordinata, i.quantita_ricevuta, i.status,
+              sp.name AS spare_part_name, sp.codice, sp.tipologia, sp.description AS spare_part_description
+       FROM reorder_items i
+       JOIN spare_parts sp ON sp.id = i.spare_part_id
+       WHERE i.reorder_id = $1
+       ORDER BY sp.name ASC`,
+      [req.params.id]
+    );
+
+    res.json({ item: rHead.rows[0], items: rItems.rows });
   } catch (e) { next(e); }
 });
 
@@ -205,67 +256,97 @@ reordersRoutes.get('/:id/pdf', authMiddleware, requireRole(...WAREHOUSE), async 
       [req.params.id]
     );
     if (!rHead.rows.length) return res.status(404).json({ error: 'Ordine non trovato' });
-    const order = rHead.rows[0];
 
-    const partR = await pool.query('SELECT * FROM spare_parts WHERE id = $1', [order.spare_part_id]);
-    const part  = partR.rows[0] ?? {};
+    const rItems = await pool.query(
+      `SELECT i.*, sp.name AS spare_part_name, sp.codice, sp.tipologia
+       FROM reorder_items i
+       JOIN spare_parts sp ON sp.id = i.spare_part_id
+       WHERE i.reorder_id = $1
+       ORDER BY sp.name ASC`,
+      [req.params.id]
+    );
 
-    await buildPdf(res, order, part);
+    await buildPdf(res, rHead.rows[0], rItems.rows);
   } catch (e) { next(e); }
 });
 
-// ── PATCH /api/reorders/:id/versamento ───────────────────────────────────────
-reordersRoutes.patch('/:id/versamento', authMiddleware, requireRole(...WAREHOUSE), async (req, res, next) => {
+// ── PATCH /api/reorders/:id/items/:itemId ─────────────────────────────────────
+// Registra ricezione parziale/totale su una singola riga
+reordersRoutes.patch('/:id/items/:itemId', authMiddleware, requireRole(...WAREHOUSE), async (req, res, next) => {
   try {
-    const { quantita_versata } = req.body as { quantita_versata?: number };
-    if (!quantita_versata || quantita_versata <= 0)
-      return res.status(400).json({ error: 'quantita_versata deve essere > 0' });
+    const { quantita_ricevuta } = req.body as { quantita_ricevuta?: number };
+    if (quantita_ricevuta === undefined || quantita_ricevuta < 0)
+      return res.status(400).json({ error: 'quantita_ricevuta deve essere >= 0' });
 
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
 
+      // Verifica ordine
       const rOrd = await client.query(
         `SELECT * FROM reorders WHERE id = $1 FOR UPDATE`, [req.params.id]
       );
       if (!rOrd.rows.length) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Ordine non trovato' }); }
       const ord = rOrd.rows[0];
-
       if (['completed', 'cancelled'].includes(ord.status)) {
         await client.query('ROLLBACK');
-        return res.status(400).json({ error: `Non si può versare su un ordine ${STATUS_LABEL[ord.status] ?? ord.status}` });
+        return res.status(400).json({ error: `Ordine ${STATUS_LABEL[ord.status] ?? ord.status}: non modificabile` });
       }
 
-      const nuovaRicevuta = ord.quantita_ricevuta + quantita_versata;
-      const nuovoStatus = nuovaRicevuta >= ord.quantita_ordinata ? 'completed' : 'partial';
+      // Recupera riga corrente
+      const rItem = await client.query(
+        `SELECT * FROM reorder_items WHERE id = $1 AND reorder_id = $2 FOR UPDATE`,
+        [req.params.itemId, req.params.id]
+      );
+      if (!rItem.rows.length) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Riga non trovata' }); }
+      const item = rItem.rows[0];
 
-      const updOrd = await client.query(
-        `UPDATE reorders
+      const delta = quantita_ricevuta - item.quantita_ricevuta;
+      const nuovoStatus = quantita_ricevuta >= item.quantita_ordinata ? 'completed'
+                        : quantita_ricevuta  > 0                      ? 'partial'
+                        : 'pending';
+
+      // Aggiorna riga
+      const updItem = await client.query(
+        `UPDATE reorder_items
          SET quantita_ricevuta = $1, status = $2, updated_at = now()
          WHERE id = $3
          RETURNING *`,
-        [nuovaRicevuta, nuovoStatus, req.params.id]
+        [quantita_ricevuta, nuovoStatus, req.params.itemId]
       );
 
-      // Aggiorna giacenza spare_part (NO GREATEST)
-      const updPart = await client.query(
-        `UPDATE spare_parts
-         SET quantita = quantita + $1, updated_at = now()
-         WHERE id = $2
-         RETURNING id, quantita`,
-        [quantita_versata, ord.spare_part_id]
-      );
+      // Se c'è un delta positivo → aggiorna giacenza
+      if (delta > 0) {
+        const updPart = await client.query(
+          `UPDATE spare_parts SET quantita = quantita + $1, updated_at = now()
+           WHERE id = $2 RETURNING id, quantita`,
+          [delta, item.spare_part_id]
+        );
+        await client.query(
+          `INSERT INTO spare_parts_movimenti
+             (spare_part_id, tipo, delta, quantita_dopo, riferimento_id, riferimento_tipo, actor_id)
+           VALUES ($1,'versamento_riordine',$2,$3,$4,'reorder',$5)`,
+          [updPart.rows[0].id, delta, updPart.rows[0].quantita, req.params.id, req.user!.id]
+        );
+      }
 
-      // Movimento
+      // Ricalcola status ordine in base alle righe
+      const allItemsR = await client.query(
+        `SELECT status FROM reorder_items WHERE reorder_id = $1`, [req.params.id]
+      );
+      const statuses = allItemsR.rows.map((r: any) => r.status);
+      let newOrdStatus: string;
+      if (statuses.every((s: string) => s === 'completed'))  newOrdStatus = 'completed';
+      else if (statuses.some((s: string)  => s !== 'pending')) newOrdStatus = 'partial';
+      else                                                     newOrdStatus = 'pending';
+
       await client.query(
-        `INSERT INTO spare_parts_movimenti
-           (spare_part_id, tipo, delta, quantita_dopo, riferimento_id, riferimento_tipo, actor_id)
-         VALUES ($1,'versamento_riordine',$2,$3,$4,'reorder',$5)`,
-        [updPart.rows[0].id, quantita_versata, updPart.rows[0].quantita, req.params.id, req.user!.id]
+        `UPDATE reorders SET status = $1, updated_at = now() WHERE id = $2`,
+        [newOrdStatus, req.params.id]
       );
 
       await client.query('COMMIT');
-      res.json({ item: updOrd.rows[0] });
+      res.json({ item: updItem.rows[0] });
     } catch (e) { await client.query('ROLLBACK'); throw e; }
     finally { client.release(); }
   } catch (e) { next(e); }
@@ -278,14 +359,19 @@ reordersRoutes.patch('/:id/cancel', authMiddleware, requireRole(...WAREHOUSE), a
     if (!rOrd.rows.length) return res.status(404).json({ error: 'Ordine non trovato' });
     const ord = rOrd.rows[0];
 
-    if (ord.status !== 'in_lavorazione')
-      return res.status(400).json({ error: 'Solo gli ordini in lavorazione possono essere annullati' });
-    if (ord.quantita_ricevuta > 0)
+    if (!['pending', 'partial'].includes(ord.status))
+      return res.status(400).json({ error: 'Solo gli ordini in sospeso o parziali possono essere annullati' });
+
+    // Verifica che non ci siano già versamenti
+    const versR = await pool.query(
+      `SELECT COALESCE(SUM(quantita_ricevuta),0)::int AS tot FROM reorder_items WHERE reorder_id = $1`,
+      [req.params.id]
+    );
+    if (versR.rows[0].tot > 0)
       return res.status(400).json({ error: 'Non è possibile annullare un ordine con versamenti già registrati' });
 
     const r = await pool.query(
-      `UPDATE reorders SET status = 'cancelled', updated_at = now()
-       WHERE id = $1 RETURNING *`,
+      `UPDATE reorders SET status = 'cancelled', updated_at = now() WHERE id = $1 RETURNING *`,
       [req.params.id]
     );
     res.json({ item: r.rows[0] });

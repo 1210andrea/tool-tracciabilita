@@ -10,15 +10,19 @@ type SparePart = {
   name: string;
   codice?: string;
   description?: string;
-  tipologie: string[];
+  tipologia?: string;
   quantita: number;
   scorta_minima: number;
-  qty_riordino: number;
+  quantita_riordino: number;
   sotto_scorta: boolean;
+  giacenza_negativa: boolean;
+  ordine_aperto: boolean;
   usage_count: number;
 };
 
 function BadgeGiacenza({ part }: { part: SparePart }) {
+  if (part.giacenza_negativa)
+    return <span className="rounded-full bg-rose-700/30 px-3 py-1 text-xs font-bold text-rose-300">Giacenza negativa</span>;
   if (part.quantita === 0)
     return <span className="rounded-full bg-rose-500/15 px-3 py-1 text-xs font-bold text-rose-400">Esaurito</span>;
   if (part.sotto_scorta)
@@ -28,13 +32,13 @@ function BadgeGiacenza({ part }: { part: SparePart }) {
 
 type EditForm = {
   codice: string;
-  quantita: string;
   scorta_minima: string;
-  qty_riordino: string;
+  quantita_riordino: string;
 };
 
 export default function Magazzino() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const headers = useMemo(() => ({ headers: { Authorization: `Bearer ${token}` } }), [token]);
 
   const [parts, setParts] = useState<SparePart[]>([]);
@@ -43,7 +47,7 @@ export default function Magazzino() {
   const [search, setSearch] = useState('');
   const [filterSottoScorta, setFilterSottoScorta] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<EditForm>({ codice: '', quantita: '', scorta_minima: '', qty_riordino: '' });
+  const [editForm, setEditForm] = useState<EditForm>({ codice: '', scorta_minima: '', quantita_riordino: '' });
   const [generating, setGenerating] = useState(false);
 
   const load = async () => {
@@ -59,7 +63,7 @@ export default function Magazzino() {
 
   const filtered = useMemo(() => {
     let list = parts;
-    if (filterSottoScorta) list = list.filter((p) => p.sotto_scorta || p.quantita === 0);
+    if (filterSottoScorta) list = list.filter((p) => p.sotto_scorta || p.quantita <= 0);
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter((p) =>
@@ -71,15 +75,15 @@ export default function Magazzino() {
     return list;
   }, [parts, search, filterSottoScorta]);
 
-  const countSottoScorta = parts.filter((p) => p.sotto_scorta || p.quantita === 0).length;
+  const countSottoScorta = parts.filter((p) => p.sotto_scorta || p.quantita <= 0).length;
+  const countSenzaOrdine = parts.filter((p) => (p.sotto_scorta || p.quantita <= 0) && !p.ordine_aperto).length;
 
   const startEdit = (part: SparePart) => {
     setEditingId(part.id);
     setEditForm({
       codice: part.codice ?? '',
-      quantita: String(part.quantita),
       scorta_minima: String(part.scorta_minima),
-      qty_riordino: String(part.qty_riordino),
+      quantita_riordino: String(part.quantita_riordino),
     });
   };
   const cancelEdit = () => { setEditingId(null); };
@@ -88,9 +92,8 @@ export default function Magazzino() {
     try {
       await axios.put(`${API_URL}/spare-parts/${part.id}`, {
         codice: editForm.codice.trim() || null,
-        quantita: parseInt(editForm.quantita) || 0,
         scorta_minima: parseInt(editForm.scorta_minima) || 1,
-        qty_riordino: parseInt(editForm.qty_riordino) || 10,
+        quantita_riordino: parseInt(editForm.quantita_riordino) || 10,
       }, headers);
       setMessage('Ricambio aggiornato.');
       setEditingId(null);
@@ -99,15 +102,13 @@ export default function Magazzino() {
   };
 
   const generateOrder = async () => {
-    if (countSottoScorta === 0) { setMessage('Nessun pezzo sotto scorta.'); return; }
+    if (countSenzaOrdine === 0) { setMessage('Nessun pezzo sotto scorta senza ordine aperto.'); return; }
     setGenerating(true);
     try {
-      const r = await axios.post(`${API_URL}/reorders/generate`, {}, headers);
-      if (r.data.item) {
-        setMessage(`Ordine N°${r.data.item.numero_ordine} generato con ${r.data.parts_count} righe.`);
-      } else {
-        setMessage(r.data.message ?? 'Nessun pezzo sotto scorta.');
-      }
+      // generate ritorna PDF direttamente: apriamo in nuova tab
+      window.open(`${API_URL}/reorders/generate`, '_blank');
+      setMessage(`Ordine generato per ${countSenzaOrdine} ricambi sotto scorta. Controlla la tab PDF appena aperta.`);
+      load();
     } catch (err: any) { setMessage(err?.response?.data?.error ?? 'Errore generazione ordine.'); }
     finally { setGenerating(false); }
   };
@@ -126,22 +127,39 @@ export default function Magazzino() {
           >
             Ordini di riordino
           </Link>
-          {countSottoScorta > 0 && (
+          {countSenzaOrdine > 0 && (
             <button
               type="button"
               onClick={generateOrder}
               disabled={generating}
               className="rounded-2xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-amber-400 disabled:opacity-50 transition"
             >
-              {generating ? 'Generazione...' : `Genera ordine (${countSottoScorta} sotto scorta)`}
+              {generating ? 'Generazione...' : `Genera ordine (${countSenzaOrdine} sotto scorta)`}
             </button>
           )}
         </div>
       </div>
 
       {message && (
-        <div className="rounded-2xl border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
-          {message}
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
+          <span>{message}</span>
+          <button type="button" onClick={() => setMessage(null)} className="font-bold text-sky-400 hover:text-sky-200">×</button>
+        </div>
+      )}
+
+      {/* Sommario */}
+      {countSottoScorta > 0 && (
+        <div className="flex flex-wrap gap-3">
+          <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm">
+            <span className="font-semibold text-amber-400">{countSottoScorta}</span>
+            <span className="text-amber-200/70 ml-1">sotto scorta</span>
+          </div>
+          {countSenzaOrdine > 0 && (
+            <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm">
+              <span className="font-semibold text-rose-400">{countSenzaOrdine}</span>
+              <span className="text-rose-200/70 ml-1">senza ordine aperto</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -164,7 +182,7 @@ export default function Magazzino() {
         </label>
       </div>
 
-      {/* Tabella */}
+      {/* Lista */}
       {loading ? (
         <p className="text-sm text-slate-500">Caricamento...</p>
       ) : filtered.length === 0 ? (
@@ -175,7 +193,9 @@ export default function Magazzino() {
             <div
               key={part.id}
               className={`rounded-3xl border ${
-                part.quantita === 0
+                part.giacenza_negativa
+                  ? 'border-rose-700/40 bg-rose-900/10'
+                  : part.quantita === 0
                   ? 'border-rose-500/40 bg-rose-500/5'
                   : part.sotto_scorta
                   ? 'border-amber-500/40 bg-amber-500/5'
@@ -186,22 +206,13 @@ export default function Magazzino() {
                 /* ── EDIT MODE ── */
                 <div className="space-y-3">
                   <p className="font-semibold text-slate-100">{part.name}</p>
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                     <div>
                       <label className="text-xs text-slate-400">Codice</label>
                       <input
                         value={editForm.codice}
                         onChange={(e) => setEditForm((c) => ({ ...c, codice: e.target.value }))}
                         placeholder="SP-001"
-                        className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-slate-400">Giacenza</label>
-                      <input
-                        type="number" min={0}
-                        value={editForm.quantita}
-                        onChange={(e) => setEditForm((c) => ({ ...c, quantita: e.target.value }))}
                         className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none"
                       />
                     </div>
@@ -218,8 +229,8 @@ export default function Magazzino() {
                       <label className="text-xs text-slate-400">Qty riordino</label>
                       <input
                         type="number" min={1}
-                        value={editForm.qty_riordino}
-                        onChange={(e) => setEditForm((c) => ({ ...c, qty_riordino: e.target.value }))}
+                        value={editForm.quantita_riordino}
+                        onChange={(e) => setEditForm((c) => ({ ...c, quantita_riordino: e.target.value }))}
                         className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none"
                       />
                     </div>
@@ -249,20 +260,26 @@ export default function Magazzino() {
                       <span className="font-semibold text-slate-100">{part.name}</span>
                       {part.codice && <span className="text-xs text-slate-500 font-mono">{part.codice}</span>}
                       <BadgeGiacenza part={part} />
+                      {part.ordine_aperto && (
+                        <span className="rounded-full bg-sky-500/15 px-3 py-1 text-xs font-bold text-sky-400">Ordine aperto</span>
+                      )}
                     </div>
                     {part.description && <p className="text-xs text-slate-500 mt-0.5">{part.description}</p>}
                     <div className="mt-2 flex flex-wrap gap-4 text-sm">
                       <span className="text-slate-300">
-                        Giacenza: <strong className={part.sotto_scorta ? 'text-amber-400' : 'text-emerald-400'}>{part.quantita}</strong>
+                        Giacenza: <strong className={
+                          part.giacenza_negativa ? 'text-rose-400'
+                          : part.sotto_scorta ? 'text-amber-400'
+                          : 'text-emerald-400'
+                        }>{part.quantita}</strong>
                       </span>
                       <span className="text-slate-500">Scorta min: {part.scorta_minima}</span>
-                      <span className="text-slate-500">Qty riordino: {part.qty_riordino}</span>
+                      <span className="text-slate-500">Qty riordino: {part.quantita_riordino}</span>
+                      {part.usage_count > 0 && <span className="text-slate-600">Usato in {part.usage_count} casi</span>}
                     </div>
-                    {part.tipologie.length > 0 && (
-                      <div className="mt-1.5 flex flex-wrap gap-1">
-                        {part.tipologie.map((t) => (
-                          <span key={t} className="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-400">{t}</span>
-                        ))}
+                    {part.tipologia && (
+                      <div className="mt-1.5">
+                        <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-400">{part.tipologia}</span>
                       </div>
                     )}
                   </div>
