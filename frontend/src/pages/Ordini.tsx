@@ -106,7 +106,7 @@ export default function Ordini() {
   const eccedenza       = versamentoOrder ? nuovaRicevuta - versamentoOrder.quantita_ordinata : 0;
 
   const submitVersamento = async () => {
-    if (!versamentoId || versamentoInput <= 0) { msg('Inserisci una quantit\u00e0 valida.', 'error'); return; }
+    if (!versamentoId || versamentoInput <= 0) { msg('Inserisci una quantità valida.', 'error'); return; }
     setVersamentoSaving(true);
     try {
       const r = await axios.patch(
@@ -115,7 +115,7 @@ export default function Ordini() {
         headers
       );
       msg(r.data?.item?.status === 'completed'
-        ? 'Ordine completato e chiuso automaticamente \u2713'
+        ? 'Ordine completato e chiuso automaticamente ✓'
         : 'Versamento registrato.');
       setVersamentoId(null);
       setVersamentoQty('');
@@ -125,28 +125,28 @@ export default function Ordini() {
   };
 
   const cancelOrder = async (id: string, numero: number) => {
-    if (!window.confirm(`Annullare l'ordine N\u00b0${numero}?`)) return;
+    if (!window.confirm(`Annullare l'ordine N°${numero}?`)) return;
     try {
       await axios.patch(`${API_URL}/reorders/${id}/cancel`, {}, headers);
-      msg(`Ordine N\u00b0${numero} annullato.`);
+      msg(`Ordine N°${numero} annullato.`);
       load();
     } catch (err: any) { msg(err?.response?.data?.error ?? 'Errore annullamento.', 'error'); }
   };
 
   const deleteOrder = async (id: string, numero: number) => {
     if (!window.confirm(
-      `Eliminare definitivamente l'ordine N\u00b0${numero}? L'operazione non \u00e8 reversibile.`
+      `Eliminare definitivamente l'ordine N°${numero}? L'operazione non è reversibile.`
     )) return;
     setDeletingId(id);
     try {
       await axios.delete(`${API_URL}/reorders/${id}`, headers);
-      msg(`Ordine N\u00b0${numero} eliminato.`);
+      msg(`Ordine N°${numero} eliminato.`);
       load();
     } catch (err: any) { msg(err?.response?.data?.error ?? 'Errore eliminazione.', 'error'); }
     finally { setDeletingId(null); }
   };
 
-  // Un ordine pu\u00f2 essere eliminato se:
+  // Un ordine può essere eliminato se:
   // - admin: qualsiasi ordine
   // - magazziniere: solo cancelled
   const canDelete = (r: Reorder) =>
@@ -163,7 +163,7 @@ export default function Ordini() {
           to="/magazzino"
           className="rounded-2xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-sm font-semibold text-slate-200 hover:bg-slate-800 transition"
         >
-          \u2190 Magazzino
+          ← Magazzino
         </Link>
       </div>
 
@@ -174,7 +174,7 @@ export default function Ordini() {
             : 'border-sky-500/30 bg-sky-500/10 text-sky-100'
         }`}>
           <span>{message.text}</span>
-          <button type="button" onClick={() => setMessage(null)} className="font-bold opacity-70 hover:opacity-100">\u00d7</button>
+          <button type="button" onClick={() => setMessage(null)} className="font-bold opacity-70 hover:opacity-100">×</button>
         </div>
       )}
 
@@ -211,7 +211,7 @@ export default function Ordini() {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold text-slate-100">N\u00b0{r.numero_ordine}</span>
+                    <span className="font-semibold text-slate-100">N°{r.numero_ordine}</span>
                     <StatusChip status={r.status} />
                     {r.spare_part_name && (
                       <span className="text-sm text-slate-300">{r.spare_part_name}</span>
@@ -229,8 +229,8 @@ export default function Ordini() {
                     {new Date(r.created_at).toLocaleDateString('it-IT', {
                       day: '2-digit', month: '2-digit', year: 'numeric',
                     })}
-                    {r.created_by_username && ` \u00b7 ${r.created_by_username}`}
-                    {r.note && ` \u00b7 ${r.note}`}
+                    {r.created_by_username && ` · ${r.created_by_username}`}
+                    {r.note && ` · ${r.note}`}
                   </div>
                   <div className="mt-2 space-y-1">
                     <div className="text-xs text-slate-400">
@@ -248,7 +248,7 @@ export default function Ordini() {
                       onClick={() => downloadPdf(r.id, r.numero_ordine)}
                       className="rounded-2xl bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-700 transition"
                     >
-                      \ud83d\udcc4 PDF
+                      📄 PDF
                     </button>
                   )}
 
@@ -282,7 +282,7 @@ export default function Ordini() {
                       disabled={deletingId === r.id}
                       className="rounded-2xl bg-rose-900/40 border border-rose-800/50 px-3 py-2 text-xs font-semibold text-rose-400 hover:bg-rose-900/70 disabled:opacity-50 transition"
                     >
-                      {deletingId === r.id ? 'Eliminazione...' : '\ud83d\uddd1 Elimina'}
+                      {deletingId === r.id ? 'Eliminazione...' : '🗑 Elimina'}
                     </button>
                   )}
                 </div>
@@ -299,7 +299,7 @@ export default function Ordini() {
             <div className="p-5 sm:p-6 space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-slate-100">Registra versamento</h2>
-                <button type="button" onClick={() => setVersamentoId(null)} className="text-slate-500 hover:text-slate-200 text-2xl leading-none">\u00d7</button>
+                <button type="button" onClick={() => setVersamentoId(null)} className="text-slate-500 hover:text-slate-200 text-2xl leading-none">×</button>
               </div>
 
               <div className="rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm space-y-1">
@@ -317,56 +317,14 @@ export default function Ordini() {
                 </div>
                 <div className="text-slate-400 text-xs">
                   Ordinato: <span className="text-slate-200 font-medium">{versamentoOrder.quantita_ordinata}</span> pz
-                  \u00b7 Gi\u00e0 ricevuto: <span className="text-slate-200 font-medium">{versamentoOrder.quantita_ricevuta}</span> pz
+                  · Già ricevuto: <span className="text-slate-200 font-medium">{versamentoOrder.quantita_ricevuta}</span> pz
                 </div>
               </div>
 
               <div>
                 <label className="text-xs text-slate-400 block mb-1">
-                  Quantit\u00e0 versata <span className="text-rose-500">*</span>
+                  Quantità versata <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="number" min={1}
-                  value={versamentoQty}
-                  onChange={(e) => setVersamentoQty(e.target.value)}
-                  placeholder="es. 5"
-                  className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none"
-                />
-              </div>
-
-              {versamentoInput > 0 && (
-                <div className="rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm space-y-1">
-                  <div className="text-slate-400">
-                    Dopo il versamento: <span className="font-semibold text-slate-100">{nuovaRicevuta} / {versamentoOrder.quantita_ordinata}</span>
-                  </div>
-                  {siChiude && (
-                    <div className="text-emerald-400 text-xs font-medium">
-                      \u2713 Ordine si chiuder\u00e0
-                      {eccedenza > 0 && <span className="ml-1">(eccedenza: +{eccedenza} pz in giacenza)</span>}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div className="flex gap-2 pt-1">
-                <button
-                  type="button" onClick={submitVersamento}
-                  disabled={versamentoSaving || versamentoInput <= 0}
-                  className="rounded-2xl bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-50 transition flex-1"
-                >
-                  {versamentoSaving ? 'Salvataggio...' : 'Registra versamento'}
-                </button>
-                <button
-                  type="button" onClick={() => setVersamentoId(null)}
-                  className="rounded-2xl border border-slate-700 bg-slate-900 px-5 py-2.5 text-sm font-semibold text-slate-200 hover:bg-slate-800 transition"
-                >
-                  Annulla
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+                  value={
