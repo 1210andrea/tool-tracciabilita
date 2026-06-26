@@ -6,6 +6,18 @@ export const sparepartsRoutes = Router();
 
 const WAREHOUSE_ROLES = ['admin', 'magazziniere'] as const;
 
+// Crea la tabella solution_problems se non esiste
+async function ensureSolutionProblemsTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS solution_problems (
+      solution_id UUID NOT NULL REFERENCES solutions_applied(id) ON DELETE CASCADE,
+      problem_id  UUID NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+      PRIMARY KEY (solution_id, problem_id)
+    )
+  `);
+}
+ensureSolutionProblemsTable().catch(console.error);
+
 // ── GET /api/spare-parts/sotto-scorta ───────────────────────────────────────
 sparepartsRoutes.get(
   '/spare-parts/sotto-scorta',
@@ -132,7 +144,19 @@ sparepartsRoutes.delete(
 sparepartsRoutes.get('/solutions-applied', authMiddleware, async (_req, res, next) => {
   try {
     const result = await pool.query(
-      `SELECT * FROM solutions_applied ORDER BY created_at DESC`
+      `SELECT sa.id,
+              sa.name,
+              sa.description,
+              sa.created_at,
+              COALESCE(
+                (SELECT array_agg(sp.problem_id::text ORDER BY cat.name)
+                 FROM solution_problems sp
+                 JOIN categories cat ON cat.id = sp.problem_id
+                 WHERE sp.solution_id = sa.id),
+                ARRAY[]::text[]
+              ) AS problem_ids
+       FROM solutions_applied sa
+       ORDER BY sa.created_at DESC`
     );
     res.json({ items: result.rows });
   } catch (e) { next(e); }
@@ -140,36 +164,87 @@ sparepartsRoutes.get('/solutions-applied', authMiddleware, async (_req, res, nex
 
 // ── POST /api/solutions-applied ─────────────────────────────────────────────
 sparepartsRoutes.post('/solutions-applied', authMiddleware, async (req, res, next) => {
+  const client = await pool.connect();
   try {
-    const { name, description, category } = req.body as {
-      name?: string; description?: string; category?: string;
+    const { name, description, problem_ids } = req.body as {
+      name?: string; description?: string; problem_ids?: string[];
     };
     if (!name?.trim()) return res.status(400).json({ error: 'name è obbligatorio' });
-    const result = await pool.query(
-      `INSERT INTO solutions_applied(name, description, category) VALUES($1,$2,$3) RETURNING *`,
-      [name.trim(), description?.trim() ?? null, category?.trim() ?? null]
+
+    await client.query('BEGIN');
+
+    const result = await client.query(
+      `INSERT INTO solutions_applied(name, description) VALUES($1,$2) RETURNING *`,
+      [name.trim(), description?.trim() ?? null]
     );
-    res.json({ item: result.rows[0] });
-  } catch (e) { next(e); }
+    const newSolution = result.rows[0];
+
+    if (problem_ids && problem_ids.length > 0) {
+      for (const pid of problem_ids) {
+        await client.query(
+          `INSERT INTO solution_problems(solution_id, problem_id) VALUES($1,$2) ON CONFLICT DO NOTHING`,
+          [newSolution.id, pid]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+    res.json({ item: { ...newSolution, problem_ids: problem_ids ?? [] } });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    next(e);
+  } finally {
+    client.release();
+  }
 });
 
 // ── PUT /api/solutions-applied/:id ──────────────────────────────────────────
 sparepartsRoutes.put('/solutions-applied/:id', authMiddleware, async (req, res, next) => {
+  const client = await pool.connect();
   try {
-    const { name, description, category } = req.body as {
-      name?: string; description?: string; category?: string;
+    const { name, description, problem_ids } = req.body as {
+      name?: string; description?: string; problem_ids?: string[];
     };
-    const result = await pool.query(
+
+    await client.query('BEGIN');
+
+    const result = await client.query(
       `UPDATE solutions_applied
        SET name        = COALESCE($1, name),
-           description = COALESCE($2, description),
-           category    = COALESCE($3, category)
-       WHERE id = $4 RETURNING *`,
-      [name?.trim() ?? null, description?.trim() ?? null, category?.trim() ?? null, req.params.id]
+           description = COALESCE($2, description)
+       WHERE id = $3 RETURNING *`,
+      [name?.trim() ?? null, description?.trim() ?? null, req.params.id]
     );
-    if (!result.rows.length) return res.status(404).json({ error: 'Soluzione non trovata' });
-    res.json({ item: result.rows[0] });
-  } catch (e) { next(e); }
+    if (!result.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Soluzione non trovata' });
+    }
+
+    // Aggiorna sempre i problem_ids se passati
+    if (problem_ids !== undefined) {
+      await client.query(`DELETE FROM solution_problems WHERE solution_id = $1`, [req.params.id]);
+      for (const pid of problem_ids) {
+        await client.query(
+          `INSERT INTO solution_problems(solution_id, problem_id) VALUES($1,$2) ON CONFLICT DO NOTHING`,
+          [req.params.id, pid]
+        );
+      }
+    }
+
+    // Rileggi i problem_ids aggiornati
+    const pidsResult = await client.query(
+      `SELECT array_agg(problem_id::text) AS problem_ids FROM solution_problems WHERE solution_id = $1`,
+      [req.params.id]
+    );
+
+    await client.query('COMMIT');
+    res.json({ item: { ...result.rows[0], problem_ids: pidsResult.rows[0]?.problem_ids ?? [] } });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    next(e);
+  } finally {
+    client.release();
+  }
 });
 
 // ── DELETE /api/solutions-applied/:id ───────────────────────────────────────
