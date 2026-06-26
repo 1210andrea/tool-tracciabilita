@@ -4,6 +4,17 @@ import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '';
 
+/** Normalizza qualsiasi risposta del backend in un array sicuro */
+function toArr<T>(data: unknown): T[] {
+  if (Array.isArray(data)) return data as T[];
+  if (data && typeof data === 'object') {
+    const d = data as Record<string, unknown>;
+    if (Array.isArray(d.items)) return d.items as T[];
+    if (Array.isArray(d.data))  return d.data  as T[];
+  }
+  return [];
+}
+
 type Category = { id: string; name: string; type: string; description?: string; problem_id?: string; problem_ids?: string[]; usage_count?: number };
 type Machine = { id: string; code: string; name: string; line?: string; location?: string; tipologia?: string; type?: string; posizione?: string; usage_count?: number };
 type User = { id: string; username: string; email?: string; role: string };
@@ -74,7 +85,7 @@ export default function AdminPanel() {
   const [pendingDeleteType, setPendingDeleteType] = useState<'categories' | 'machines' | 'users' | 'spare_parts' | 'solutions' | 'operatori' | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
-  const problems = useMemo(() => categories.filter((c) => c.type === 'problem'), [categories]);
+  const problems = useMemo(() => (Array.isArray(categories) ? categories : []).filter((c) => c.type === 'problem'), [categories]);
 
   const showMessage = (msg: string, type: 'error' | 'info' = 'info') => {
     setMessage(msg);
@@ -85,13 +96,13 @@ export default function AdminPanel() {
   const loadAll = async () => {
     try {
       const entries = [
-        { key: 'categories' as const,      promise: axios.get(`${API_URL}/categories`, headers) },
-        { key: 'machines' as const,        promise: axios.get(`${API_URL}/machines`, headers) },
-        { key: 'users' as const,           promise: axios.get(`${API_URL}/users`, headers) },
-        { key: 'spare_parts' as const,     promise: axios.get(`${API_URL}/spare-parts`, headers) },
-        { key: 'solutions' as const,       promise: axios.get(`${API_URL}/solutions-applied`, headers) },
-        { key: 'operatori' as const,       promise: axios.get(`${API_URL}/operatori`, headers) },
-        { key: 'tipologie' as const,       promise: axios.get(`${API_URL}/machines/tipologie`, headers) },
+        { key: 'categories' as const,  promise: axios.get(`${API_URL}/categories`, headers) },
+        { key: 'machines' as const,    promise: axios.get(`${API_URL}/machines`, headers) },
+        { key: 'users' as const,       promise: axios.get(`${API_URL}/users`, headers) },
+        { key: 'spare_parts' as const, promise: axios.get(`${API_URL}/spare-parts`, headers) },
+        { key: 'solutions' as const,   promise: axios.get(`${API_URL}/solutions-applied`, headers) },
+        { key: 'operatori' as const,   promise: axios.get(`${API_URL}/operatori`, headers) },
+        { key: 'tipologie' as const,   promise: axios.get(`${API_URL}/machines/tipologie`, headers) },
       ];
 
       const results = await Promise.allSettled(entries.map((e) => e.promise));
@@ -100,14 +111,14 @@ export default function AdminPanel() {
       results.forEach((result, idx) => {
         const key = entries[idx].key;
         if (result.status === 'fulfilled') {
-          const items = result.value.data?.items ?? result.value.data ?? [];
-          if (key === 'categories')       setCategories(items);
-          else if (key === 'machines')    setMachines(items);
-          else if (key === 'users')       setUsers(items);
-          else if (key === 'spare_parts') setSpareParts(items);
-          else if (key === 'solutions')   setSolutions(items);
-          else if (key === 'operatori')   setOperatori(items);
-          else if (key === 'tipologie')   setAvailableTipologie(items);
+          const raw = result.value.data;
+          if (key === 'categories')       setCategories(toArr<Category>(raw));
+          else if (key === 'machines')    setMachines(toArr<Machine>(raw));
+          else if (key === 'users')       setUsers(toArr<User>(raw));
+          else if (key === 'spare_parts') setSpareParts(toArr<SparePart>(raw));
+          else if (key === 'solutions')   setSolutions(toArr<SolutionApplied>(raw));
+          else if (key === 'operatori')   setOperatori(toArr<Operatore>(raw));
+          else if (key === 'tipologie')   setAvailableTipologie(toArr<string>(raw));
         } else {
           if (key !== 'tipologie') {
             const msg = (result.reason as any)?.response?.data?.error ?? (result.reason as any)?.message ?? key;
