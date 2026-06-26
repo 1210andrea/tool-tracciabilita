@@ -233,6 +233,21 @@ reordersRoutes.get('/:id/pdf', authMiddleware, requireRole(...WAREHOUSE), async 
   } catch (e) { next(e); }
 });
 
+// ── DELETE /api/reorders/:id ──────────────────────────────────────────────────
+// Elimina definitivamente un ordine SOLO se è in stato cancelled
+reordersRoutes.delete('/:id', authMiddleware, requireRole(...WAREHOUSE), async (req, res, next) => {
+  try {
+    const rOrd = await pool.query('SELECT status FROM reorders WHERE id = $1', [req.params.id]);
+    if (!rOrd.rows.length) return res.status(404).json({ error: 'Ordine non trovato' });
+
+    if (rOrd.rows[0].status !== 'cancelled')
+      return res.status(400).json({ error: 'Solo gli ordini annullati possono essere eliminati' });
+
+    await pool.query('DELETE FROM reorders WHERE id = $1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
 // ── PATCH /api/reorders/:id/versamento ───────────────────────────────────────
 reordersRoutes.patch('/:id/versamento', authMiddleware, requireRole(...WAREHOUSE), async (req, res, next) => {
   try {
@@ -272,7 +287,7 @@ reordersRoutes.patch('/:id/versamento', authMiddleware, requireRole(...WAREHOUSE
       );
       const updOrdRow = updOrd.rows[0];
 
-      // Aggiorna giacenza (NO GREATEST — può diventare negativa)
+      // Aggiorna giacenza
       const updPart = await client.query(
         `UPDATE spare_parts
          SET quantita = quantita + $1, updated_at = now()

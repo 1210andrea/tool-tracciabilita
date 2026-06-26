@@ -64,6 +64,9 @@ export default function Ordini() {
   const [versamentoQty, setVersamentoQty] = useState('');
   const [versamentoSaving, setVersamentoSaving] = useState(false);
 
+  // Eliminazione in corso (per disabilitare il bottone durante la chiamata)
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
   const msg = (text: string, type: 'info' | 'error' = 'info') => setMessage({ text, type });
 
   const load = useCallback(async () => {
@@ -130,6 +133,17 @@ export default function Ordini() {
     } catch (err: any) { msg(err?.response?.data?.error ?? 'Errore annullamento.', 'error'); }
   };
 
+  const deleteOrder = async (id: string, numero: number) => {
+    if (!window.confirm(`Eliminare definitivamente l'ordine N°${numero}? L'operazione non è reversibile.`)) return;
+    setDeletingId(id);
+    try {
+      await axios.delete(`${API_URL}/reorders/${id}`, headers);
+      msg(`Ordine N°${numero} eliminato.`);
+      load();
+    } catch (err: any) { msg(err?.response?.data?.error ?? 'Errore eliminazione.', 'error'); }
+    finally { setDeletingId(null); }
+  };
+
   return (
     <div className="space-y-6 p-4 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -174,7 +188,9 @@ export default function Ordini() {
       ) : (
         <div className="space-y-3">
           {reorders.map((r) => (
-            <div key={r.id} className="rounded-3xl border border-slate-800 bg-slate-950/80 p-4 sm:p-5">
+            <div key={r.id} className={`rounded-3xl border p-4 sm:p-5 ${
+              r.status === 'cancelled' ? 'border-slate-800/50 bg-slate-950/40 opacity-70' : 'border-slate-800 bg-slate-950/80'
+            }`}>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -197,11 +213,13 @@ export default function Ordini() {
                 </div>
 
                 <div className="flex flex-wrap gap-2 shrink-0">
-                  {/* Scarica PDF — sempre visibile */}
-                  <button type="button" onClick={() => downloadPdf(r.id, r.numero_ordine)}
-                    className="rounded-2xl bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-700 transition">
-                    📄 PDF
-                  </button>
+                  {/* Scarica PDF — solo ordini non annullati */}
+                  {r.status !== 'cancelled' && (
+                    <button type="button" onClick={() => downloadPdf(r.id, r.numero_ordine)}
+                      className="rounded-2xl bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-700 transition">
+                      📄 PDF
+                    </button>
+                  )}
 
                   {/* Registra versamento */}
                   {(r.status === 'in_lavorazione' || r.status === 'partial') && (
@@ -216,6 +234,18 @@ export default function Ordini() {
                     <button type="button" onClick={() => cancelOrder(r.id, r.numero_ordine)}
                       className="rounded-2xl bg-rose-500/20 border border-rose-500/30 px-3 py-2 text-xs font-semibold text-rose-300 hover:bg-rose-500/30 transition">
                       Annulla
+                    </button>
+                  )}
+
+                  {/* Elimina ordine — solo se annullato */}
+                  {r.status === 'cancelled' && (
+                    <button
+                      type="button"
+                      onClick={() => deleteOrder(r.id, r.numero_ordine)}
+                      disabled={deletingId === r.id}
+                      className="rounded-2xl bg-rose-900/40 border border-rose-800/50 px-3 py-2 text-xs font-semibold text-rose-400 hover:bg-rose-900/70 disabled:opacity-50 transition"
+                    >
+                      {deletingId === r.id ? 'Eliminazione...' : '🗑 Elimina'}
                     </button>
                   )}
                 </div>
