@@ -1,1 +1,1 @@
-placeholder_to_be_replaced
+placeholder_adminpanel
