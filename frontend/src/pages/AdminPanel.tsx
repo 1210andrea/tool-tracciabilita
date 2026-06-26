@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_URL ?? '';
+const API_URL = import.meta.env.VITE_API_URL ?? '/api';
 
 /** Normalizza qualsiasi risposta del backend in un array sicuro */
 function toArr<T>(data: unknown): T[] {
