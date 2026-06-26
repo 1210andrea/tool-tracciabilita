@@ -7,7 +7,6 @@ export const sparepartsRoutes = Router();
 const WAREHOUSE_ROLES = ['admin', 'magazziniere'] as const;
 
 // ── GET /api/spare-parts/sotto-scorta ───────────────────────────────────────
-// NOTA: deve stare PRIMA di /spare-parts/by-type/:type per evitare match errati
 sparepartsRoutes.get(
   '/spare-parts/sotto-scorta',
   authMiddleware,
@@ -66,6 +65,47 @@ sparepartsRoutes.post(
         [name.trim(), description?.trim() ?? null, codice?.trim() ?? null,
          tipologia?.trim() ?? null, quantita ?? 0, scorta_minima ?? 1, quantita_riordino ?? 10]
       );
+      res.json({ item: result.rows[0] });
+    } catch (e) { next(e); }
+  }
+);
+
+// ── PUT /api/spare-parts/:id ─────────────────────────────────────────────────
+sparepartsRoutes.put(
+  '/spare-parts/:id',
+  authMiddleware,
+  requireRole('admin'),
+  async (req, res, next) => {
+    try {
+      const { name, description, codice, tipologia, quantita, scorta_minima, quantita_riordino } = req.body as {
+        name?: string; description?: string; codice?: string; tipologia?: string;
+        quantita?: number; scorta_minima?: number; quantita_riordino?: number;
+      };
+      if (!name?.trim()) return res.status(400).json({ error: 'name è obbligatorio' });
+      const result = await pool.query(
+        `UPDATE spare_parts
+         SET name              = $1,
+             description       = $2,
+             codice            = $3,
+             tipologia         = $4,
+             quantita          = COALESCE($5, quantita),
+             scorta_minima     = COALESCE($6, scorta_minima),
+             quantita_riordino = COALESCE($7, quantita_riordino),
+             updated_at        = now()
+         WHERE id = $8
+         RETURNING *`,
+        [
+          name.trim(),
+          description?.trim() ?? null,
+          codice?.trim() ?? null,
+          tipologia?.trim() ?? null,
+          quantita ?? null,
+          scorta_minima ?? null,
+          quantita_riordino ?? null,
+          req.params.id,
+        ]
+      );
+      if (!result.rows.length) return res.status(404).json({ error: 'Ricambio non trovato' });
       res.json({ item: result.rows[0] });
     } catch (e) { next(e); }
   }
