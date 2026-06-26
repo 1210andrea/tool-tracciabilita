@@ -50,7 +50,7 @@ categoriesRoutes.get('/', authMiddleware, async (_req, res, next) => {
        LEFT JOIN categories p ON p.id = c.problem_id AND p.type = 'problem'
        ORDER BY c.type, c.name ASC`
     );
-    res.json({ items: r.rows });
+    res.json(r.rows);
   } catch (e) {
     next(e);
   }
@@ -76,8 +76,6 @@ categoriesRoutes.get('/causes-by-problem/:problemId', authMiddleware, async (req
 });
 
 // GET /categories/solutions-by-problem/:problemId
-// Filtra le soluzioni tramite la tabella ponte solution_problems
-// DEVE stare prima di /:type
 categoriesRoutes.get('/solutions-by-problem/:problemId', authMiddleware, async (req, res, next) => {
   try {
     const { problemId } = req.params;
@@ -95,7 +93,7 @@ categoriesRoutes.get('/solutions-by-problem/:problemId', authMiddleware, async (
   }
 });
 
-// GET /categories/:type  <- DEVE stare dopo le route specifiche
+// GET /categories/:type
 categoriesRoutes.get('/:type', authMiddleware, async (req, res, next) => {
   try {
     const { type } = req.params;

@@ -15,7 +15,7 @@ operatoriRoutes.get('/', authMiddleware, async (req, res, next) => {
        ${showAll ? '' : 'WHERE op.attivo = true'}
        ORDER BY op.nome ASC`
     );
-    res.json({ items: r.rows });
+    res.json(r.rows);
   } catch (e) {
     next(e);
   }

@@ -13,7 +13,7 @@ usersRoutes.get('/', authMiddleware, async (req, res, next) => {
        FROM users u
        ORDER BY u.created_at DESC`
     );
-    res.json({ items: r.rows });
+    res.json(r.rows);
   } catch (e) {
     next(e);
   }
@@ -80,18 +80,15 @@ usersRoutes.delete('/:id', authMiddleware, async (req, res, next) => {
 
     const { id } = req.params;
 
-    // 🔒 Blocca eliminazione utente amministratore principale
     const adminCheck = await pool.query('SELECT email FROM users WHERE id = $1', [id]);
     if (adminCheck.rows.length > 0 && adminCheck.rows[0].email === 'admin@machines.local') {
       return res.status(403).json({ error: 'Non puoi eliminare l\'utente amministratore principale.' });
     }
 
-    // Impedisci all'utente di eliminare se stesso
     if (id === req.user!.id) {
       return res.status(400).json({ error: 'Non puoi eliminare il tuo account mentre sei connesso' });
     }
 
-    // Verifica se l'utente è referenziato in casi
     const usedR = await pool.query(
       `SELECT COUNT(*)::int AS count FROM cases
        WHERE created_by = $1 OR assigned_to = $1`,

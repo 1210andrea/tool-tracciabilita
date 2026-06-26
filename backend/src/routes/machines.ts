@@ -13,7 +13,7 @@ machinesRoutes.get('/', authMiddleware, async (_req, res, next) => {
        FROM machines m
        ORDER BY m.created_at DESC`
     );
-    res.json({ items: r.rows });
+    res.json(r.rows);
   } catch (e) {
     next(e);
   }
@@ -28,12 +28,11 @@ machinesRoutes.get('/tipologie', authMiddleware, async (_req, res, next) => {
        ORDER BY tipologia`
     );
     const tipologie = r.rows.map((row) => row.tipologia);
-    res.json({ items: tipologie });
+    res.json(tipologie);
   } catch (e) {
     next(e);
   }
 });
-
 
 machinesRoutes.post('/', authMiddleware, async (req, res, next) => {
   try {
@@ -63,7 +62,6 @@ machinesRoutes.post('/', authMiddleware, async (req, res, next) => {
     next(e);
   }
 });
-
 
 machinesRoutes.put('/:id', authMiddleware, async (req, res, next) => {
   try {
