@@ -35,7 +35,9 @@ const STATUS_COLOR: Record<string, string> = {
 
 function StatusChip({ status }: { status: string }) {
   return (
-    <span className={`rounded-full px-3 py-1 text-xs font-bold ${STATUS_COLOR[status] ?? 'bg-slate-700 text-slate-400'}`}>
+    <span className={`rounded-full px-3 py-1 text-xs font-bold ${
+      STATUS_COLOR[status] ?? 'bg-slate-700 text-slate-400'
+    }`}>
       {STATUS_LABEL[status] ?? status}
     </span>
   );
@@ -51,7 +53,8 @@ function ProgressBar({ done, total }: { done: number; total: number }) {
 }
 
 export default function Ordini() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const headers = useMemo(() => ({ headers: { Authorization: `Bearer ${token}` } }), [token]);
 
   const [reorders, setReorders] = useState<Reorder[]>([]);
@@ -59,13 +62,10 @@ export default function Ordini() {
   const [message, setMessage] = useState<{ text: string; type: 'info' | 'error' } | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('');
 
-  // Modal versamento
-  const [versamentoId, setVersamentoId] = useState<string | null>(null);
-  const [versamentoQty, setVersamentoQty] = useState('');
+  const [versamentoId, setVersamentoId]     = useState<string | null>(null);
+  const [versamentoQty, setVersamentoQty]   = useState('');
   const [versamentoSaving, setVersamentoSaving] = useState(false);
-
-  // Eliminazione in corso (per disabilitare il bottone durante la chiamata)
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId]         = useState<string | null>(null);
 
   const msg = (text: string, type: 'info' | 'error' = 'info') => setMessage({ text, type });
 
@@ -85,7 +85,9 @@ export default function Ordini() {
 
   const downloadPdf = async (id: string, numero: number) => {
     try {
-      const response = await axios.get(`${API_URL}/reorders/${id}/pdf`, { ...headers, responseType: 'blob' });
+      const response = await axios.get(`${API_URL}/reorders/${id}/pdf`, {
+        ...headers, responseType: 'blob',
+      });
       const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
       const a = document.createElement('a');
       a.href = url;
@@ -99,12 +101,12 @@ export default function Ordini() {
 
   const versamentoOrder = reorders.find((r) => r.id === versamentoId);
   const versamentoInput = parseInt(versamentoQty) || 0;
-  const nuovaRicevuta = versamentoOrder ? versamentoOrder.quantita_ricevuta + versamentoInput : 0;
-  const siChiude = versamentoOrder ? nuovaRicevuta >= versamentoOrder.quantita_ordinata : false;
-  const eccedenza = versamentoOrder ? nuovaRicevuta - versamentoOrder.quantita_ordinata : 0;
+  const nuovaRicevuta   = versamentoOrder ? versamentoOrder.quantita_ricevuta + versamentoInput : 0;
+  const siChiude        = versamentoOrder ? nuovaRicevuta >= versamentoOrder.quantita_ordinata : false;
+  const eccedenza       = versamentoOrder ? nuovaRicevuta - versamentoOrder.quantita_ordinata : 0;
 
   const submitVersamento = async () => {
-    if (!versamentoId || versamentoInput <= 0) { msg('Inserisci una quantità valida.', 'error'); return; }
+    if (!versamentoId || versamentoInput <= 0) { msg('Inserisci una quantit\u00e0 valida.', 'error'); return; }
     setVersamentoSaving(true);
     try {
       const r = await axios.patch(
@@ -112,11 +114,9 @@ export default function Ordini() {
         { quantita_versata: versamentoInput },
         headers
       );
-      if (r.data?.item?.status === 'completed') {
-        msg('Ordine completato e chiuso automaticamente ✓');
-      } else {
-        msg('Versamento registrato.');
-      }
+      msg(r.data?.item?.status === 'completed'
+        ? 'Ordine completato e chiuso automaticamente \u2713'
+        : 'Versamento registrato.');
       setVersamentoId(null);
       setVersamentoQty('');
       load();
@@ -125,24 +125,32 @@ export default function Ordini() {
   };
 
   const cancelOrder = async (id: string, numero: number) => {
-    if (!window.confirm(`Annullare l'ordine N°${numero}?`)) return;
+    if (!window.confirm(`Annullare l'ordine N\u00b0${numero}?`)) return;
     try {
       await axios.patch(`${API_URL}/reorders/${id}/cancel`, {}, headers);
-      msg(`Ordine N°${numero} annullato.`);
+      msg(`Ordine N\u00b0${numero} annullato.`);
       load();
     } catch (err: any) { msg(err?.response?.data?.error ?? 'Errore annullamento.', 'error'); }
   };
 
   const deleteOrder = async (id: string, numero: number) => {
-    if (!window.confirm(`Eliminare definitivamente l'ordine N°${numero}? L'operazione non è reversibile.`)) return;
+    if (!window.confirm(
+      `Eliminare definitivamente l'ordine N\u00b0${numero}? L'operazione non \u00e8 reversibile.`
+    )) return;
     setDeletingId(id);
     try {
       await axios.delete(`${API_URL}/reorders/${id}`, headers);
-      msg(`Ordine N°${numero} eliminato.`);
+      msg(`Ordine N\u00b0${numero} eliminato.`);
       load();
     } catch (err: any) { msg(err?.response?.data?.error ?? 'Errore eliminazione.', 'error'); }
     finally { setDeletingId(null); }
   };
+
+  // Un ordine pu\u00f2 essere eliminato se:
+  // - admin: qualsiasi ordine
+  // - magazziniere: solo cancelled
+  const canDelete = (r: Reorder) =>
+    isAdmin || r.status === 'cancelled';
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
@@ -151,9 +159,11 @@ export default function Ordini() {
           <h1 className="text-2xl font-bold sm:text-3xl">Ordini Interni</h1>
           <p className="text-sm text-slate-400">Gestisci gli ordini di riapprovvigionamento ricambi.</p>
         </div>
-        <Link to="/magazzino"
-          className="rounded-2xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-sm font-semibold text-slate-200 hover:bg-slate-800 transition">
-          ← Magazzino
+        <Link
+          to="/magazzino"
+          className="rounded-2xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-sm font-semibold text-slate-200 hover:bg-slate-800 transition"
+        >
+          \u2190 Magazzino
         </Link>
       </div>
 
@@ -164,17 +174,19 @@ export default function Ordini() {
             : 'border-sky-500/30 bg-sky-500/10 text-sky-100'
         }`}>
           <span>{message.text}</span>
-          <button type="button" onClick={() => setMessage(null)} className="font-bold opacity-70 hover:opacity-100">×</button>
+          <button type="button" onClick={() => setMessage(null)} className="font-bold opacity-70 hover:opacity-100">\u00d7</button>
         </div>
       )}
 
       {/* Filtri status */}
       <div className="flex flex-wrap gap-2">
         {(['', 'in_lavorazione', 'partial', 'completed', 'cancelled'] as const).map((s) => (
-          <button key={s} type="button" onClick={() => setFilterStatus(s)}
+          <button
+            key={s} type="button" onClick={() => setFilterStatus(s)}
             className={`rounded-full px-4 py-2 text-xs font-semibold transition ${
               filterStatus === s ? 'bg-sky-500 text-slate-950' : 'bg-slate-900 text-slate-300 hover:bg-slate-800'
-            }`}>
+            }`}
+          >
             {s === '' ? 'Tutti' : STATUS_LABEL[s]}
           </button>
         ))}
@@ -188,21 +200,37 @@ export default function Ordini() {
       ) : (
         <div className="space-y-3">
           {reorders.map((r) => (
-            <div key={r.id} className={`rounded-3xl border p-4 sm:p-5 ${
-              r.status === 'cancelled' ? 'border-slate-800/50 bg-slate-950/40 opacity-70' : 'border-slate-800 bg-slate-950/80'
-            }`}>
+            <div
+              key={r.id}
+              className={`rounded-3xl border p-4 sm:p-5 transition ${
+                r.status === 'cancelled'
+                  ? 'border-slate-800/50 bg-slate-950/40 opacity-60'
+                  : 'border-slate-800 bg-slate-950/80'
+              }`}
+            >
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold text-slate-100">N°{r.numero_ordine}</span>
+                    <span className="font-semibold text-slate-100">N\u00b0{r.numero_ordine}</span>
                     <StatusChip status={r.status} />
-                    {r.spare_part_name && <span className="text-sm text-slate-300">{r.spare_part_name}</span>}
-                    {r.codice && <span className="font-mono text-xs text-slate-500">{r.codice}</span>}
+                    {r.spare_part_name && (
+                      <span className="text-sm text-slate-300">{r.spare_part_name}</span>
+                    )}
+                    {r.codice && (
+                      <span className="font-mono text-xs text-slate-500">{r.codice}</span>
+                    )}
+                    {r.tipologia && (
+                      <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-400">
+                        {r.tipologia}
+                      </span>
+                    )}
                   </div>
                   <div className="text-xs text-slate-500 mt-0.5">
-                    {new Date(r.created_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' })}
-                    {r.created_by_username && ` · ${r.created_by_username}`}
-                    {r.note && ` · ${r.note}`}
+                    {new Date(r.created_at).toLocaleDateString('it-IT', {
+                      day: '2-digit', month: '2-digit', year: 'numeric',
+                    })}
+                    {r.created_by_username && ` \u00b7 ${r.created_by_username}`}
+                    {r.note && ` \u00b7 ${r.note}`}
                   </div>
                   <div className="mt-2 space-y-1">
                     <div className="text-xs text-slate-400">
@@ -213,39 +241,48 @@ export default function Ordini() {
                 </div>
 
                 <div className="flex flex-wrap gap-2 shrink-0">
-                  {/* Scarica PDF — solo ordini non annullati */}
+                  {/* PDF — solo ordini non annullati */}
                   {r.status !== 'cancelled' && (
-                    <button type="button" onClick={() => downloadPdf(r.id, r.numero_ordine)}
-                      className="rounded-2xl bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-700 transition">
-                      📄 PDF
+                    <button
+                      type="button"
+                      onClick={() => downloadPdf(r.id, r.numero_ordine)}
+                      className="rounded-2xl bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-700 transition"
+                    >
+                      \ud83d\udcc4 PDF
                     </button>
                   )}
 
-                  {/* Registra versamento */}
+                  {/* Versamento */}
                   {(r.status === 'in_lavorazione' || r.status === 'partial') && (
-                    <button type="button" onClick={() => { setVersamentoId(r.id); setVersamentoQty(''); }}
-                      className="rounded-2xl bg-emerald-500 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-emerald-400 transition">
+                    <button
+                      type="button"
+                      onClick={() => { setVersamentoId(r.id); setVersamentoQty(''); }}
+                      className="rounded-2xl bg-emerald-500 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-emerald-400 transition"
+                    >
                       Versamento
                     </button>
                   )}
 
-                  {/* Annulla ordine */}
+                  {/* Annulla — solo in_lavorazione senza versamenti */}
                   {r.status === 'in_lavorazione' && r.quantita_ricevuta === 0 && (
-                    <button type="button" onClick={() => cancelOrder(r.id, r.numero_ordine)}
-                      className="rounded-2xl bg-rose-500/20 border border-rose-500/30 px-3 py-2 text-xs font-semibold text-rose-300 hover:bg-rose-500/30 transition">
+                    <button
+                      type="button"
+                      onClick={() => cancelOrder(r.id, r.numero_ordine)}
+                      className="rounded-2xl bg-rose-500/20 border border-rose-500/30 px-3 py-2 text-xs font-semibold text-rose-300 hover:bg-rose-500/30 transition"
+                    >
                       Annulla
                     </button>
                   )}
 
-                  {/* Elimina ordine — solo se annullato */}
-                  {r.status === 'cancelled' && (
+                  {/* Elimina — admin: qualsiasi; magazziniere: solo cancelled */}
+                  {canDelete(r) && (
                     <button
                       type="button"
                       onClick={() => deleteOrder(r.id, r.numero_ordine)}
                       disabled={deletingId === r.id}
                       className="rounded-2xl bg-rose-900/40 border border-rose-800/50 px-3 py-2 text-xs font-semibold text-rose-400 hover:bg-rose-900/70 disabled:opacity-50 transition"
                     >
-                      {deletingId === r.id ? 'Eliminazione...' : '🗑 Elimina'}
+                      {deletingId === r.id ? 'Eliminazione...' : '\ud83d\uddd1 Elimina'}
                     </button>
                   )}
                 </div>
@@ -255,35 +292,38 @@ export default function Ordini() {
         </div>
       )}
 
-      {/* ──────────────────────────────────────────────────────────────────────────
-          MODAL REGISTRA VERSAMENTO
-      ────────────────────────────────────────────────────────────────────────── */}
+      {/* MODAL VERSAMENTO */}
       {versamentoId && versamentoOrder && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
           <div className="w-full max-w-md rounded-3xl border border-slate-800 bg-slate-950 shadow-2xl">
             <div className="p-5 sm:p-6 space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-slate-100">Registra versamento</h2>
-                <button type="button" onClick={() => setVersamentoId(null)} className="text-slate-500 hover:text-slate-200 text-2xl leading-none">×</button>
+                <button type="button" onClick={() => setVersamentoId(null)} className="text-slate-500 hover:text-slate-200 text-2xl leading-none">\u00d7</button>
               </div>
 
-              {/* Riepilogo articolo */}
               <div className="rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm space-y-1">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium text-slate-100">{versamentoOrder.spare_part_name}</span>
-                  {versamentoOrder.codice && <span className="font-mono text-xs text-slate-500">{versamentoOrder.codice}</span>}
+                  {versamentoOrder.codice && (
+                    <span className="font-mono text-xs text-slate-500">{versamentoOrder.codice}</span>
+                  )}
+                  {versamentoOrder.tipologia && (
+                    <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-400">
+                      {versamentoOrder.tipologia}
+                    </span>
+                  )}
                   <StatusChip status={versamentoOrder.status} />
                 </div>
                 <div className="text-slate-400 text-xs">
                   Ordinato: <span className="text-slate-200 font-medium">{versamentoOrder.quantita_ordinata}</span> pz
-                  · Già ricevuto: <span className="text-slate-200 font-medium">{versamentoOrder.quantita_ricevuta}</span> pz
+                  \u00b7 Gi\u00e0 ricevuto: <span className="text-slate-200 font-medium">{versamentoOrder.quantita_ricevuta}</span> pz
                 </div>
               </div>
 
-              {/* Quantità versata */}
               <div>
                 <label className="text-xs text-slate-400 block mb-1">
-                  Quantità versata <span className="text-rose-500">*</span>
+                  Quantit\u00e0 versata <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="number" min={1}
@@ -294,7 +334,6 @@ export default function Ordini() {
                 />
               </div>
 
-              {/* Anteprima in tempo reale */}
               {versamentoInput > 0 && (
                 <div className="rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm space-y-1">
                   <div className="text-slate-400">
@@ -302,7 +341,7 @@ export default function Ordini() {
                   </div>
                   {siChiude && (
                     <div className="text-emerald-400 text-xs font-medium">
-                      ✓ Ordine si chiuderà
+                      \u2713 Ordine si chiuder\u00e0
                       {eccedenza > 0 && <span className="ml-1">(eccedenza: +{eccedenza} pz in giacenza)</span>}
                     </div>
                   )}
@@ -310,12 +349,17 @@ export default function Ordini() {
               )}
 
               <div className="flex gap-2 pt-1">
-                <button type="button" onClick={submitVersamento} disabled={versamentoSaving || versamentoInput <= 0}
-                  className="rounded-2xl bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-50 transition flex-1">
+                <button
+                  type="button" onClick={submitVersamento}
+                  disabled={versamentoSaving || versamentoInput <= 0}
+                  className="rounded-2xl bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-50 transition flex-1"
+                >
                   {versamentoSaving ? 'Salvataggio...' : 'Registra versamento'}
                 </button>
-                <button type="button" onClick={() => setVersamentoId(null)}
-                  className="rounded-2xl border border-slate-700 bg-slate-900 px-5 py-2.5 text-sm font-semibold text-slate-200 hover:bg-slate-800 transition">
+                <button
+                  type="button" onClick={() => setVersamentoId(null)}
+                  className="rounded-2xl border border-slate-700 bg-slate-900 px-5 py-2.5 text-sm font-semibold text-slate-200 hover:bg-slate-800 transition"
+                >
                   Annulla
                 </button>
               </div>
