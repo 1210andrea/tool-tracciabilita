@@ -32,20 +32,25 @@ export default function AiAnalysis() {
   const [machineId, setMachineId] = useState('');
   const [problemId, setProblemId] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadingData, setLoadingData] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AiResult | null>(null);
 
   useEffect(() => {
     if (!token) return;
+    setLoadingData(true);
     Promise.all([
       axios.get(`${API_URL}/machines`, { headers: { Authorization: `Bearer ${token}` } }),
       axios.get(`${API_URL}/categories`, { headers: { Authorization: `Bearer ${token}` } })
     ]).then(([m, c]) => {
-      setMachines(m.data.items || []);
-      setCategories(c.data.items || []);
-    }).catch(() => {
+      setMachines(m.data.items || m.data || []);
+      setCategories(c.data.items || c.data || []);
+    }).catch((err) => {
+      setError(err?.response?.data?.error ?? 'Errore caricamento dati dal database.');
       setMachines([]);
       setCategories([]);
+    }).finally(() => {
+      setLoadingData(false);
     });
   }, [token]);
 
@@ -94,30 +99,37 @@ export default function AiAnalysis() {
       </div>
 
       <div className="rounded-3xl border border-slate-700 bg-slate-900/80 p-4 sm:p-6">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="sm:col-span-2">
-            <label className="text-xs text-slate-400">Macchina <span className="text-red-400">*</span></label>
-            <div className="mt-1">
-              <MachineSearchSelect
-                machines={machines}
-                value={machineId}
-                onChange={setMachineId}
-                placeholder="Cerca macchina per codice, nome o linea..."
-              />
+        {loadingData ? (
+          <div className="flex items-center gap-3 py-4 text-sm text-slate-400">
+            <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
+            Caricamento dati in corso...
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <label className="text-xs text-slate-400">Macchina <span className="text-red-400">*</span></label>
+              <div className="mt-1">
+                <MachineSearchSelect
+                  machines={machines}
+                  value={machineId}
+                  onChange={setMachineId}
+                  placeholder="Cerca macchina per codice, nome o linea..."
+                />
+              </div>
+            </div>
+            <div className="sm:col-span-2">
+              <label className="text-xs text-slate-400">Problema <span className="text-red-400">*</span></label>
+              <select
+                value={problemId}
+                onChange={(e) => setProblemId(e.target.value)}
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none"
+              >
+                <option value="">Seleziona problema</option>
+                {problems.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
             </div>
           </div>
-          <div className="sm:col-span-2">
-            <label className="text-xs text-slate-400">Problema <span className="text-red-400">*</span></label>
-            <select
-              value={problemId}
-              onChange={(e) => setProblemId(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none"
-            >
-              <option value="">Seleziona problema</option>
-              {problems.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </div>
-        </div>
+        )}
 
         {selectedMachine?.line && (
           <p className="mt-3 text-sm text-slate-500">Linea selezionata: <span className="text-slate-300">{selectedMachine.line}</span></p>
@@ -128,7 +140,7 @@ export default function AiAnalysis() {
         <button
           type="button"
           onClick={runAnalysis}
-          disabled={loading}
+          disabled={loading || loadingData}
           className="mt-5 rounded-2xl bg-violet-500 px-6 py-3 text-sm font-semibold text-white transition hover:bg-violet-400 disabled:opacity-60"
         >
           {loading ? 'Analisi in corso...' : 'Avvia analisi IA'}

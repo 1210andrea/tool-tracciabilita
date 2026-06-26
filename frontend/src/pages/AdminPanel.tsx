@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_URL ?? '/api';
+const API_URL = '/api';
 
 /** Normalizza qualsiasi risposta del backend in un array sicuro */
 function toArr<T>(data: unknown): T[] {
@@ -16,9 +16,9 @@ function toArr<T>(data: unknown): T[] {
 }
 
 type Category = { id: string; name: string; type: string; description?: string; problem_id?: string; problem_ids?: string[]; usage_count?: number };
-type Machine = { id: string; code: string; name: string; line?: string; location?: string; tipologia?: string; type?: string; posizione?: string; usage_count?: number };
+type Machine = { id: string; code: string; name: string; line?: string; tipologia?: string; type?: string; usage_count?: number };
 type User = { id: string; username: string; email?: string; role: string };
-type SparePart = { id: string; name: string; codice?: string; tipologia?: string; description?: string; scorta_minima?: number; quantita_riordino?: number; usage_count?: number };
+type SparePart = { id: string; name: string; codice?: string; tipologia?: string; description?: string; scorta_minima?: number; quantita_riordino?: number; quantita?: number; usage_count?: number };
 type SolutionApplied = { id: string; name: string; description?: string; problem_ids?: string[] };
 type Operatore = { id: string; nome: string; attivo: boolean };
 
@@ -63,10 +63,10 @@ export default function AdminPanel() {
   const [operatori, setOperatori] = useState<Operatore[]>([]);
   const [availableTipologie, setAvailableTipologie] = useState<string[]>([]);
 
-  const [machineForm, setMachineForm] = useState({ code: '', name: '', line: '', location: '', tipologia: '' });
+  const [machineForm, setMachineForm] = useState({ code: '', name: '', line: '', tipologia: '' });
   const [editingMachineId, setEditingMachineId] = useState<string | null>(null);
 
-  const [sparePartForm, setSparePartForm] = useState({ name: '', codice: '', tipologia: '', scorta_minima: 1, quantita_riordino: 10, description: '' });
+  const [sparePartForm, setSparePartForm] = useState({ name: '', codice: '', tipologia: '', scorta_minima: 1, quantita_riordino: 10, description: '', quantita: 0 });
   const [editingSparePartId, setEditingSparePartId] = useState<string | null>(null);
 
   const [categoryForm, setCategoryForm] = useState({ type: 'problem' as 'problem' | 'cause', name: '', description: '', problem_id: '', problem_ids: [] as string[] });
@@ -146,8 +146,8 @@ export default function AdminPanel() {
     setEditingCategoryId(null); setEditingMachineId(null); setEditingSparePartId(null);
     setEditingOperatoreId(null); setEditingSolutionId(null);
     setCategoryForm((c) => ({ type: activeTab === 'cause' ? 'cause' : 'problem', name: '', description: '', problem_id: '', problem_ids: [] }));
-    setMachineForm({ code: '', name: '', line: '', location: '', tipologia: '' });
-    setSparePartForm({ name: '', codice: '', tipologia: '', scorta_minima: 1, quantita_riordino: 10, description: '' });
+    setMachineForm({ code: '', name: '', line: '', tipologia: '' });
+    setSparePartForm({ name: '', codice: '', tipologia: '', scorta_minima: 1, quantita_riordino: 10, description: '', quantita: 0 });
     setSolutionForm({ name: '', description: '', problem_ids: [] });
     setOperatoreForm({ nome: '', attivo: true });
   }, [activeTab]);
@@ -245,11 +245,11 @@ export default function AdminPanel() {
         await axios.post(`${API_URL}/machines`, payload, headers);
         showMessage('Macchina aggiunta.');
       }
-      setMachineForm({ code: '', name: '', line: '', location: '', tipologia: '' }); setEditingMachineId(null); loadAll();
+      setMachineForm({ code: '', name: '', line: '', tipologia: '' }); setEditingMachineId(null); loadAll();
     } catch (err: any) { showMessage(err?.response?.data?.error ?? 'Errore salvataggio macchina.', 'error'); }
   };
-  const startEditMachine = (m: Machine) => { setEditingMachineId(m.id); setMachineForm({ code: m.code, name: m.name, line: m.line || '', location: m.location || '', tipologia: m.tipologia || m.type || '' }); };
-  const cancelEditMachine = () => { setEditingMachineId(null); setMachineForm({ code: '', name: '', line: '', location: '', tipologia: '' }); };
+  const startEditMachine = (m: Machine) => { setEditingMachineId(m.id); setMachineForm({ code: m.code, name: m.name, line: m.line || '', tipologia: m.tipologia || m.type || '' }); };
+  const cancelEditMachine = () => { setEditingMachineId(null); setMachineForm({ code: '', name: '', line: '', tipologia: '' }); };
 
   // ── helpers ricambi ─────────────────────────────────────────────────────
   const submitSparePart = async () => {
@@ -262,6 +262,7 @@ export default function AdminPanel() {
         description: sparePartForm.description.trim() || null,
         scorta_minima: sparePartForm.scorta_minima,
         quantita_riordino: sparePartForm.quantita_riordino,
+        quantita: sparePartForm.quantita,
       };
       if (editingSparePartId) {
         await axios.put(`${API_URL}/spare-parts/${editingSparePartId}`, payload, headers);
@@ -270,15 +271,15 @@ export default function AdminPanel() {
         await axios.post(`${API_URL}/spare-parts`, payload, headers);
         showMessage('Ricambio aggiunto.');
       }
-      setSparePartForm({ name: '', codice: '', tipologia: '', scorta_minima: 1, quantita_riordino: 10, description: '' });
+      setSparePartForm({ name: '', codice: '', tipologia: '', scorta_minima: 1, quantita_riordino: 10, description: '', quantita: 0 });
       setEditingSparePartId(null); loadAll();
     } catch (err: any) { showMessage(err?.response?.data?.error ?? 'Errore salvataggio ricambio.', 'error'); }
   };
   const startEditSparePart = (part: SparePart) => {
     setEditingSparePartId(part.id);
-    setSparePartForm({ name: part.name, codice: part.codice || '', tipologia: part.tipologia || '', scorta_minima: part.scorta_minima ?? 1, quantita_riordino: part.quantita_riordino ?? 10, description: part.description || '' });
+    setSparePartForm({ name: part.name, codice: part.codice || '', tipologia: part.tipologia || '', scorta_minima: part.scorta_minima ?? 1, quantita_riordino: part.quantita_riordino ?? 10, description: part.description || '', quantita: part.quantita ?? 0 });
   };
-  const cancelEditSparePart = () => { setEditingSparePartId(null); setSparePartForm({ name: '', codice: '', tipologia: '', scorta_minima: 1, quantita_riordino: 10, description: '' }); };
+  const cancelEditSparePart = () => { setEditingSparePartId(null); setSparePartForm({ name: '', codice: '', tipologia: '', scorta_minima: 1, quantita_riordino: 10, description: '', quantita: 0 }); };
 
   // ── helpers soluzioni ───────────────────────────────────────────────────
   const toggleSolutionProblem = (pid: string) => {
@@ -454,7 +455,6 @@ export default function AdminPanel() {
                   <input value={machineForm.code} onChange={(e) => setMachineForm((c) => ({ ...c, code: e.target.value }))} placeholder="Codice *" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
                   <input value={machineForm.name} onChange={(e) => setMachineForm((c) => ({ ...c, name: e.target.value }))} placeholder="Nome" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
                   <input value={machineForm.line} onChange={(e) => setMachineForm((c) => ({ ...c, line: e.target.value }))} placeholder="Linea" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
-                  <input value={machineForm.location} onChange={(e) => setMachineForm((c) => ({ ...c, location: e.target.value }))} placeholder="Ubicazione" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
                   <input value={machineForm.tipologia} onChange={(e) => setMachineForm((c) => ({ ...c, tipologia: e.target.value }))} placeholder="Tipologia" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -498,6 +498,10 @@ export default function AdminPanel() {
                   <div>
                     <label className="block text-xs text-slate-400 mb-1">Scorta minima</label>
                     <input type="number" min={0} value={sparePartForm.scorta_minima} onChange={(e) => setSparePartForm((c) => ({ ...c, scorta_minima: Number(e.target.value) }))} className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Giacenza attuale</label>
+                    <input type="number" min={0} value={sparePartForm.quantita} onChange={(e) => setSparePartForm((c) => ({ ...c, quantita: Number(e.target.value) }))} className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
                   </div>
                   <div>
                     <label className="block text-xs text-slate-400 mb-1">Quantità riordino</label>
@@ -597,6 +601,11 @@ export default function AdminPanel() {
                     <div>
                       <div className="font-semibold text-slate-100">{cat.name}</div>
                       <div className="text-sm text-slate-500">{cat.description || 'Nessuna descrizione'}</div>
+                      {cat.problem_ids && cat.problem_ids.length > 0 && (
+                        <div className="text-xs text-sky-400 mt-1">
+                          Collegata a: {cat.problem_ids.map(pid => problems.find(p => p.id === pid)?.name).filter(Boolean).join(', ')}
+                        </div>
+                      )}
                     </div>
                     <div className="flex gap-2">
                       <button type="button" className="rounded-2xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition" onClick={() => startEditCategory(cat)}>Modifica</button>
@@ -652,7 +661,9 @@ export default function AdminPanel() {
                         </div>
                         <div className="flex gap-2">
                           <button type="button" className="rounded-2xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition" onClick={() => startEditUser(user)}>Modifica</button>
-                          <DeleteButton itemId={user.id} type="users" onDelete={requestDelete} />
+                          {user.role !== 'admin' && (
+                            <DeleteButton itemId={user.id} type="users" onDelete={requestDelete} />
+                          )}
                         </div>
                       </div>
                     )}
@@ -689,6 +700,11 @@ export default function AdminPanel() {
                     <div>
                       <div className="font-semibold text-slate-100">{sol.name}</div>
                       <div className="text-sm text-slate-500">{sol.description || 'Nessuna descrizione'}</div>
+                      {sol.problem_ids && sol.problem_ids.length > 0 && (
+                        <div className="text-xs text-sky-400 mt-1">
+                          Collegata a: {sol.problem_ids.map(pid => problems.find(p => p.id === pid)?.name).filter(Boolean).join(', ')}
+                        </div>
+                      )}
                     </div>
                     <div className="flex gap-2">
                       <button type="button" className="rounded-2xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition" onClick={() => startEditSolution(sol)}>Modifica</button>
