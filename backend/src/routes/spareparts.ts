@@ -131,7 +131,8 @@ sparepartsRoutes.delete('/spare-parts/:id', authMiddleware, async (req, res, nex
 sparepartsRoutes.get('/solutions-applied', authMiddleware, async (_req, res, next) => {
   try {
     const r = await pool.query(
-      `SELECT sa.*, COUNT(c.id)::int AS usage_count
+      `SELECT sa.id, sa.name, sa.description, sa.created_at,
+              COUNT(c.id)::int AS usage_count
        FROM solutions_applied sa
        LEFT JOIN cases c ON c.solution_applied_id = sa.id
        GROUP BY sa.id
@@ -167,7 +168,7 @@ sparepartsRoutes.delete('/solutions-applied/:id', authMiddleware, async (req, re
     const usedR = await pool.query('SELECT COUNT(*)::int AS count FROM cases WHERE solution_applied_id = $1', [req.params.id]);
     const count = usedR.rows[0]?.count ?? 0;
     if (count > 0) {
-      return res.status(400).json({ error: `In uso da ${count} casi`, usage_count: count });
+      return res.status(400).json({ error: `Non eliminabile: in uso da ${count} casi`, usage_count: count });
     }
 
     const r = await pool.query('DELETE FROM solutions_applied WHERE id = $1 RETURNING id', [req.params.id]);
