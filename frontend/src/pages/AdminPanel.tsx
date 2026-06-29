@@ -12,13 +12,15 @@ type SparePart = { id: string; name: string; type: string; description?: string;
 type SolutionApplied = { id: string; name: string; description?: string; usage_count?: number };
 
 const API_URL = '/api';
-const MACHINE_TYPES = ['nastro', 'assemblaggio', 'controllo', 'imballaggio', 'generico'];
+
+type SpareFilter = 'all' | 'sr' | 'simm';
 
 export default function AdminPanel() {
   const { token } = useAuth();
   const [activeTab, setActiveTab] = useState<'categories' | 'machines' | 'users' | 'spare_solutions'>('categories');
   const [activeCategoryType, setActiveCategoryType] = useState<'operator' | 'problem' | 'cause'>('operator');
   const [spareSolutionsSubTab, setSpareSolutionsSubTab] = useState<'spare_parts' | 'solutions'>('spare_parts');
+  const [spareFilter, setSpareFilter] = useState<SpareFilter>('all');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [pendingDeleteType, setPendingDeleteType] = useState<'categories' | 'machines' | 'users' | 'spare_parts' | 'solutions' | null>(null);
@@ -32,9 +34,9 @@ export default function AdminPanel() {
   const [message, setMessage] = useState<string | null>(null);
 
   const [categoryForm, setCategoryForm] = useState({ type: 'operator', name: '', description: '' });
-  const [machineForm, setMachineForm] = useState({ code: '', name: '', line: '', location: '', type: 'generico' });
+  const [machineForm, setMachineForm] = useState({ code: '', name: '', line: '', location: '', type: '' });
   const [userForm, setUserForm] = useState({ username: '', email: '', password: '', role: 'user', operator_category_id: '' });
-  const [sparePartForm, setSparePartForm] = useState({ name: '', type: 'generico', description: '' });
+  const [sparePartForm, setSparePartForm] = useState({ name: '', type: '', description: '' });
   const [solutionForm, setSolutionForm] = useState({ name: '', description: '' });
 
   const headers = useMemo(() => ({ headers: { Authorization: `Bearer ${token}` } }), [token]);
@@ -85,7 +87,7 @@ export default function AdminPanel() {
     try {
       await axios.post(`${API_URL}/machines`, machineForm, headers);
       setMessage('Macchina aggiunta.');
-      setMachineForm({ code: '', name: '', line: '', location: '', type: 'generico' });
+      setMachineForm({ code: '', name: '', line: '', location: '', type: '' });
       loadAll();
     } catch (err: any) {
       setMessage(err?.response?.data?.error ?? 'Errore salvataggio macchina.');
@@ -110,7 +112,7 @@ export default function AdminPanel() {
     try {
       await axios.post(`${API_URL}/spare-parts`, sparePartForm, headers);
       setMessage('Ricambio aggiunto.');
-      setSparePartForm({ name: '', type: 'generico', description: '' });
+      setSparePartForm({ name: '', type: '', description: '' });
       loadAll();
     } catch (err: any) {
       setMessage(err?.response?.data?.error ?? 'Errore salvataggio ricambio.');
@@ -155,6 +157,12 @@ export default function AdminPanel() {
     setPendingDeleteId(null);
     await deleteItem(type, id);
   };
+
+  const filteredSpareParts = useMemo(() => {
+    if (spareFilter === 'sr') return spareParts.filter((p) => p.name.toLowerCase().startsWith('sr'));
+    if (spareFilter === 'simm') return spareParts.filter((p) => p.name.toLowerCase().startsWith('simm'));
+    return spareParts;
+  }, [spareParts, spareFilter]);
 
   const tabLabels: Record<typeof activeTab, string> = {
     categories: 'Categorie',
@@ -246,9 +254,8 @@ export default function AdminPanel() {
                 <input value={machineForm.name} onChange={(e) => setMachineForm((c) => ({ ...c, name: e.target.value }))} placeholder="Nome macchina" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
                 <input value={machineForm.line} onChange={(e) => setMachineForm((c) => ({ ...c, line: e.target.value }))} placeholder="Linea" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
                 <input value={machineForm.location} onChange={(e) => setMachineForm((c) => ({ ...c, location: e.target.value }))} placeholder="Posizione" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
-                <select value={machineForm.type} onChange={(e) => setMachineForm((c) => ({ ...c, type: e.target.value }))} className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none sm:col-span-2">
-                  {MACHINE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                </select>
+                {/* Tipologia macchina: campo testuale libero */}
+                <input value={machineForm.type} onChange={(e) => setMachineForm((c) => ({ ...c, type: e.target.value }))} placeholder="Tipologia macchina" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none sm:col-span-2" />
               </div>
               <button type="button" className="w-full rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 sm:w-auto" onClick={submitMachine}>
                 Aggiungi macchina
@@ -312,9 +319,8 @@ export default function AdminPanel() {
                 <>
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <input value={sparePartForm.name} onChange={(e) => setSparePartForm((c) => ({ ...c, name: e.target.value }))} placeholder="Nome ricambio" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
-                    <select value={sparePartForm.type} onChange={(e) => setSparePartForm((c) => ({ ...c, type: e.target.value }))} className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none">
-                      {MACHINE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                    </select>
+                    {/* Tipologia ricambio: campo testuale libero */}
+                    <input value={sparePartForm.type} onChange={(e) => setSparePartForm((c) => ({ ...c, type: e.target.value }))} placeholder="Tipologia ricambio" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
                   </div>
                   <textarea value={sparePartForm.description} onChange={(e) => setSparePartForm((c) => ({ ...c, description: e.target.value }))} rows={3} placeholder="Descrizione (opzionale)" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-3 text-slate-100 outline-none" />
                   <button type="button" className="w-full rounded-2xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 sm:w-auto" onClick={submitSparePart}>
@@ -374,42 +380,66 @@ export default function AdminPanel() {
 
           {activeTab === 'users' && (
             <div className="space-y-4">
-              {users.map((userItem) => (
-                <div key={userItem.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <div className="font-semibold text-slate-100">{userItem.username}</div>
-                    <div className="text-sm text-slate-500">{userItem.email || 'Email non fornita'} · ruolo: {userItem.role}</div>
-                  </div>
-                  <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950" onClick={() => requestDelete('users', userItem.id)}>
-                    Elimina
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {activeTab === 'spare_solutions' && spareSolutionsSubTab === 'spare_parts' && (
-            <div className="space-y-4">
-              {spareParts.map((part) => {
-                const inUse = (part.usage_count ?? 0) > 0;
+              {users.map((userItem) => {
+                const isAdmin = userItem.username === 'admin';
                 return (
-                  <div key={part.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div key={userItem.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <div className="font-semibold text-slate-100">{part.name}</div>
-                      <div className="text-sm text-slate-500">Tipo: {part.type} · {part.description || 'Nessuna descrizione'}</div>
-                      {inUse && <div className="text-xs text-amber-400">In uso da {part.usage_count} casi</div>}
+                      <div className="font-semibold text-slate-100">{userItem.username}</div>
+                      <div className="text-sm text-slate-500">{userItem.email || 'Email non fornita'} · ruolo: {userItem.role}</div>
                     </div>
-                    {!inUse ? (
-                      <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950" onClick={() => requestDelete('spare_parts', part.id)}>
+                    {isAdmin ? (
+                      <span className="text-xs text-slate-500">Non eliminabile</span>
+                    ) : (
+                      <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950" onClick={() => requestDelete('users', userItem.id)}>
                         Elimina
                       </button>
-                    ) : (
-                      <span className="text-xs text-slate-500">Non eliminabile</span>
                     )}
                   </div>
                 );
               })}
             </div>
+          )}
+
+          {activeTab === 'spare_solutions' && spareSolutionsSubTab === 'spare_parts' && (
+            <>
+              {/* Bottoni filtro: Tutti / SR / SIMM */}
+              <div className="flex flex-wrap gap-2">
+                {(['all', 'sr', 'simm'] as const).map((f) => (
+                  <button
+                    key={f}
+                    type="button"
+                    onClick={() => setSpareFilter(f)}
+                    className={`rounded-full px-4 py-2 text-xs font-semibold sm:text-sm ${
+                      spareFilter === f ? 'bg-sky-500 text-slate-950' : 'bg-slate-900 text-slate-300 hover:bg-slate-800'
+                    }`}
+                  >
+                    {f === 'all' ? 'Tutti' : f.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+              <div className="space-y-4">
+                {filteredSpareParts.map((part) => {
+                  const inUse = (part.usage_count ?? 0) > 0;
+                  return (
+                    <div key={part.id} className="flex flex-col gap-2 rounded-3xl border border-slate-800 bg-slate-900/80 p-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <div className="font-semibold text-slate-100">{part.name}</div>
+                        <div className="text-sm text-slate-500">Tipo: {part.type} · {part.description || 'Nessuna descrizione'}</div>
+                        {inUse && <div className="text-xs text-amber-400">In uso da {part.usage_count} casi</div>}
+                      </div>
+                      {!inUse ? (
+                        <button type="button" className="rounded-2xl bg-rose-500 px-4 py-2 text-sm font-semibold text-slate-950" onClick={() => requestDelete('spare_parts', part.id)}>
+                          Elimina
+                        </button>
+                      ) : (
+                        <span className="text-xs text-slate-500">Non eliminabile</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
           )}
 
           {activeTab === 'spare_solutions' && spareSolutionsSubTab === 'solutions' && (
