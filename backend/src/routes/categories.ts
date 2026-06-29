@@ -7,7 +7,18 @@ export const categoriesRoutes = Router();
 
 categoriesRoutes.get('/', authMiddleware, async (_req, res, next) => {
   try {
-    const r = await pool.query('SELECT id, type, name, description, created_at FROM categories ORDER BY type, created_at DESC');
+    // usage_count = numero casi che la usano come problema o causa + utenti collegati (per operatori)
+    const r = await pool.query(`
+      SELECT
+        cat.id, cat.type, cat.name, cat.description, cat.created_at,
+        (
+          COALESCE((SELECT COUNT(*)::int FROM cases c WHERE c.problem_id = cat.id), 0) +
+          COALESCE((SELECT COUNT(*)::int FROM cases c WHERE c.cause_id   = cat.id), 0) +
+          COALESCE((SELECT COUNT(*)::int FROM users u WHERE u.operator_category_id = cat.id), 0)
+        ) AS usage_count
+      FROM categories cat
+      ORDER BY cat.type, cat.created_at DESC
+    `);
     res.json({ items: r.rows });
   } catch (e) {
     next(e);
@@ -66,22 +77,22 @@ categoriesRoutes.delete('/:id', authMiddleware, async (req, res, next) => {
 
     const { id } = req.params;
 
-    // 1) Verifica referenzialità in cases
-    const probCountR = await pool.query('SELECT COUNT(*)::int as count FROM cases WHERE problem_id = $1', [id]);
+    // Verifica referenzialità
+    const probCountR  = await pool.query('SELECT COUNT(*)::int as count FROM cases WHERE problem_id = $1', [id]);
     const causeCountR = await pool.query('SELECT COUNT(*)::int as count FROM cases WHERE cause_id = $1', [id]);
-    const userCountR = await pool.query('SELECT COUNT(*)::int as count FROM users WHERE operator_category_id = $1', [id]);
+    const userCountR  = await pool.query('SELECT COUNT(*)::int as count FROM users WHERE operator_category_id = $1', [id]);
 
     const problemCount = probCountR.rows[0]?.count ?? 0;
-    const causeCount = causeCountR.rows[0]?.count ?? 0;
-    const userCount = userCountR.rows[0]?.count ?? 0;
-    const totalUsed = problemCount + causeCount + userCount;
+    const causeCount   = causeCountR.rows[0]?.count ?? 0;
+    const userCount    = userCountR.rows[0]?.count ?? 0;
+    const totalUsed    = problemCount + causeCount + userCount;
 
     if (totalUsed > 0) {
       const parts: string[] = [];
       if (problemCount) parts.push(`${problemCount} casi come problema`);
-      if (causeCount) parts.push(`${causeCount} casi come causa`);
-      if (userCount) parts.push(`${userCount} utenti collegati`);
-      return res.status(400).json({ error: `Non eliminabile: in uso (${parts.join(', ')})` });
+      if (causeCount)   parts.push(`${causeCount} casi come causa`);
+      if (userCount)    parts.push(`${userCount} utenti collegati`);
+      return res.status(400).json({ error: `Non eliminabile: in uso (${parts.join(', ')})`, usage_count: totalUsed });
     }
 
     const r = await pool.query('DELETE FROM categories WHERE id = $1 RETURNING type', [id]);
@@ -92,5 +103,3 @@ categoriesRoutes.delete('/:id', authMiddleware, async (req, res, next) => {
     next(e);
   }
 });
-
-
