@@ -56,7 +56,9 @@ export function CaseDetailModal({
   const [solutions, setSolutions] = useState<SolutionItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingCase, setLoadingCase] = useState(false);
 
+  // Carica soluzioni disponibili
   useEffect(() => {
     if (!token) return;
     axios.get(`${API_URL}/solutions-applied`, { headers: { Authorization: `Bearer ${token}` } })
@@ -64,16 +66,32 @@ export function CaseDetailModal({
       .catch(() => setSolutions([]));
   }, [token]);
 
+  // Quando si apre il modal, carica il caso completo con tutti gli ID
   useEffect(() => {
-    if (!caseItem) return;
-    setMachineId(caseItem.machine_id);
-    setProblemId(caseItem.problem_id ?? '');
-    setCauseId(caseItem.cause_id ?? '');
-    setSparePartId(caseItem.spare_part_id ?? '');
-    setSolutionAppliedId(caseItem.solution_applied_id ?? '');
+    if (!caseItem || !token) return;
     setError(null);
-  }, [caseItem]);
+    setLoadingCase(true);
+    axios.get(`${API_URL}/cases/${caseItem.id}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => {
+        const full = r.data?.item ?? r.data;
+        setMachineId(full.machine_id ?? caseItem.machine_id ?? '');
+        setProblemId(full.problem_id ?? '');
+        setCauseId(full.cause_id ?? '');
+        setSparePartId(full.spare_part_id ?? '');
+        setSolutionAppliedId(full.solution_applied_id ?? '');
+      })
+      .catch(() => {
+        // fallback ai dati parziali già disponibili
+        setMachineId(caseItem.machine_id ?? '');
+        setProblemId(caseItem.problem_id ?? '');
+        setCauseId(caseItem.cause_id ?? '');
+        setSparePartId(caseItem.spare_part_id ?? '');
+        setSolutionAppliedId(caseItem.solution_applied_id ?? '');
+      })
+      .finally(() => setLoadingCase(false));
+  }, [caseItem, token]);
 
+  // Carica ricambi compatibili quando cambia la macchina
   useEffect(() => {
     if (!token || !machineId) {
       setSpareParts([]);
@@ -135,42 +153,83 @@ export function CaseDetailModal({
           <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-200">✕</button>
         </div>
 
+        {loadingCase && (
+          <div className="mb-4 text-sm text-slate-400">Caricamento dati caso...</div>
+        )}
+
         {error && <div className="mb-4 rounded-xl bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</div>}
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {/* Macchina */}
           <div className="sm:col-span-2">
             <label className="text-xs text-slate-400">Macchina</label>
-            <select value={machineId} disabled={!canEdit} onChange={(e) => setMachineId(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none disabled:opacity-60">
+            <select
+              value={machineId}
+              disabled={!canEdit}
+              onChange={(e) => {
+                setMachineId(e.target.value);
+                setSparePartId('');
+              }}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none disabled:opacity-60"
+            >
               <option value="">Seleziona</option>
               {machines.map((m) => <option key={m.id} value={m.id}>{m.code} - {m.name}</option>)}
             </select>
           </div>
-          <div>
-            <label className="text-xs text-slate-400">Pezzo di ricambio</label>
-            <select value={sparePartId} disabled={!canEdit} onChange={(e) => setSparePartId(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none disabled:opacity-60">
-              <option value="">Nessuno</option>
-              {spareParts.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs text-slate-400">Soluzione applicata</label>
-            <select value={solutionAppliedId} disabled={!canEdit} onChange={(e) => setSolutionAppliedId(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none disabled:opacity-60">
-              <option value="">Nessuna</option>
-              {solutions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </div>
+
+          {/* Problema */}
           <div>
             <label className="text-xs text-slate-400">Problema</label>
-            <select value={problemId} disabled={!canEdit} onChange={(e) => setProblemId(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none disabled:opacity-60">
+            <select
+              value={problemId}
+              disabled={!canEdit}
+              onChange={(e) => setProblemId(e.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none disabled:opacity-60"
+            >
               <option value="">Nessuno</option>
               {problems.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </div>
+
+          {/* Causa */}
           <div>
             <label className="text-xs text-slate-400">Causa</label>
-            <select value={causeId} disabled={!canEdit} onChange={(e) => setCauseId(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none disabled:opacity-60">
+            <select
+              value={causeId}
+              disabled={!canEdit}
+              onChange={(e) => setCauseId(e.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none disabled:opacity-60"
+            >
               <option value="">Nessuna</option>
               {causes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+
+          {/* Pezzo di ricambio */}
+          <div>
+            <label className="text-xs text-slate-400">Pezzo di ricambio</label>
+            <select
+              value={sparePartId}
+              disabled={!canEdit}
+              onChange={(e) => setSparePartId(e.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none disabled:opacity-60"
+            >
+              <option value="">Nessuno</option>
+              {spareParts.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+
+          {/* Soluzione applicata */}
+          <div>
+            <label className="text-xs text-slate-400">Soluzione applicata</label>
+            <select
+              value={solutionAppliedId}
+              disabled={!canEdit}
+              onChange={(e) => setSolutionAppliedId(e.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2.5 text-sm text-slate-100 outline-none disabled:opacity-60"
+            >
+              <option value="">Nessuna</option>
+              {solutions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
         </div>
@@ -178,7 +237,12 @@ export function CaseDetailModal({
         <div className="mt-6 flex flex-wrap justify-end gap-3">
           <button type="button" onClick={onClose} className="rounded-2xl border border-slate-700 px-4 py-2 text-sm text-slate-100 hover:bg-slate-800">Chiudi</button>
           {canEdit && (
-            <button type="button" onClick={handleSave} disabled={loading} className="rounded-2xl bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-60">
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={loading || loadingCase}
+              className="rounded-2xl bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-60"
+            >
               {loading ? 'Salvataggio...' : 'Salva modifiche'}
             </button>
           )}
