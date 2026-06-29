@@ -9,12 +9,9 @@ usersRoutes.get('/', authMiddleware, async (req, res, next) => {
   try {
     const r = await pool.query(
       `SELECT u.id, u.username, u.email, u.role, u.ldap_managed, u.operator_category_id, u.created_at,
-              c.name AS operator_name,
-              COUNT(DISTINCT ca.id)::int AS case_count
+              c.name AS operator_name
        FROM users u
        LEFT JOIN categories c ON c.id = u.operator_category_id
-       LEFT JOIN cases ca ON (ca.created_by = u.id OR ca.assigned_to = u.id)
-       GROUP BY u.id, c.name
        ORDER BY u.created_at DESC`
     );
     res.json({ items: r.rows });
@@ -95,7 +92,7 @@ usersRoutes.delete('/:id', authMiddleware, async (req, res, next) => {
       [id]
     );
     if ((usedR.rows[0]?.count ?? 0) > 0) {
-      return res.status(400).json({ error: `Non eliminabile: utente collegato a ${usedR.rows[0].count} casi`, usage_count: usedR.rows[0].count });
+      return res.status(400).json({ error: `Non eliminabile: utente collegato a ${usedR.rows[0].count} casi` });
     }
     await pool.query('DELETE FROM users WHERE id = $1', [id]);
     res.json({ ok: true });
