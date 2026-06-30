@@ -44,8 +44,6 @@ sparepartsRoutes.get(
 );
 
 // ── GET /api/spare-parts/by-type/:type ─────────────────────────────────────
-// La colonna tipologia può contenere valori multipli separati da virgola (es. "SR5,SR11,SR14")
-// Cerca il tipo richiesto come elemento nella lista CSV
 sparepartsRoutes.get('/spare-parts/by-type/:type', authMiddleware, async (req, res, next) => {
   try {
     const result = await pool.query(
@@ -132,6 +130,17 @@ sparepartsRoutes.delete(
   requireRole('admin'),
   async (req, res, next) => {
     try {
+      const usedR = await pool.query(
+        `SELECT COUNT(*)::int AS count FROM case_spare_parts WHERE spare_part_id = $1`,
+        [req.params.id]
+      );
+      const count = usedR.rows[0]?.count ?? 0;
+      if (count > 0) {
+        return res.status(400).json({
+          error: `Non eliminabile: ricambio utilizzato in ${count} casi`,
+          usage_count: count,
+        });
+      }
       const result = await pool.query(
         `DELETE FROM spare_parts WHERE id = $1 RETURNING id`,
         [req.params.id]
@@ -156,7 +165,8 @@ sparepartsRoutes.get('/solutions-applied', authMiddleware, async (_req, res, nex
                  JOIN categories cat ON cat.id = sp.problem_id
                  WHERE sp.solution_id = sa.id),
                 ARRAY[]::text[]
-              ) AS problem_ids
+              ) AS problem_ids,
+              (SELECT COUNT(*)::int FROM case_solutions_applied WHERE solution_id = sa.id) AS usage_count
        FROM solutions_applied sa
        ORDER BY sa.created_at DESC`
     );
@@ -222,7 +232,6 @@ sparepartsRoutes.put('/solutions-applied/:id', authMiddleware, async (req, res, 
       return res.status(404).json({ error: 'Soluzione non trovata' });
     }
 
-    // Aggiorna sempre i problem_ids se passati
     if (problem_ids !== undefined) {
       await client.query(`DELETE FROM solution_problems WHERE solution_id = $1`, [req.params.id]);
       for (const pid of problem_ids) {
@@ -233,7 +242,6 @@ sparepartsRoutes.put('/solutions-applied/:id', authMiddleware, async (req, res, 
       }
     }
 
-    // Rileggi i problem_ids aggiornati
     const pidsResult = await client.query(
       `SELECT array_agg(problem_id::text) AS problem_ids FROM solution_problems WHERE solution_id = $1`,
       [req.params.id]
@@ -252,6 +260,17 @@ sparepartsRoutes.put('/solutions-applied/:id', authMiddleware, async (req, res, 
 // ── DELETE /api/solutions-applied/:id ───────────────────────────────────────
 sparepartsRoutes.delete('/solutions-applied/:id', authMiddleware, async (req, res, next) => {
   try {
+    const usedR = await pool.query(
+      `SELECT COUNT(*)::int AS count FROM case_solutions_applied WHERE solution_id = $1`,
+      [req.params.id]
+    );
+    const count = usedR.rows[0]?.count ?? 0;
+    if (count > 0) {
+      return res.status(400).json({
+        error: `Non eliminabile: soluzione utilizzata in ${count} casi`,
+        usage_count: count,
+      });
+    }
     const result = await pool.query(
       `DELETE FROM solutions_applied WHERE id = $1 RETURNING id`,
       [req.params.id]
