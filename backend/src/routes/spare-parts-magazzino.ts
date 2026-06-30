@@ -32,7 +32,8 @@ sparePartsMagazzinoRoutes.get(
             SELECT 1 FROM reorders r
             WHERE r.spare_part_id = sp.id
               AND r.status IN ('in_lavorazione','partial')
-          ) AS ordine_aperto
+          ) AS ordine_aperto,
+          (SELECT COUNT(*)::int FROM case_spare_parts csp WHERE csp.spare_part_id = sp.id) AS usage_count
         FROM spare_parts sp
         ORDER BY sp.name ASC
       `);
