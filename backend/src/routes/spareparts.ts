@@ -18,6 +18,31 @@ async function ensureSolutionProblemsTable() {
 }
 ensureSolutionProblemsTable().catch(console.error);
 
+// ── GET /api/spare-parts ─────────────────────────────────────────────────────
+sparepartsRoutes.get(
+  '/spare-parts',
+  authMiddleware,
+  async (_req, res, next) => {
+    try {
+      const result = await pool.query(
+        `SELECT sp.id,
+                sp.name,
+                sp.description,
+                sp.codice,
+                sp.tipologia,
+                sp.quantita,
+                sp.scorta_minima,
+                COALESCE(sp.quantita_riordino, 10) AS quantita_riordino,
+                sp.created_at,
+                (SELECT COUNT(*)::int FROM case_spare_parts csp WHERE csp.spare_part_id = sp.id) AS usage_count
+         FROM spare_parts sp
+         ORDER BY sp.name ASC`
+      );
+      res.json({ items: result.rows });
+    } catch (e) { next(e); }
+  }
+);
+
 // ── GET /api/spare-parts/sotto-scorta ───────────────────────────────────────
 sparepartsRoutes.get(
   '/spare-parts/sotto-scorta',
