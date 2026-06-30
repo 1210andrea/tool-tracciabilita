@@ -731,7 +731,6 @@ export default function AdminPanel() {
                       <p className="font-medium text-slate-100 truncate">{part.name}{part.codice ? ` (${part.codice})` : ''}</p>
                       <p className="text-xs text-slate-500">
                         Qtà: {part.quantita ?? 0} · Scorta min: {part.scorta_minima ?? 1}
-                        <p className="text-xs text-orange-400">In uso da: {part.usage_count ?? 'undefined'} casi</p>
                         {(part.usage_count ?? 0) > 0 ? ` · ${part.usage_count} casi` : ''}
                       </p>
                     </div>
