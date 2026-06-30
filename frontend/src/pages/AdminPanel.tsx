@@ -19,8 +19,8 @@ type Category = { id: string; name: string; type: string; description?: string; 
 type Machine = { id: string; code: string; name: string; line?: string; tipologia?: string; type?: string; usage_count?: number };
 type User = { id: string; username: string; email?: string; role: string };
 type SparePart = { id: string; name: string; codice?: string; tipologia?: string | string[]; description?: string; scorta_minima?: number; quantita_riordino?: number; quantita?: number; usage_count?: number };
-type SolutionApplied = { id: string; name: string; description?: string; problem_ids?: string[] };
-type Operatore = { id: string; nome: string; attivo: boolean };
+type SolutionApplied = { id: string; name: string; description?: string; problem_ids?: string[]; usage_count?: number };
+type Operatore = { id: string; nome: string; attivo: boolean; usage_count?: number };
 
 type DeleteButtonProps = {
   itemId: string;
@@ -31,6 +31,21 @@ type DeleteButtonProps = {
 
 function DeleteButton({ itemId, usageCount, type, onDelete }: DeleteButtonProps) {
   const [confirm, setConfirm] = useState(false);
+
+  // Blocca il bottone se l'elemento è in uso (tranne per gli utenti)
+  if (type !== 'users' && usageCount !== undefined && usageCount > 0) {
+    return (
+      <button
+        type="button"
+        disabled
+        title={`In uso in ${usageCount} casi — impossibile eliminare`}
+        className="rounded-2xl bg-slate-700/60 px-4 py-2 text-sm font-semibold text-slate-500 cursor-not-allowed select-none"
+      >
+        In uso ({usageCount})
+      </button>
+    );
+  }
+
   if (confirm) {
     return (
       <div className="flex items-center gap-2">
@@ -596,13 +611,13 @@ export default function AdminPanel() {
                 {operatori.length === 0 && <p className="text-sm text-slate-500">Nessun operatore.</p>}
                 {operatori.map((op) => (
                   <div key={op.id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-3">
-                    <div>
-                      <div className="font-semibold text-slate-100">{op.nome}</div>
-                      <div className={`text-sm ${op.attivo ? 'text-emerald-400' : 'text-slate-500'}`}>{op.attivo ? 'Attivo' : 'Inattivo'}</div>
+                    <div className="min-w-0">
+                      <p className="font-medium text-slate-100 truncate">{op.nome}</p>
+                      <p className="text-xs text-slate-500">{op.attivo ? 'Attivo' : 'Non attivo'}{(op.usage_count ?? 0) > 0 ? ` · ${op.usage_count} casi` : ''}</p>
                     </div>
-                    <div className="flex gap-2">
-                      <button type="button" className="rounded-2xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition" onClick={() => startEditOperatore(op)}>Modifica</button>
-                      <DeleteButton itemId={op.id} type="operatori" onDelete={requestDelete} />
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button type="button" className="rounded-2xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800 transition" onClick={() => startEditOperatore(op)}>Modifica</button>
+                      <DeleteButton itemId={op.id} usageCount={op.usage_count} type="operatori" onDelete={requestDelete} />
                     </div>
                   </div>
                 ))}
@@ -611,16 +626,17 @@ export default function AdminPanel() {
 
             {activeTab === 'problemi' && (
               <>
-                <h3 className="text-lg font-semibold text-slate-100 mb-1">Elenco problemi</h3>
-                {problems.length === 0 && <p className="text-sm text-slate-500">Nessun problema.</p>}
-                {problems.map((cat) => (
+                <h3 className="text-lg font-semibold text-slate-100 mb-1">Problemi</h3>
+                {categories.filter((c) => c.type === 'problem').length === 0 && <p className="text-sm text-slate-500">Nessun problema.</p>}
+                {categories.filter((c) => c.type === 'problem').map((cat) => (
                   <div key={cat.id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-3">
-                    <div>
-                      <div className="font-semibold text-slate-100">{cat.name}</div>
-                      <div className="text-sm text-slate-500">{cat.description || 'Nessuna descrizione'}</div>
+                    <div className="min-w-0">
+                      <p className="font-medium text-slate-100 truncate">{cat.name}</p>
+                      {cat.description && <p className="text-xs text-slate-500 truncate">{cat.description}</p>}
+                      {(cat.usage_count ?? 0) > 0 && <p className="text-xs text-slate-500">{cat.usage_count} casi</p>}
                     </div>
-                    <div className="flex gap-2">
-                      <button type="button" className="rounded-2xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition" onClick={() => startEditCategory(cat)}>Modifica</button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button type="button" className="rounded-2xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800 transition" onClick={() => startEditCategory(cat)}>Modifica</button>
                       <DeleteButton itemId={cat.id} usageCount={cat.usage_count} type="categories" onDelete={requestDelete} />
                     </div>
                   </div>
@@ -630,21 +646,17 @@ export default function AdminPanel() {
 
             {activeTab === 'cause' && (
               <>
-                <h3 className="text-lg font-semibold text-slate-100 mb-1">Elenco cause</h3>
+                <h3 className="text-lg font-semibold text-slate-100 mb-1">Cause</h3>
                 {categories.filter((c) => c.type === 'cause').length === 0 && <p className="text-sm text-slate-500">Nessuna causa.</p>}
                 {categories.filter((c) => c.type === 'cause').map((cat) => (
                   <div key={cat.id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-3">
-                    <div>
-                      <div className="font-semibold text-slate-100">{cat.name}</div>
-                      <div className="text-sm text-slate-500">{cat.description || 'Nessuna descrizione'}</div>
-                      {cat.problem_ids && cat.problem_ids.length > 0 && (
-                        <div className="text-xs text-sky-400 mt-1">
-                          Collegata a: {cat.problem_ids.map(pid => problems.find(p => p.id === pid)?.name).filter(Boolean).join(', ')}
-                        </div>
-                      )}
+                    <div className="min-w-0">
+                      <p className="font-medium text-slate-100 truncate">{cat.name}</p>
+                      {cat.description && <p className="text-xs text-slate-500 truncate">{cat.description}</p>}
+                      {(cat.usage_count ?? 0) > 0 && <p className="text-xs text-slate-500">{cat.usage_count} casi</p>}
                     </div>
-                    <div className="flex gap-2">
-                      <button type="button" className="rounded-2xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition" onClick={() => startEditCategory(cat)}>Modifica</button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button type="button" className="rounded-2xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800 transition" onClick={() => startEditCategory(cat)}>Modifica</button>
                       <DeleteButton itemId={cat.id} usageCount={cat.usage_count} type="categories" onDelete={requestDelete} />
                     </div>
                   </div>
@@ -654,17 +666,17 @@ export default function AdminPanel() {
 
             {activeTab === 'macchine' && (
               <>
-                <h3 className="text-lg font-semibold text-slate-100 mb-1">Elenco macchine</h3>
+                <h3 className="text-lg font-semibold text-slate-100 mb-1">Macchine</h3>
                 {machines.length === 0 && <p className="text-sm text-slate-500">Nessuna macchina.</p>}
-                {machines.map((machine) => (
-                  <div key={machine.id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-3">
-                    <div>
-                      <div className="font-semibold text-slate-100">{machine.code} — {machine.name}</div>
-                      <div className="text-sm text-slate-500">{machine.line || 'Linea N/D'} · Tipologia: {machine.tipologia || 'Non specificata'}</div>
+                {machines.map((m) => (
+                  <div key={m.id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-3">
+                    <div className="min-w-0">
+                      <p className="font-medium text-slate-100 truncate">{m.code} — {m.name}</p>
+                      <p className="text-xs text-slate-500">{m.line ?? '—'}{(m.usage_count ?? 0) > 0 ? ` · ${m.usage_count} casi` : ''}</p>
                     </div>
-                    <div className="flex gap-2">
-                      <button type="button" className="rounded-2xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition" onClick={() => startEditMachine(machine)}>Modifica</button>
-                      <DeleteButton itemId={machine.id} usageCount={machine.usage_count} type="machines" onDelete={requestDelete} />
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button type="button" className="rounded-2xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800 transition" onClick={() => startEditMachine(m)}>Modifica</button>
+                      <DeleteButton itemId={m.id} usageCount={m.usage_count} type="machines" onDelete={requestDelete} />
                     </div>
                   </div>
                 ))}
@@ -673,33 +685,30 @@ export default function AdminPanel() {
 
             {activeTab === 'utenti' && (
               <>
-                <h3 className="text-lg font-semibold text-slate-100 mb-1">Elenco utenti</h3>
+                <h3 className="text-lg font-semibold text-slate-100 mb-1">Utenti</h3>
                 {users.length === 0 && <p className="text-sm text-slate-500">Nessun utente.</p>}
-                {users.map((user) => (
-                  <div key={user.id} className="rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-3">
-                    {editingUser?.id === user.id ? (
+                {users.map((u) => (
+                  <div key={u.id} className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-3">
+                    {editingUser?.id === u.id ? (
                       <div className="flex flex-col gap-3">
-                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                          <input value={userEditForm.username} onChange={(e) => setUserEditForm((c) => ({ ...c, username: e.target.value }))} placeholder="Username" className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none" />
-                          <input value={userEditForm.email} onChange={(e) => setUserEditForm((c) => ({ ...c, email: e.target.value }))} placeholder="Email" className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none" />
-                          <input type="password" value={userEditForm.password} onChange={(e) => setUserEditForm((c) => ({ ...c, password: e.target.value }))} placeholder="Nuova password (opzionale)" className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none" />
-                        </div>
+                        <p className="text-sm font-semibold text-slate-200">Modifica: {u.username}</p>
+                        <input value={userEditForm.username} onChange={(e) => setUserEditForm((c) => ({ ...c, username: e.target.value }))} placeholder="Nuovo username" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-2 text-slate-100 outline-none text-sm" />
+                        <input value={userEditForm.email} onChange={(e) => setUserEditForm((c) => ({ ...c, email: e.target.value }))} placeholder="Nuova email" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-2 text-slate-100 outline-none text-sm" />
+                        <input type="password" value={userEditForm.password} onChange={(e) => setUserEditForm((c) => ({ ...c, password: e.target.value }))} placeholder="Nuova password (lascia vuoto per non cambiare)" className="w-full rounded-2xl border border-slate-700 bg-slate-900/90 px-4 py-2 text-slate-100 outline-none text-sm" />
                         <div className="flex gap-2">
-                          <button type="button" className="rounded-xl bg-sky-500 px-4 py-2 text-xs font-semibold text-slate-950 hover:bg-sky-400 transition" onClick={submitUserEdit}>Salva</button>
-                          <button type="button" className="rounded-xl border border-slate-700 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-800 transition" onClick={cancelEditUser}>Annulla</button>
+                          <button type="button" className="rounded-2xl bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400 transition" onClick={submitUserEdit}>Salva</button>
+                          <button type="button" className="rounded-2xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-slate-800 transition" onClick={cancelEditUser}>Annulla</button>
                         </div>
                       </div>
                     ) : (
                       <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <div className="font-semibold text-slate-100">{user.username}</div>
-                          <div className="text-sm text-slate-500">{user.email || 'Nessuna email'} · {user.role}</div>
+                        <div className="min-w-0">
+                          <p className="font-medium text-slate-100 truncate">{u.username}</p>
+                          <p className="text-xs text-slate-500">{u.role}{u.email ? ` · ${u.email}` : ''}</p>
                         </div>
-                        <div className="flex gap-2">
-                          <button type="button" className="rounded-2xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition" onClick={() => startEditUser(user)}>Modifica</button>
-                          {user.role !== 'admin' && (
-                            <DeleteButton itemId={user.id} type="users" onDelete={requestDelete} />
-                          )}
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button type="button" className="rounded-2xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800 transition" onClick={() => startEditUser(u)}>Modifica</button>
+                          <DeleteButton itemId={u.id} type="users" onDelete={requestDelete} />
                         </div>
                       </div>
                     )}
@@ -710,16 +719,19 @@ export default function AdminPanel() {
 
             {activeTab === 'ricambi' && (
               <>
-                <h3 className="text-lg font-semibold text-slate-100 mb-1">Elenco pezzi di ricambio</h3>
-                {spareParts.length === 0 && <p className="text-sm text-slate-500">Nessun pezzo di ricambio.</p>}
+                <h3 className="text-lg font-semibold text-slate-100 mb-1">Pezzi di Ricambio</h3>
+                {spareParts.length === 0 && <p className="text-sm text-slate-500">Nessun ricambio.</p>}
                 {spareParts.map((part) => (
                   <div key={part.id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-3">
-                    <div>
-                      <div className="font-semibold text-slate-100">{part.name}</div>
-                      <div className="text-sm text-slate-500">{Array.isArray(part.tipologia) ? part.tipologia.join(', ') : (part.tipologia || 'Nessuna tipologia')} · {part.codice ? `Cod. ${part.codice}` : 'Nessun codice'}</div>
+                    <div className="min-w-0">
+                      <p className="font-medium text-slate-100 truncate">{part.name}{part.codice ? ` (${part.codice})` : ''}</p>
+                      <p className="text-xs text-slate-500">
+                        Qtà: {part.quantita ?? 0} · Scorta min: {part.scorta_minima ?? 1}
+                        {(part.usage_count ?? 0) > 0 ? ` · ${part.usage_count} casi` : ''}
+                      </p>
                     </div>
-                    <div className="flex gap-2">
-                      <button type="button" className="rounded-2xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition" onClick={() => startEditSparePart(part)}>Modifica</button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button type="button" className="rounded-2xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800 transition" onClick={() => startEditSparePart(part)}>Modifica</button>
                       <DeleteButton itemId={part.id} usageCount={part.usage_count} type="spare_parts" onDelete={requestDelete} />
                     </div>
                   </div>
@@ -729,22 +741,18 @@ export default function AdminPanel() {
 
             {activeTab === 'soluzioni' && (
               <>
-                <h3 className="text-lg font-semibold text-slate-100 mb-1">Elenco soluzioni</h3>
+                <h3 className="text-lg font-semibold text-slate-100 mb-1">Soluzioni applicate</h3>
                 {solutions.length === 0 && <p className="text-sm text-slate-500">Nessuna soluzione.</p>}
                 {solutions.map((sol) => (
                   <div key={sol.id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-3">
-                    <div>
-                      <div className="font-semibold text-slate-100">{sol.name}</div>
-                      <div className="text-sm text-slate-500">{sol.description || 'Nessuna descrizione'}</div>
-                      {sol.problem_ids && sol.problem_ids.length > 0 && (
-                        <div className="text-xs text-sky-400 mt-1">
-                          Collegata a: {sol.problem_ids.map(pid => problems.find(p => p.id === pid)?.name).filter(Boolean).join(', ')}
-                        </div>
-                      )}
+                    <div className="min-w-0">
+                      <p className="font-medium text-slate-100 truncate">{sol.name}</p>
+                      {sol.description && <p className="text-xs text-slate-500 truncate">{sol.description}</p>}
+                      {(sol.usage_count ?? 0) > 0 && <p className="text-xs text-slate-500">{sol.usage_count} casi</p>}
                     </div>
-                    <div className="flex gap-2">
-                      <button type="button" className="rounded-2xl bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition" onClick={() => startEditSolution(sol)}>Modifica</button>
-                      <DeleteButton itemId={sol.id} type="solutions" onDelete={requestDelete} />
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button type="button" className="rounded-2xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800 transition" onClick={() => startEditSolution(sol)}>Modifica</button>
+                      <DeleteButton itemId={sol.id} usageCount={sol.usage_count} type="solutions" onDelete={requestDelete} />
                     </div>
                   </div>
                 ))}
