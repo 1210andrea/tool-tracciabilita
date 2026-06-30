@@ -44,13 +44,15 @@ sparepartsRoutes.get(
 );
 
 // ── GET /api/spare-parts/by-type/:type ─────────────────────────────────────
+// La colonna tipologia può contenere valori multipli separati da virgola (es. "SR5,SR11,SR14")
+// Cerca il tipo richiesto come elemento nella lista CSV
 sparepartsRoutes.get('/spare-parts/by-type/:type', authMiddleware, async (req, res, next) => {
   try {
     const result = await pool.query(
       `SELECT sp.id, sp.name, sp.description, sp.codice, sp.quantita, sp.scorta_minima,
               COALESCE(sp.quantita_riordino, 10) AS quantita_riordino, sp.created_at
        FROM spare_parts sp
-       WHERE sp.tipologia = $1
+       WHERE ',' || sp.tipologia || ',' ILIKE '%,' || $1 || ',%'
        ORDER BY sp.name ASC`,
       [req.params.type]
     );
