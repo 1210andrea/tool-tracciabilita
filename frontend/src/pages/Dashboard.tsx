@@ -18,7 +18,9 @@ import { CategoriesSelect } from '../components/CategoriesSelect';
 import { CaseDetailModal, type CaseDetail } from '../components/CaseDetailModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 
+
 const API_URL = '/api';
+
 
 type CaseItem = {
   id: string;
@@ -40,10 +42,12 @@ type CaseItem = {
   operator_name?: string;
 };
 
+
 type MachineItem = { id: string; code: string; name: string; line?: string };
 type Category = { id: string; type: 'operator' | 'problem' | 'cause'; name: string };
 type TrendItem = { date: string; count: number };
 const TOP_OPTIONS = [5, 10, 15] as const;
+
 
 function TopSelector({ value, onChange }: { value: number; onChange: (n: number) => void }) {
   return (
@@ -59,6 +63,7 @@ function TopSelector({ value, onChange }: { value: number; onChange: (n: number)
   );
 }
 
+
 export default function Dashboard() {
   const { token, user } = useAuth();
   const [cases, setCases] = useState<CaseItem[]>([]);
@@ -72,6 +77,7 @@ export default function Dashboard() {
   const [problemiTempo, setProblemiTempo] = useState<{ nome: string; tempo_totale: number }[]>([]);
   const [summary, setSummary] = useState({ total: 0, this_month: 0 });
 
+
   const [monthFilter, setMonthFilter] = useState('');
   const [yearFilter, setYearFilter] = useState('');
   const [machineIdFilter, setMachineIdFilter] = useState('');
@@ -83,12 +89,14 @@ export default function Dashboard() {
   const [problemIdFilter, setProblemIdFilter] = useState('');
   const [causeIdFilter, setCauseIdFilter] = useState('');
 
+
   const [topProblemsLimit, setTopProblemsLimit] = useState(5);
   const [topProblemsByLineLimit, setTopProblemsByLineLimit] = useState(5);
   const [topCausesLimit, setTopCausesLimit] = useState(5);
   const [topMachinesLimit, setTopMachinesLimit] = useState(5);
   const [topSparePartsLimit, setTopSparePartsLimit] = useState(5);
   const [topProblemiTempoLimit, setTopProblemiTempoLimit] = useState(5);
+
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [page, setPage] = useState(1);
@@ -99,6 +107,7 @@ export default function Dashboard() {
   const [editingCase, setEditingCase] = useState<CaseDetail | null>(null);
   const [loadingCaseDetail, setLoadingCaseDetail] = useState(false);
   const [deletingCase, setDeletingCase] = useState<CaseItem | null>(null);
+
 
   const filterParams = useMemo(
     () => ({
@@ -117,6 +126,7 @@ export default function Dashboard() {
   );
 
   const caseParams = useMemo(() => ({ ...filterParams, page, limit }), [filterParams, page, limit]);
+
 
   const loadData = async () => {
     if (!token) return;
@@ -137,6 +147,7 @@ export default function Dashboard() {
           params: { ...filterParams, limit: topProblemiTempoLimit }
         })
       ]);
+
 
       setCases(casesResp.data.items || []);
       setTotal(casesResp.data.total || 0);
@@ -163,43 +174,50 @@ export default function Dashboard() {
     }
   };
 
+
   const loadMachines = async () => {
     if (!token) return;
     try {
       const resp = await axios.get(`${API_URL}/machines`, { headers: { Authorization: `Bearer ${token}` } });
-      setMachines(resp.data.items || []);
+      setMachines(Array.isArray(resp.data) ? resp.data : resp.data.items || resp.data.data || []);
     } catch {
       setMachines([]);
     }
   };
 
+
   const loadCategories = async () => {
     if (!token) return;
     try {
       const resp = await axios.get(`${API_URL}/categories`, { headers: { Authorization: `Bearer ${token}` } });
-      setCategories(resp.data.items || []);
+      setCategories(Array.isArray(resp.data) ? resp.data : resp.data.items || resp.data.data || []);
     } catch {
       setCategories([]);
     }
   };
+
 
   useEffect(() => {
     loadMachines();
     loadCategories();
   }, [token]);
 
+
   useEffect(() => {
     loadData();
   }, [token, caseParams, filterParams, topProblemsLimit, topProblemsByLineLimit, topCausesLimit, topMachinesLimit, topSparePartsLimit, topProblemiTempoLimit]);
+
 
   useEffect(() => {
     setPage(1);
   }, [monthFilter, yearFilter, machineIdFilter, dateFrom, dateTo, timeFrom, timeTo, lineFilter, problemIdFilter, causeIdFilter]);
 
+
   useSocket((_event, payload) => {
     setEventMessage(`Nuovo aggiornamento caso: ${payload && (payload as any).caseId ? (payload as any).caseId : 'aggiornamento disponibile'}`);
     loadData();
   });
+
 
   const resetFilters = () => {
     setPage(1);
@@ -215,8 +233,10 @@ export default function Dashboard() {
     setCauseIdFilter('');
   };
 
+
   const canEditCase = (item: CaseItem) => user?.role === 'admin' || item.created_by === user?.id;
   const canDeleteCase = user?.role === 'admin';
+
 
   // FIX: fetch il dettaglio completo del caso prima di aprire il modal
   // La lista /cases non include soluzioni_provate/applicate/pezzi_ricambio come oggetti JSON
@@ -238,6 +258,7 @@ export default function Dashboard() {
     }
   };
 
+
   const handleDelete = async () => {
     if (!token || !deletingCase) return;
     try {
@@ -251,6 +272,7 @@ export default function Dashboard() {
       setDeletingCase(null);
     }
   };
+
 
   const handleExportCSV = async () => {
     if (!token) return;
@@ -275,12 +297,15 @@ export default function Dashboard() {
     }
   };
 
+
   const pageCount = Math.max(1, Math.ceil(total / limit));
+
 
   const trendChart = useMemo(
     () => trend.map((item) => ({ date: item.date.slice(5), count: Number(item.count) })),
     [trend]
   );
+
 
   const activeFilters = [
     monthFilter ? 'mese' : null,
@@ -295,15 +320,19 @@ export default function Dashboard() {
     causeIdFilter ? 'causa' : null
   ].filter(Boolean);
 
+
   const caseLabel = (item: CaseItem) =>
     [item.machine_code, item.problem_name !== 'N.D.' ? item.problem_name : null].filter(Boolean).join(' · ') || item.machine_code;
 
+
   const chartTooltipStyle = { backgroundColor: '#0f172a', borderRadius: 12, border: '1px solid #334155' };
+
 
   const sparePartsChart = useMemo(
     () => topSpareParts.map((item) => ({ name: item.spare_part, count: Number(item.usage_count) })),
     [topSpareParts]
   );
+
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
@@ -317,9 +346,11 @@ export default function Dashboard() {
         </Link>
       </div>
 
+
       {eventMessage && (
         <div className="rounded-2xl border border-slate-700 bg-slate-900/80 px-4 py-3 text-sm text-slate-200">{eventMessage}</div>
       )}
+
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div className="rounded-3xl bg-slate-900/80 p-5 shadow-lg shadow-slate-950/20 sm:p-6">
@@ -336,6 +367,7 @@ export default function Dashboard() {
           <div className="mt-3 text-3xl font-semibold sm:text-4xl">{summary.this_month}</div>
         </div>
       </div>
+
 
       <div className="rounded-3xl bg-slate-900/80 p-4 shadow-lg shadow-slate-950/20 sm:p-6">
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -355,6 +387,7 @@ export default function Dashboard() {
             </button>
           </div>
         </div>
+
 
         <div className="space-y-5">
           <div>
@@ -392,6 +425,7 @@ export default function Dashboard() {
             </div>
           </div>
 
+
           <div>
             <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Attributi caso</div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -420,6 +454,7 @@ export default function Dashboard() {
         </div>
       </div>
 
+
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div className="rounded-3xl bg-slate-900/80 p-4 shadow-lg shadow-slate-950/20 sm:p-6">
           <h3 className="mb-4 text-lg font-semibold text-slate-100">Trend casi</h3>
@@ -435,6 +470,7 @@ export default function Dashboard() {
             </ResponsiveContainer>
           </div>
         </div>
+
 
         <div className="rounded-3xl bg-slate-900/80 p-4 shadow-lg shadow-slate-950/20 sm:p-6">
           <div className="mb-4 flex items-center justify-between gap-2">
@@ -458,6 +494,7 @@ export default function Dashboard() {
           </div>
         </div>
 
+
         <div className="rounded-3xl bg-slate-900/80 p-4 shadow-lg shadow-slate-950/20 sm:p-6">
           <div className="mb-4 flex items-center justify-between gap-2">
             <h3 className="text-lg font-semibold text-slate-100">Top problemi</h3>
@@ -479,6 +516,7 @@ export default function Dashboard() {
             )}
           </div>
         </div>
+
 
         <div className="rounded-3xl bg-slate-900/80 p-4 shadow-lg shadow-slate-950/20 sm:p-6">
           <div className="mb-4 flex items-center justify-between gap-2">
@@ -502,6 +540,7 @@ export default function Dashboard() {
           </div>
         </div>
 
+
         <div className="rounded-3xl bg-slate-900/80 p-4 shadow-lg shadow-slate-950/20 sm:p-6">
           <div className="mb-4 flex items-center justify-between gap-2">
             <h3 className="text-lg font-semibold text-slate-100">Top macchine</h3>
@@ -524,6 +563,7 @@ export default function Dashboard() {
           </div>
         </div>
 
+
         <div className="rounded-3xl bg-slate-900/80 p-4 shadow-lg shadow-slate-950/20 sm:p-6">
           <div className="mb-4 flex items-center justify-between gap-2">
             <h3 className="text-lg font-semibold text-slate-100">Top ricambi usati</h3>
@@ -545,6 +585,7 @@ export default function Dashboard() {
             )}
           </div>
         </div>
+
 
         <div className="rounded-3xl bg-slate-900/80 p-4 shadow-lg shadow-slate-950/20 sm:p-6 md:col-span-2">
           <div className="mb-4 flex items-center justify-between gap-2">
@@ -575,6 +616,7 @@ export default function Dashboard() {
           </div>
         </div>
 
+
         <div className="rounded-3xl bg-slate-900/80 p-4 shadow-lg shadow-slate-950/20 sm:p-6 md:col-span-2">
           <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -583,6 +625,7 @@ export default function Dashboard() {
             </div>
             <div className="text-sm text-slate-400">{loading ? 'Aggiornamento...' : `${cases.length} casi visualizzati`}</div>
           </div>
+
 
           <div className="overflow-x-auto rounded-3xl border border-slate-700 bg-slate-950/90">
             <table className="min-w-[720px] w-full divide-y divide-slate-800 text-left text-sm text-slate-200">
@@ -639,6 +682,7 @@ export default function Dashboard() {
             </table>
           </div>
 
+
           <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-sm text-slate-400">Pagina {page} di {pageCount}</div>
             <div className="flex items-center gap-2">
@@ -653,6 +697,7 @@ export default function Dashboard() {
         </div>
       </div>
 
+
       {token && (
         <CaseDetailModal
           open={!!editingCase}
@@ -666,6 +711,7 @@ export default function Dashboard() {
           onSaved={loadData}
         />
       )}
+
 
       <ConfirmModal
         open={!!deletingCase}
