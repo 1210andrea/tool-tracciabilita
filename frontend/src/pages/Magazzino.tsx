@@ -54,7 +54,6 @@ const TIPO_COLOR: Record<string, string> = {
   rettifica_manuale: 'text-amber-400',
 };
 
-type EditForm = { codice: string; tipologia: string; scorta_minima: string; quantita_riordino: string; };
 type RettificaForm = { delta: string; note: string; };
 type OrdineForm = { quantita_ordinata: string; note: string; };
 
@@ -68,10 +67,6 @@ export default function Magazzino() {
   const [message, setMessage] = useState<{ text: string; type: 'info' | 'error' } | null>(null);
   const [search, setSearch] = useState('');
   const [filterSottoScorta, setFilterSottoScorta] = useState(false);
-
-  // Edit modal
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<EditForm>({ codice: '', tipologia: '', scorta_minima: '', quantita_riordino: '' });
 
   // Rettifica modal
   const [rettificaId, setRettificaId] = useState<string | null>(null);
@@ -125,31 +120,6 @@ export default function Magazzino() {
   const countSottoScorta = parts.filter((p) => p.sotto_scorta || p.giacenza_negativa).length;
   const countSenzaOrdine = parts.filter((p) => (p.sotto_scorta || p.giacenza_negativa) && !p.ordine_aperto).length;
 
-  // ── EDIT ────────────────────────────────────────────────────────────────────
-  const startEdit = (part: SparePart) => {
-    setEditingId(part.id);
-    setEditForm({
-      codice: part.codice ?? '',
-      tipologia: part.tipologia ?? '',
-      scorta_minima: String(part.scorta_minima),
-      quantita_riordino: String(part.quantita_riordino),
-    });
-  };
-
-  const submitEdit = async (part: SparePart) => {
-    try {
-      await axios.put(`${API_URL}/spare-parts/${part.id}`, {
-        codice: editForm.codice.trim() || null,
-        tipologia: editForm.tipologia.trim() || null,
-        scorta_minima: parseInt(editForm.scorta_minima) || 1,
-        quantita_riordino: parseInt(editForm.quantita_riordino) || 10,
-      }, headers);
-      msg('Ricambio aggiornato.');
-      setEditingId(null);
-      load();
-    } catch (err: any) { msg(err?.response?.data?.error ?? 'Errore aggiornamento.', 'error'); }
-  };
-
   // ── RETTIFICA ────────────────────────────────────────────────────────────────
   const openRettifica = (part: SparePart) => {
     setRettificaId(part.id);
@@ -195,7 +165,6 @@ export default function Magazzino() {
         { spare_part_id: ordinePartId, quantita_ordinata: qty, note: ordineForm.note.trim() || null },
         { ...headers, responseType: 'blob' }
       );
-      // Scarica il PDF automaticamente
       const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
       const a = document.createElement('a');
       a.href = url;
@@ -210,7 +179,6 @@ export default function Magazzino() {
       setOrdinePartId(null);
       load();
     } catch (err: any) {
-      // Se la response è blob e c'è un errore, proviamo a leggere il json
       if (err?.response?.data instanceof Blob) {
         const text = await err.response.data.text();
         try { const json = JSON.parse(text); msg(json.error ?? 'Errore creazione ordine.', 'error'); return; } catch {}
@@ -341,103 +309,62 @@ export default function Magazzino() {
                   : 'border-slate-800 bg-slate-950/80'
               } p-4 sm:p-5`}
             >
-              {editingId === part.id ? (
-                /* ── EDIT MODE ── */
-                <div className="space-y-3">
-                  <p className="font-semibold text-slate-100">{part.name}</p>
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                    <div>
-                      <label className="text-xs text-slate-400">Codice</label>
-                      <input value={editForm.codice} onChange={(e) => setEditForm((c) => ({ ...c, codice: e.target.value }))}
-                        placeholder="SP-001"
-                        className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none" />
-                    </div>
-                    <div>
-                      <label className="text-xs text-slate-400">Tipologia</label>
-                      <input value={editForm.tipologia} onChange={(e) => setEditForm((c) => ({ ...c, tipologia: e.target.value }))}
-                        placeholder="es. nastro"
-                        className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none" />
-                    </div>
-                    <div>
-                      <label className="text-xs text-slate-400">Scorta minima</label>
-                      <input type="number" min={0} value={editForm.scorta_minima} onChange={(e) => setEditForm((c) => ({ ...c, scorta_minima: e.target.value }))}
-                        className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none" />
-                    </div>
-                    <div>
-                      <label className="text-xs text-slate-400">Qty riordino</label>
-                      <input type="number" min={1} value={editForm.quantita_riordino} onChange={(e) => setEditForm((c) => ({ ...c, quantita_riordino: e.target.value }))}
-                        className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none" />
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <button type="button" onClick={() => submitEdit(part)}
-                      className="rounded-2xl bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400 transition">Salva</button>
-                    <button type="button" onClick={() => setEditingId(null)}
-                      className="rounded-2xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800 transition">Annulla</button>
-                  </div>
-                </div>
-              ) : (
-                /* ── VIEW MODE ── */
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-semibold text-slate-100">{part.name}</span>
-                      {part.codice && <span className="text-xs text-slate-500 font-mono">{part.codice}</span>}
-                      <BadgeGiacenza part={part} />
-                      {part.ordine_aperto && (
-                        <Link to={`/ordini`}
-                          className="rounded-full bg-sky-500/15 px-3 py-1 text-xs font-bold text-sky-400 hover:bg-sky-500/30 transition">
-                          Ordine aperto
-                        </Link>
-                      )}
-                    </div>
-                    {part.description && <p className="text-xs text-slate-500 mt-0.5">{part.description}</p>}
-                    <div className="mt-2 flex flex-wrap gap-4 text-sm">
-                      <span className="text-slate-300">
-                        Giacenza: <strong className={
-                          part.giacenza_negativa ? 'text-rose-400'
-                          : part.sotto_scorta ? 'text-amber-400'
-                          : 'text-emerald-400'
-                        }>{part.quantita}</strong>
-                      </span>
-                      <span className="text-slate-500">Scorta min: {part.scorta_minima}</span>
-                      <span className="text-slate-500">Qty riordino: {part.quantita_riordino}</span>
-                      {part.usage_count > 0 && <span className="text-slate-600">Usato in {part.usage_count} casi</span>}
-                    </div>
-                    {part.tipologia && (
-                      <div className="mt-1.5">
-                        <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-400">{part.tipologia}</span>
-                      </div>
+              {/* ── VIEW MODE ── */}
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-slate-100">{part.name}</span>
+                    {part.codice && <span className="text-xs text-slate-500 font-mono">{part.codice}</span>}
+                    <BadgeGiacenza part={part} />
+                    {part.ordine_aperto && (
+                      <Link to={`/ordini`}
+                        className="rounded-full bg-sky-500/15 px-3 py-1 text-xs font-bold text-sky-400 hover:bg-sky-500/30 transition">
+                        Ordine aperto
+                      </Link>
                     )}
                   </div>
+                  {part.description && <p className="text-xs text-slate-500 mt-0.5">{part.description}</p>}
+                  <div className="mt-2 flex flex-wrap gap-4 text-sm">
+                    <span className="text-slate-300">
+                      Giacenza: <strong className={
+                        part.giacenza_negativa ? 'text-rose-400'
+                        : part.sotto_scorta ? 'text-amber-400'
+                        : 'text-emerald-400'
+                      }>{part.quantita}</strong>
+                    </span>
+                    <span className="text-slate-500">Scorta min: {part.scorta_minima}</span>
+                    <span className="text-slate-500">Qty riordino: {part.quantita_riordino}</span>
+                    {part.usage_count > 0 && <span className="text-slate-600">Usato in {part.usage_count} casi</span>}
+                  </div>
+                  {part.tipologia && (
+                    <div className="mt-1.5">
+                      <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-400">{part.tipologia}</span>
+                    </div>
+                  )}
+                </div>
 
-                  {/* Azioni */}
-                  <div className="flex flex-wrap gap-2 shrink-0">
-                    {isWarehouse && (
-                      <>
-                        <button type="button" onClick={() => startEdit(part)}
-                          className="rounded-2xl bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-700 transition">
-                          Modifica
+                {/* Azioni */}
+                <div className="flex flex-wrap gap-2 shrink-0">
+                  {isWarehouse && (
+                    <>
+                      <button type="button" onClick={() => openRettifica(part)}
+                        className="rounded-2xl bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-700 transition">
+                        Rettifica ±
+                      </button>
+                      {(part.sotto_scorta || part.giacenza_negativa) && !part.ordine_aperto && (
+                        <button type="button" onClick={() => openCreaOrdine(part)}
+                          className="rounded-2xl bg-amber-500 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-amber-400 transition">
+                          Crea ordine
                         </button>
-                        <button type="button" onClick={() => openRettifica(part)}
-                          className="rounded-2xl bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-700 transition">
-                          Rettifica ±
-                        </button>
-                        {(part.sotto_scorta || part.giacenza_negativa) && !part.ordine_aperto && (
-                          <button type="button" onClick={() => openCreaOrdine(part)}
-                            className="rounded-2xl bg-amber-500 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-amber-400 transition">
-                            Crea ordine
-                          </button>
-                        )}
-                      </>
-                    )}
-                    <button type="button" onClick={() => openStorico(part)}
-                      className="rounded-2xl bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-700 transition">
-                      Storico
-                    </button>
-                  </div>
+                      )}
+                    </>
+                  )}
+                  <button type="button" onClick={() => openStorico(part)}
+                    className="rounded-2xl bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-100 hover:bg-slate-700 transition">
+                    Storico
+                  </button>
                 </div>
-              )}
+              </div>
             </div>
           ))}
         </div>
