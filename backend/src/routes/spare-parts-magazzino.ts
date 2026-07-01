@@ -29,9 +29,16 @@ sparePartsMagazzinoRoutes.get('/:id/movimenti', authMiddleware, async (req, res,
     );
     const total = Number(countRes.rows[0].count);
 
-    const reorderLabel = `COALESCE(m.riferimento_numero::text, LEFT(m.riferimento_id::text, 8))`;
-    const caseLabel = `COALESCE(m.riferimento_numero, LEFT(m.riferimento_id::text, 8))`;
-    const defaultLabel = `COALESCE(m.riferimento_numero::text, m.riferimento_id::text)`;
+    const useLegacyMovements = movementsTable === 'movimenti_magazzino';
+    const reorderLabel = useLegacyMovements
+      ? `m.riferimento_numero::text`
+      : `LEFT(m.riferimento_id::text, 8)`;
+    const caseLabel = useLegacyMovements
+      ? `COALESCE(m.riferimento_numero, LEFT(m.riferimento_id::text, 8))`
+      : `LEFT(m.riferimento_id::text, 8)`;
+    const defaultLabel = useLegacyMovements
+      ? `m.riferimento_numero::text`
+      : `m.riferimento_id::text`;
 
     const r = await pool.query(
       `SELECT

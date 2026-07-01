@@ -110,7 +110,12 @@ sparepartsRoutes.post(
          tipologia?.trim() ?? null, quantita ?? 0, scorta_minima ?? 1, quantita_riordino ?? 10]
       );
       res.json({ item: result.rows[0] });
-    } catch (e) { next(e); }
+    } catch (e: any) {
+      if (e?.code === '23505') {
+        return res.status(400).json({ error: 'Codice articolo già esistente o dato duplicato.' });
+      }
+      next(e);
+    }
   }
 );
 
