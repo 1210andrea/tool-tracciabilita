@@ -98,6 +98,16 @@ async function syncCaseOperatori(client: any, caseId: string, operatoreIds: stri
   }
 }
 
+async function syncCaseCauses(client: any, caseId: string, causeIds: string[]) {
+  await client.query('DELETE FROM case_causes WHERE case_id = $1', [caseId]);
+  for (const causeId of causeIds) {
+    if (causeId) await client.query(
+      'INSERT INTO case_causes(case_id, cause_id) VALUES($1, $2) ON CONFLICT DO NOTHING',
+      [caseId, causeId]
+    );
+  }
+}
+
 // ─── GET list ────────────────────────────────────────────────────────────────
 casesRoutes.get('/', authMiddleware, async (req, res, next) => {
   try {
@@ -379,8 +389,9 @@ casesRoutes.post('/', authMiddleware, async (req, res, next) => {
 
       // Inserisci tutti gli operatori nella tabella ponte
       await syncCaseOperatori(client, caseId, operatoreIds);
+      await syncCaseCauses(client, caseId, causeIdsToStore);
 
-      if (body.soluzioni_provate?.length) {
+      if (soluzioniProvate.length) {
         for (const solId of body.soluzioni_provate) {
           if (solId) await client.query(
             `INSERT INTO case_solutions_tried(case_id, solution_id) VALUES($1, $2) ON CONFLICT DO NOTHING`,

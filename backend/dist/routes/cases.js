@@ -92,6 +92,13 @@ async function syncCaseOperatori(client, caseId, operatoreIds) {
             await client.query('INSERT INTO case_operatori(case_id, operatore_id) VALUES($1, $2) ON CONFLICT DO NOTHING', [caseId, opId]);
     }
 }
+async function syncCaseCauses(client, caseId, causeIds) {
+    await client.query('DELETE FROM case_causes WHERE case_id = $1', [caseId]);
+    for (const causeId of causeIds) {
+        if (causeId)
+            await client.query('INSERT INTO case_causes(case_id, cause_id) VALUES($1, $2) ON CONFLICT DO NOTHING', [caseId, causeId]);
+    }
+}
 // ─── GET list ────────────────────────────────────────────────────────────────
 exports.casesRoutes.get('/', auth_1.authMiddleware, async (req, res, next) => {
     try {
@@ -340,7 +347,7 @@ exports.casesRoutes.post('/', auth_1.authMiddleware, async (req, res, next) => {
                           status, created_by, assigned_to, notes, tempo_impiego, operatore_id)
          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
          RETURNING *`, [
-                finalMachineId, body.problem_id ?? null, body.cause_id ?? null,
+                finalMachineId, body.problem_id ?? null, finalCauseId,
                 solutionAppliedDesc || null, solutionAppliedDesc || null, null,
                 'closed', finalUtenteId, null,
                 finalNotes?.trim() || null, body.tempo_impiego, primaryOperatoreId
@@ -348,7 +355,8 @@ exports.casesRoutes.post('/', auth_1.authMiddleware, async (req, res, next) => {
             const caseId = r.rows[0].id;
             // Inserisci tutti gli operatori nella tabella ponte
             await syncCaseOperatori(client, caseId, operatoreIds);
-            if (body.soluzioni_provate?.length) {
+            await syncCaseCauses(client, caseId, causeIdsToStore);
+            if (soluzioniProvate.length) {
                 for (const solId of body.soluzioni_provate) {
                     if (solId)
                         await client.query(`INSERT INTO case_solutions_tried(case_id, solution_id) VALUES($1, $2) ON CONFLICT DO NOTHING`, [caseId, solId]);
