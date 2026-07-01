@@ -66,6 +66,17 @@ async function getCaseRow(id) {
     const r = await db_1.pool.query(`${CASE_QUERY} WHERE c.id = $1`, [id]);
     return r.rows[0];
 }
+function isUuid(value) {
+    return typeof value === 'string' && /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(value);
+}
+function sanitizeIdArray(values) {
+    return Array.isArray(values)
+        ? values.filter((v) => typeof v === 'string' && v.trim() !== '')
+        : [];
+}
+function uniqueIds(ids) {
+    return Array.from(new Set(ids));
+}
 async function validateOperatoreId(client, opId) {
     if (!opId)
         return 'ID operatore non valido';
@@ -235,6 +246,14 @@ exports.casesRoutes.get('/export/csv', auth_1.authMiddleware, async (req, res, n
 exports.casesRoutes.post('/', auth_1.authMiddleware, async (req, res, next) => {
     try {
         const body = req.body;
+        const operatoreIds = uniqueIds(Array.isArray(body.operatori_ids)
+            ? body.operatori_ids.filter((v) => typeof v === 'string' && v.trim() !== '')
+            : body.operatore_id ? [body.operatore_id] : []);
+        const soluzioniProvate = uniqueIds(sanitizeIdArray(body.soluzioni_provate));
+        const soluzioniApplicate = uniqueIds(sanitizeIdArray(body.soluzioni_applicate));
+        const pezziRicambio = uniqueIds(sanitizeIdArray(body.pezzi_ricambio));
+        const causeIds = uniqueIds(sanitizeIdArray(body.cause_ids));
+        const finalCauseId = body.cause_id || causeIds[0] || null;
         // Risolvi machine_id
         let finalMachineId = body.machine_id;
         if (!finalMachineId && body.machine_code) {
@@ -245,15 +264,13 @@ exports.casesRoutes.post('/', auth_1.authMiddleware, async (req, res, next) => {
         }
         if (!finalMachineId)
             return res.status(400).json({ error: 'machine_id o machine_code obbligatorio' });
+        if (!body.problem_id)
+            return res.status(400).json({ error: 'problem_id obbligatorio' });
+        if (!finalCauseId)
+            return res.status(400).json({ error: 'cause_id o cause_ids obbligatorio' });
+        if (soluzioniApplicate.length === 0)
+            return res.status(400).json({ error: 'Almeno una soluzione applicata è obbligatoria.' });
         const finalUtenteId = req.user.id;
-        // Operatori
-        let operatoreIds = [];
-        if (Array.isArray(body.operatori_ids) && body.operatori_ids.length > 0) {
-            operatoreIds = body.operatori_ids.filter(Boolean);
-        }
-        else if (body.operatore_id) {
-            operatoreIds = [body.operatore_id];
-        }
         // Note max 1000 chars
         const finalNotes = body.notes ?? null;
         if (finalNotes && finalNotes.length > 1000) {
@@ -275,10 +292,47 @@ exports.casesRoutes.post('/', auth_1.authMiddleware, async (req, res, next) => {
                     return res.status(400).json({ error: err });
                 }
             }
+            if (!isUuid(body.problem_id)) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: 'problem_id non valido' });
+            }
+            if (!isUuid(finalCauseId)) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: 'cause_id non valido' });
+            }
+            const problemExists = await client.query(`SELECT 1 FROM categories WHERE id = $1 AND type = 'problem'`, [body.problem_id]);
+            if (!problemExists.rows[0]) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: 'Problema non trovato' });
+            }
+            const causeIdsToStore = uniqueIds([finalCauseId, ...causeIds]);
+            const causeCount = await client.query(`SELECT COUNT(*)::int AS count FROM categories WHERE id = ANY($1::uuid[]) AND type = 'cause'`, [causeIdsToStore]);
+            if ((causeCount.rows[0]?.count ?? 0) !== causeIdsToStore.length) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: 'Una o più cause non sono valide' });
+            }
+            if (soluzioniProvate.length > 0) {
+                const provateCount = await client.query(`SELECT COUNT(*)::int AS count FROM solutions_applied WHERE id = ANY($1::uuid[])`, [soluzioniProvate]);
+                if ((provateCount.rows[0]?.count ?? 0) !== soluzioniProvate.length) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({ error: 'Una o più soluzioni provate non sono valide' });
+                }
+            }
             let solutionAppliedDesc = '';
-            if (body.soluzioni_applicate?.length) {
-                const saR = await client.query(`SELECT name, description FROM solutions_applied WHERE id = ANY($1::uuid[])`, [body.soluzioni_applicate]);
+            if (soluzioniApplicate.length > 0) {
+                const saR = await client.query(`SELECT id, name, description FROM solutions_applied WHERE id = ANY($1::uuid[])`, [soluzioniApplicate]);
+                if (saR.rows.length !== soluzioniApplicate.length) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({ error: 'Una o più soluzioni applicate non sono valide' });
+                }
                 solutionAppliedDesc = saR.rows.map((row) => row.description ?? row.name).filter(Boolean).join(', ');
+            }
+            if (pezziRicambio.length > 0) {
+                const partsCount = await client.query(`SELECT COUNT(*)::int AS count FROM spare_parts WHERE id = ANY($1::uuid[])`, [pezziRicambio]);
+                if ((partsCount.rows[0]?.count ?? 0) !== pezziRicambio.length) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({ error: 'Un o più pezzi di ricambio non sono validi' });
+                }
             }
             // Il primo operatore va anche in operatore_id per compatibilità legacy
             const primaryOperatoreId = operatoreIds[0] ?? null;
