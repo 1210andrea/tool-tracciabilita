@@ -34,11 +34,11 @@ sparePartsMagazzinoRoutes.get('/:id/movimenti', authMiddleware, async (req, res,
          CASE
            WHEN m.riferimento_tipo = 'reorder'
              THEN m.riferimento_numero::text
-             WHEN m.riferimento_tipo = 'case'
-               THEN COALESCE(
-                 m.riferimento_numero,
-                 (SELECT case_number::text FROM cases WHERE id = m.riferimento_id)
-               )
+           WHEN m.riferimento_tipo = 'case'
+             THEN COALESCE(
+               m.riferimento_numero,
+               (SELECT case_number::text FROM cases WHERE id = m.riferimento_id)
+             )
            ELSE m.riferimento_numero::text
          END AS riferimento_label
        FROM movimenti_magazzino m
