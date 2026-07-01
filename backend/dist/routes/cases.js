@@ -427,6 +427,8 @@ exports.casesRoutes.put('/:id', auth_1.authMiddleware, async (req, res, next) =>
 exports.casesRoutes.patch('/:id', auth_1.authMiddleware, async (req, res, next) => {
     try {
         const body = req.body;
+        const causeIds = uniqueIds(sanitizeIdArray(body.cause_ids));
+        const finalCauseId = body.cause_id || causeIds[0] || null;
         const caseRow = await getCaseRow(req.params.id);
         if (!caseRow)
             return res.status(404).json({ error: 'Case not found' });
@@ -460,8 +462,8 @@ exports.casesRoutes.patch('/:id', auth_1.authMiddleware, async (req, res, next) 
             const primaryOperatoreId = operatoreIds[0] ?? caseRow.operatore_id ?? null;
             const r = await client.query(`UPDATE cases SET
           machine_id = COALESCE($1, machine_id),
-          problem_id = $2,
-          cause_id = $3,
+          problem_id = COALESCE($2, problem_id),
+          cause_id = COALESCE($3, cause_id),
           description = COALESCE($4, description),
           solution = COALESCE($5, solution),
           status = COALESCE($6, status),
@@ -473,7 +475,7 @@ exports.casesRoutes.patch('/:id', auth_1.authMiddleware, async (req, res, next) 
         RETURNING *`, [
                 body.machine_id ?? null,
                 body.problem_id ?? null,
-                body.cause_id ?? null,
+                finalCauseId,
                 solutionAppliedDesc || body.description || null,
                 solutionAppliedDesc || body.solution || null,
                 body.status ?? null,
@@ -485,6 +487,9 @@ exports.casesRoutes.patch('/:id', auth_1.authMiddleware, async (req, res, next) 
             const caseNumber = r.rows[0].case_number ?? req.params.id;
             // Sync operatori
             await syncCaseOperatori(client, req.params.id, operatoreIds);
+            if (body.cause_id || body.cause_ids) {
+                await syncCaseCauses(client, req.params.id, uniqueIds([finalCauseId, ...causeIds].filter(Boolean)));
+            }
             // Update solutions tried
             await client.query(`DELETE FROM case_solutions_tried WHERE case_id = $1`, [req.params.id]);
             for (const solId of body.soluzioni_provate ?? []) {

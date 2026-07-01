@@ -478,6 +478,7 @@ casesRoutes.patch('/:id', authMiddleware, async (req, res, next) => {
       machine_id?: string;
       problem_id?: string;
       cause_id?: string;
+      cause_ids?: string[];
       description?: string;
       solution?: string;
       status?: string;
@@ -489,6 +490,9 @@ casesRoutes.patch('/:id', authMiddleware, async (req, res, next) => {
       soluzioni_provate?: string[];
       soluzioni_applicate?: string[];
     };
+
+    const causeIds = uniqueIds(sanitizeIdArray(body.cause_ids));
+    const finalCauseId = body.cause_id || causeIds[0] || null;
 
     const caseRow = await getCaseRow(req.params.id);
     if (!caseRow) return res.status(404).json({ error: 'Case not found' });
@@ -532,8 +536,8 @@ casesRoutes.patch('/:id', authMiddleware, async (req, res, next) => {
       const r = await client.query(
         `UPDATE cases SET
           machine_id = COALESCE($1, machine_id),
-          problem_id = $2,
-          cause_id = $3,
+          problem_id = COALESCE($2, problem_id),
+          cause_id = COALESCE($3, cause_id),
           description = COALESCE($4, description),
           solution = COALESCE($5, solution),
           status = COALESCE($6, status),
@@ -546,7 +550,7 @@ casesRoutes.patch('/:id', authMiddleware, async (req, res, next) => {
         [
           body.machine_id ?? null,
           body.problem_id ?? null,
-          body.cause_id ?? null,
+          finalCauseId,
           solutionAppliedDesc || body.description || null,
           solutionAppliedDesc || body.solution || null,
           body.status ?? null,
@@ -561,6 +565,9 @@ casesRoutes.patch('/:id', authMiddleware, async (req, res, next) => {
 
       // Sync operatori
       await syncCaseOperatori(client, req.params.id, operatoreIds);
+      if (body.cause_id || body.cause_ids) {
+        await syncCaseCauses(client, req.params.id, uniqueIds([finalCauseId, ...causeIds].filter(Boolean) as string[]));
+      }
 
       // Update solutions tried
       await client.query(`DELETE FROM case_solutions_tried WHERE case_id = $1`, [req.params.id]);
