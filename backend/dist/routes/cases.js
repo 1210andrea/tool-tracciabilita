@@ -357,18 +357,18 @@ exports.casesRoutes.post('/', auth_1.authMiddleware, async (req, res, next) => {
             await syncCaseOperatori(client, caseId, operatoreIds);
             await syncCaseCauses(client, caseId, causeIdsToStore);
             if (soluzioniProvate.length) {
-                for (const solId of body.soluzioni_provate) {
+                for (const solId of soluzioniProvate) {
                     if (solId)
                         await client.query(`INSERT INTO case_solutions_tried(case_id, solution_id) VALUES($1, $2) ON CONFLICT DO NOTHING`, [caseId, solId]);
                 }
             }
-            if (body.soluzioni_applicate?.length) {
-                for (const solId of body.soluzioni_applicate) {
+            if (soluzioniApplicate.length) {
+                for (const solId of soluzioniApplicate) {
                     if (solId)
                         await client.query(`INSERT INTO case_solutions_applied(case_id, solution_id) VALUES($1, $2) ON CONFLICT DO NOTHING`, [caseId, solId]);
                 }
             }
-            if (body.pezzi_ricambio?.length) {
+            if (pezziRicambio.length) {
                 for (const spId of body.pezzi_ricambio) {
                     if (spId) {
                         await client.query(`INSERT INTO case_spare_parts(case_id, spare_part_id) VALUES($1, $2) ON CONFLICT DO NOTHING`, [caseId, spId]);
