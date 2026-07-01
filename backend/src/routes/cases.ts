@@ -51,7 +51,7 @@ const CASE_QUERY = `
       FROM case_spare_parts csp
       JOIN spare_parts sp ON sp.id = csp.spare_part_id
       WHERE csp.case_id = c.id
-    ) AS pezzi_ricambio,
+    ) AS pezzi_ricambio_names,
     u.username AS created_by_username,
     op2.name AS operatore_name
   FROM cases c

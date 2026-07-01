@@ -8,8 +8,11 @@ const socketService_1 = require("../services/socketService");
 exports.machinesRoutes = (0, express_1.Router)();
 exports.machinesRoutes.get('/', auth_1.authMiddleware, async (_req, res, next) => {
     try {
-        const r = await db_1.pool.query('SELECT id, code, name, line, location, tipologia, type, posizione, created_at FROM machines ORDER BY created_at DESC');
-        res.json({ items: r.rows });
+        const r = await db_1.pool.query(`SELECT m.id, m.code, m.name, m.line, m.location, m.tipologia, m.type, m.posizione, m.created_at,
+        (SELECT COUNT(*) FROM cases WHERE machine_id = m.id) AS usage_count
+       FROM machines m
+       ORDER BY m.created_at DESC`);
+        res.json(r.rows);
     }
     catch (e) {
         next(e);
@@ -22,7 +25,7 @@ exports.machinesRoutes.get('/tipologie', auth_1.authMiddleware, async (_req, res
        WHERE tipologia IS NOT NULL AND tipologia <> ''
        ORDER BY tipologia`);
         const tipologie = r.rows.map((row) => row.tipologia);
-        res.json({ items: tipologie });
+        res.json(tipologie);
     }
     catch (e) {
         next(e);

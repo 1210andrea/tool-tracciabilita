@@ -11,8 +11,10 @@ const dashboard_1 = require("./dashboard");
 const stats_1 = require("./stats");
 const ai_1 = require("./ai");
 const spareparts_1 = require("./spareparts");
+const spare_parts_magazzino_1 = require("./spare-parts-magazzino");
 const operatori_1 = require("./operatori");
 const problem_time_1 = require("./problem_time");
+const reorders_1 = require("./reorders");
 const auth_2 = require("../middleware/auth");
 const aiService_1 = require("../services/aiService");
 function registerRoutes(app) {
@@ -26,7 +28,10 @@ function registerRoutes(app) {
     app.use('/api/dashboard', dashboard_1.dashboardRoutes);
     app.use('/api/stats', stats_1.statsRoutes);
     app.use('/api/stats', problem_time_1.problemTimeRoutes);
+    // magazzino-ricambi va PRIMA del vecchio sparepartsRoutes per override di /api/spare-parts
+    app.use('/api/spare-parts', spare_parts_magazzino_1.sparePartsMagazzinoRoutes);
     app.use('/api', spareparts_1.sparepartsRoutes);
+    app.use('/api/reorders', reorders_1.reordersRoutes);
     app.post('/api/analisi-ia', auth_2.authMiddleware, async (req, res, next) => {
         try {
             const { problem_name, problem_description, solutions_tried, solutions_applied, spare_parts_used, tempo_impiego, notes } = req.body;

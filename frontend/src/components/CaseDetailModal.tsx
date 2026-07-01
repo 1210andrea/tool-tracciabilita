@@ -121,9 +121,20 @@ export function CaseDetailModal({
 
   const problems = categories.filter((c) => c.type === 'problem');
 
-  // Helper: normalizza un array che può contenere stringhe UUID o oggetti {id}
-  const toIds = (arr: any[]): string[] =>
-    arr.map((x) => (typeof x === 'string' ? x : x?.id ?? x?.spare_part_id ?? '')).filter(Boolean);
+  // Helper: normalizza valori di tipo array o stringa in un array di ID
+  const toIds = (value: any): string[] => {
+    if (!value) return [];
+    if (typeof value === 'string') {
+      return value
+        .split(',')
+        .map((v) => v.trim())
+        .filter(Boolean);
+    }
+    if (Array.isArray(value)) {
+      return value.map((x) => (typeof x === 'string' ? x : x?.id ?? x?.spare_part_id ?? '')).filter(Boolean);
+    }
+    return [];
+  };
 
 
   useEffect(() => {

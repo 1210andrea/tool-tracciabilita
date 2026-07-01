@@ -6,331 +6,255 @@ const auth_1 = require("../middleware/auth");
 const db_1 = require("../db");
 const socketService_1 = require("../services/socketService");
 exports.casesRoutes = (0, express_1.Router)();
-const CASE_FIELDS = `c.id, c.machine_id, c.problem_id, c.cause_id, c.category_id, c.operatore_id,
-  c.description, c.solution, c.ai_solution, c.status, c.created_by, c.assigned_to,
-  c.notes, c.created_at, c.updated_at, c.tempo_impiego,
-  COALESCE(
-    (SELECT string_agg(sp.name, ', ')
-     FROM case_spare_parts csp
-     JOIN spare_parts sp ON sp.id = csp.spare_part_id
-     WHERE csp.case_id = c.id),
-    'N.D.'
-  ) AS spare_part_name,
-  COALESCE(
-    (SELECT string_agg(sa.name, ', ')
-     FROM case_solutions_applied csa
-     JOIN solutions_applied sa ON sa.id = csa.solution_id
-     WHERE csa.case_id = c.id),
-    'N.D.'
-  ) AS solution_applied_name,
-  COALESCE(
-    (SELECT json_agg(json_build_object('id', sa.id, 'name', sa.name))
-     FROM case_solutions_tried cst
-     JOIN solutions_applied sa ON sa.id = cst.solution_id
-     WHERE cst.case_id = c.id),
-    '[]'::json
-  ) AS soluzioni_provate,
-  COALESCE(
-    (SELECT json_agg(json_build_object('id', sa.id, 'name', sa.name))
-     FROM case_solutions_applied csa
-     JOIN solutions_applied sa ON sa.id = csa.solution_id
-     WHERE csa.case_id = c.id),
-    '[]'::json
-  ) AS soluzioni_applicate,
-  COALESCE(
-    (SELECT json_agg(json_build_object('id', sp.id, 'name', sp.name))
-     FROM case_spare_parts csp
-     JOIN spare_parts sp ON sp.id = csp.spare_part_id
-     WHERE csp.case_id = c.id),
-    '[]'::json
-  ) AS pezzi_ricambio`;
-const CASE_JOINS = `
-  JOIN machines m ON m.id = c.machine_id
+const CASE_QUERY = `
+  SELECT
+    c.*, c.case_number,
+    m.code AS machine_code,
+    m.name AS machine_name,
+    m.line AS machine_line,
+    m.type AS machine_type,
+    p.name AS problem_name,
+    ca.name AS cause_name,
+    (
+      SELECT string_agg(sp.name, ', ')
+      FROM case_spare_parts csp
+      JOIN spare_parts sp ON sp.id = csp.spare_part_id
+      WHERE csp.case_id = c.id
+    ) AS spare_part_name,
+    (
+      SELECT array_agg(csp.spare_part_id::text)
+      FROM case_spare_parts csp
+      WHERE csp.case_id = c.id
+    ) AS pezzi_ricambio,
+    (
+      SELECT array_agg(cst.solution_id::text)
+      FROM case_solutions_tried cst
+      WHERE cst.case_id = c.id
+    ) AS soluzioni_provate,
+    (
+      SELECT array_agg(csa.solution_id::text)
+      FROM case_solutions_applied csa
+      WHERE csa.case_id = c.id
+    ) AS soluzioni_applicate,
+    (
+      SELECT json_agg(json_build_object('id', op.id, 'name', op.name) ORDER BY op.name)
+      FROM case_operatori co
+      JOIN operatori op ON op.id = co.operatore_id
+      WHERE co.case_id = c.id
+    ) AS operatori_list,
+    (
+      SELECT array_agg(co.operatore_id::text)
+      FROM case_operatori co
+      WHERE co.case_id = c.id
+    ) AS operatori_ids,
+    (
+      SELECT string_agg(sp.name || ' (' || COALESCE(sp.codice, sp.id::text) || ')', ', ')
+      FROM case_spare_parts csp
+      JOIN spare_parts sp ON sp.id = csp.spare_part_id
+      WHERE csp.case_id = c.id
+    ) AS pezzi_ricambio_names,
+    u.username AS created_by_username,
+    op2.name AS operatore_name
+  FROM cases c
+  LEFT JOIN machines m ON m.id = c.machine_id
+  LEFT JOIN problems p ON p.id = c.problem_id
+  LEFT JOIN causes ca ON ca.id = c.cause_id
   LEFT JOIN users u ON u.id = c.created_by
-  LEFT JOIN categories prob ON prob.id = c.problem_id
-  LEFT JOIN categories cause ON cause.id = c.cause_id
-  LEFT JOIN operatori oper ON oper.id = c.operatore_id`;
-async function getCaseRow(caseId) {
-    const r = await db_1.pool.query('SELECT * FROM cases WHERE id = $1', [caseId]);
-    return r.rows[0] ?? null;
+  LEFT JOIN operatori op2 ON op2.id = c.operatore_id`;
+async function getCaseRow(id) {
+    const r = await db_1.pool.query(`${CASE_QUERY} WHERE c.id = $1`, [id]);
+    return r.rows[0];
 }
-function canAccessCase(caseRow, userId, role) {
-    return role === 'admin' || caseRow.created_by === userId;
-}
-async function lookupName(table, id) {
-    if (!id)
-        return 'N/D';
-    const r = await db_1.pool.query(`SELECT name FROM ${table} WHERE id = $1`, [id]);
-    return r.rows[0]?.name ?? 'N/D';
-}
-exports.casesRoutes.get('/', auth_1.authMiddleware, async (req, res, next) => {
-    try {
-        const { status, machine_id, assigned_to, problem_id, cause_id, date_from, date_to, time_from, time_to, line, page = '1', limit = '25' } = req.query;
-        const pageNumber = Math.max(1, Number(page) || 1);
-        const limitNumber = Math.min(100, Math.max(1, Number(limit) || 25));
-        const offset = (pageNumber - 1) * limitNumber;
-        const conditions = [];
-        const values = [];
-        if (req.user.role !== 'admin') {
-            values.push(req.user.id);
-            conditions.push(`c.created_by = $${values.length}`);
-        }
-        if (req.query.statuses) {
-            const statuses = req.query.statuses.split(',').map((s) => s.trim()).filter(Boolean);
-            if (statuses.length) {
-                values.push(statuses);
-                conditions.push(`c.status = ANY($${values.length})`);
-            }
-        }
-        else if (status) {
-            values.push(status);
-            conditions.push(`c.status = $${values.length}`);
-        }
-        if (machine_id) {
-            values.push(machine_id);
-            conditions.push(`c.machine_id = $${values.length}`);
-        }
-        if (assigned_to) {
-            values.push(assigned_to);
-            conditions.push(`c.assigned_to = $${values.length}`);
-        }
-        if (req.query.month) {
-            values.push(Number(req.query.month));
-            conditions.push(`EXTRACT(MONTH FROM c.created_at)::int = $${values.length}`);
-        }
-        if (req.query.year) {
-            values.push(Number(req.query.year));
-            conditions.push(`EXTRACT(YEAR FROM c.created_at)::int = $${values.length}`);
-        }
-        if (problem_id) {
-            values.push(problem_id);
-            conditions.push(`c.problem_id = $${values.length}`);
-        }
-        if (cause_id) {
-            values.push(cause_id);
-            conditions.push(`c.cause_id = $${values.length}`);
-        }
-        if (date_from) {
-            values.push(date_from);
-            conditions.push(`c.created_at::date >= $${values.length}`);
-        }
-        if (date_to) {
-            values.push(date_to);
-            conditions.push(`c.created_at::date <= $${values.length}`);
-        }
-        if (time_from) {
-            values.push(time_from);
-            conditions.push(`TO_CHAR(c.created_at, 'HH24:MI') >= $${values.length}`);
-        }
-        if (time_to) {
-            values.push(time_to);
-            conditions.push(`TO_CHAR(c.created_at, 'HH24:MI') <= $${values.length}`);
-        }
-        if (line) {
-            values.push(line);
-            conditions.push(`m.line = $${values.length}`);
-        }
-        const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-        const r = await db_1.pool.query(`SELECT ${CASE_FIELDS}, m.code as machine_code, m.name as machine_name, u.username as created_by_username,
-              COALESCE(oper.nome, 'N.D.') as operator_name,
-              prob.name as problem_name, cause.name as cause_name,
-              COUNT(*) OVER() AS total_count
-       FROM cases c
-       ${CASE_JOINS}
-       ${whereClause}
-       ORDER BY c.created_at DESC
-       LIMIT $${values.length + 1} OFFSET $${values.length + 2}`, [...values, limitNumber, offset]);
-        const total = r.rows[0]?.total_count ?? 0;
-        res.json({ items: r.rows, total });
-    }
-    catch (e) {
-        next(e);
-    }
-});
-exports.casesRoutes.get('/export-csv', auth_1.authMiddleware, async (req, res, next) => {
-    try {
-        const { status, machine_id, assigned_to, problem_id, cause_id, date_from, date_to, time_from, time_to, line } = req.query;
-        const conditions = [];
-        const values = [];
-        if (req.user.role !== 'admin') {
-            values.push(req.user.id);
-            conditions.push(`c.created_by = $${values.length}`);
-        }
-        if (req.query.statuses) {
-            const statuses = req.query.statuses.split(',').map((s) => s.trim()).filter(Boolean);
-            if (statuses.length) {
-                values.push(statuses);
-                conditions.push(`c.status = ANY($${values.length})`);
-            }
-        }
-        else if (status) {
-            values.push(status);
-            conditions.push(`c.status = $${values.length}`);
-        }
-        if (machine_id) {
-            values.push(machine_id);
-            conditions.push(`c.machine_id = $${values.length}`);
-        }
-        if (assigned_to) {
-            values.push(assigned_to);
-            conditions.push(`c.assigned_to = $${values.length}`);
-        }
-        if (req.query.month) {
-            values.push(Number(req.query.month));
-            conditions.push(`EXTRACT(MONTH FROM c.created_at)::int = $${values.length}`);
-        }
-        if (req.query.year) {
-            values.push(Number(req.query.year));
-            conditions.push(`EXTRACT(YEAR FROM c.created_at)::int = $${values.length}`);
-        }
-        if (problem_id) {
-            values.push(problem_id);
-            conditions.push(`c.problem_id = $${values.length}`);
-        }
-        if (cause_id) {
-            values.push(cause_id);
-            conditions.push(`c.cause_id = $${values.length}`);
-        }
-        if (date_from) {
-            values.push(date_from);
-            conditions.push(`c.created_at::date >= $${values.length}`);
-        }
-        if (date_to) {
-            values.push(date_to);
-            conditions.push(`c.created_at::date <= $${values.length}`);
-        }
-        if (time_from) {
-            values.push(time_from);
-            conditions.push(`TO_CHAR(c.created_at, 'HH24:MI') >= $${values.length}`);
-        }
-        if (time_to) {
-            values.push(time_to);
-            conditions.push(`TO_CHAR(c.created_at, 'HH24:MI') <= $${values.length}`);
-        }
-        if (line) {
-            values.push(line);
-            conditions.push(`m.line = $${values.length}`);
-        }
-        const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-        const r = await db_1.pool.query(`SELECT c.id, m.code as machine_code, m.name as machine_name, u.username as created_by_username,
-              COALESCE(oper.nome, 'N.D.') as operator_name,
-              prob.name as problem_name, cause.name as cause_name,
-              COALESCE(
-                (SELECT string_agg(sp.name, ', ')
-                 FROM case_spare_parts csp
-                 JOIN spare_parts sp ON sp.id = csp.spare_part_id
-                 WHERE csp.case_id = c.id),
-                'N.D.'
-              ) AS spare_part_name,
-              COALESCE(
-                (SELECT string_agg(sa.name, ', ')
-                 FROM case_solutions_applied csa
-                 JOIN solutions_applied sa ON sa.id = csa.solution_id
-                 WHERE csa.case_id = c.id),
-                'N.D.'
-              ) AS solution_applied_name,
-              c.description, c.solution, c.notes, c.ai_solution, c.status, c.created_at
-       FROM cases c
-       ${CASE_JOINS}
-       ${whereClause}
-       ORDER BY c.created_at DESC`, values);
-        const headers = [
-            'ID Caso',
-            'Codice Macchina',
-            'Nome Macchina',
-            'Operatore',
-            'Problema',
-            'Causa',
-            'Ricambio Usato',
-            'Soluzione Applicata',
-            'Descrizione',
-            'Note',
-            'Soluzione AI',
-            'Stato',
-            'Data Creazione'
-        ];
-        const escapeCSV = (val) => {
-            if (val === null || val === undefined)
-                return '';
-            const str = String(val).replace(/"/g, '""');
-            return `"${str}"`;
-        };
-        let csvContent = headers.join(',') + '\n';
-        for (const row of r.rows) {
-            const lineData = [
-                row.id,
-                row.machine_code,
-                row.machine_name,
-                row.operator_name,
-                row.problem_name,
-                row.cause_name,
-                row.spare_part_name,
-                row.solution_applied_name,
-                row.description || row.solution,
-                row.notes,
-                row.ai_solution,
-                row.status,
-                row.created_at ? new Date(row.created_at).toISOString() : ''
-            ];
-            csvContent += lineData.map(escapeCSV).join(',') + '\n';
-        }
-        res.setHeader('Content-Type', 'text/csv');
-        res.setHeader('Content-Disposition', 'attachment; filename="casi_esportati.csv"');
-        return res.status(200).send(csvContent);
-    }
-    catch (e) {
-        next(e);
-    }
-});
-exports.casesRoutes.get('/:id', auth_1.authMiddleware, async (req, res, next) => {
-    try {
-        const caseRow = await getCaseRow(req.params.id);
-        if (!caseRow)
-            return res.status(404).json({ error: 'Case not found' });
-        if (!canAccessCase(caseRow, req.user.id, req.user.role)) {
-            return res.status(403).json({ error: 'Forbidden' });
-        }
-        const r = await db_1.pool.query(`SELECT ${CASE_FIELDS}, m.code as machine_code, m.name as machine_name, u.username as created_by_username,
-              COALESCE(oper.nome, 'N.D.') as operator_name,
-              prob.name as problem_name, cause.name as cause_name
-       FROM cases c
-       ${CASE_JOINS}
-       WHERE c.id = $1`, [req.params.id]);
-        res.json({ item: r.rows[0] });
-    }
-    catch (e) {
-        next(e);
-    }
-});
-async function validateOperatoreId(client, operatoreId) {
-    const r = await client.query('SELECT id FROM operatori WHERE id = $1 AND attivo = true', [operatoreId]);
-    if (!r.rows.length)
-        return 'Operatore non valido o non attivo';
+async function validateOperatoreId(client, opId) {
+    if (!opId)
+        return 'ID operatore non valido';
+    const r = await client.query('SELECT id FROM operatori WHERE id = $1', [opId]);
+    if (!r.rows[0])
+        return `Operatore ${opId} non trovato`;
     return null;
 }
+async function syncCaseOperatori(client, caseId, operatoreIds) {
+    await client.query('DELETE FROM case_operatori WHERE case_id = $1', [caseId]);
+    for (const opId of operatoreIds) {
+        if (opId)
+            await client.query('INSERT INTO case_operatori(case_id, operatore_id) VALUES($1, $2) ON CONFLICT DO NOTHING', [caseId, opId]);
+    }
+}
+// ─── GET list ────────────────────────────────────────────────────────────────
+exports.casesRoutes.get('/', auth_1.authMiddleware, async (req, res, next) => {
+    try {
+        const { machine_id, status, search, page = 1, limit = 20, from, to, problem_id, cause_id, sort = 'desc' } = req.query;
+        const conditions = [];
+        const params = [];
+        let idx = 1;
+        if (machine_id) {
+            conditions.push(`c.machine_id = $${idx++}`);
+            params.push(machine_id);
+        }
+        if (status) {
+            conditions.push(`c.status = $${idx++}`);
+            params.push(status);
+        }
+        if (problem_id) {
+            conditions.push(`c.problem_id = $${idx++}`);
+            params.push(problem_id);
+        }
+        if (cause_id) {
+            conditions.push(`c.cause_id = $${idx++}`);
+            params.push(cause_id);
+        }
+        if (from) {
+            conditions.push(`c.created_at >= $${idx++}`);
+            params.push(from);
+        }
+        if (to) {
+            conditions.push(`c.created_at <= $${idx++}`);
+            params.push(to + 'T23:59:59Z');
+        }
+        if (search) {
+            conditions.push(`(
+        m.name ILIKE $${idx} OR m.code ILIKE $${idx} OR
+        p.name ILIKE $${idx} OR
+        c.description ILIKE $${idx} OR
+        c.solution ILIKE $${idx} OR
+        c.notes ILIKE $${idx}
+      )`);
+            params.push(`%${search}%`);
+            idx++;
+        }
+        const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+        const sortDir = sort === 'asc' ? 'ASC' : 'DESC';
+        const offset = (Number(page) - 1) * Number(limit);
+        const countRes = await db_1.pool.query(`SELECT COUNT(*) FROM cases c LEFT JOIN machines m ON m.id = c.machine_id LEFT JOIN problems p ON p.id = c.problem_id LEFT JOIN causes ca ON ca.id = c.cause_id ${where}`, params);
+        const total = Number(countRes.rows[0].count);
+        const r = await db_1.pool.query(`${CASE_QUERY} ${where} ORDER BY c.created_at ${sortDir} LIMIT $${idx++} OFFSET $${idx++}`, [...params, Number(limit), offset]);
+        res.json({ items: r.rows, total, page: Number(page), limit: Number(limit) });
+    }
+    catch (e) {
+        next(e);
+    }
+});
+// ─── GET single ──────────────────────────────────────────────────────────────
+exports.casesRoutes.get('/:id', auth_1.authMiddleware, async (req, res, next) => {
+    try {
+        const row = await getCaseRow(req.params.id);
+        if (!row)
+            return res.status(404).json({ error: 'Case not found' });
+        res.json({ item: row });
+    }
+    catch (e) {
+        next(e);
+    }
+});
+// ─── GET events ──────────────────────────────────────────────────────────────
+exports.casesRoutes.get('/:id/events', auth_1.authMiddleware, async (req, res, next) => {
+    try {
+        const r = await db_1.pool.query(`SELECT ce.*, u.username AS actor_username
+       FROM case_events ce LEFT JOIN users u ON u.id = ce.actor_id
+       WHERE ce.case_id = $1 ORDER BY ce.created_at ASC`, [req.params.id]);
+        res.json({ items: r.rows });
+    }
+    catch (e) {
+        next(e);
+    }
+});
+// ─── GET export CSV ──────────────────────────────────────────────────────────
+exports.casesRoutes.get('/export/csv', auth_1.authMiddleware, async (req, res, next) => {
+    try {
+        if (req.user.role !== 'admin')
+            return res.status(403).json({ error: 'Solo gli admin possono esportare' });
+        const { from, to, machine_id } = req.query;
+        const conditions = [];
+        const params = [];
+        let idx = 1;
+        if (from) {
+            conditions.push(`c.created_at >= $${idx++}`);
+            params.push(from);
+        }
+        if (to) {
+            conditions.push(`c.created_at <= $${idx++}`);
+            params.push(to + 'T23:59:59Z');
+        }
+        if (machine_id) {
+            conditions.push(`c.machine_id = $${idx++}`);
+            params.push(machine_id);
+        }
+        const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+        const r = await db_1.pool.query(`SELECT c.created_at, m.code AS machine_code, m.name AS machine_name, m.line, p.name AS problem, ca.name AS cause,
+              c.description, c.solution, c.notes, c.tempo_impiego, u.username AS created_by,
+              (
+                SELECT string_agg(sp.name, ', ')
+                FROM case_spare_parts csp JOIN spare_parts sp ON sp.id = csp.spare_part_id
+                WHERE csp.case_id = c.id
+              ) AS pezzi_ricambio,
+              (
+                SELECT string_agg(sa.name, ', ')
+                FROM case_solutions_applied csa JOIN solutions_applied sa ON sa.id = csa.solution_id
+                WHERE csa.case_id = c.id
+              ) AS soluzioni_applicate,
+              (
+                SELECT string_agg(op.name, ', ')
+                FROM case_operatori co JOIN operatori op ON op.id = co.operatore_id
+                WHERE co.case_id = c.id
+              ) AS operatori
+       FROM cases c
+       LEFT JOIN machines m ON m.id = c.machine_id
+       LEFT JOIN problems p ON p.id = c.problem_id
+       LEFT JOIN causes ca ON ca.id = c.cause_id
+       LEFT JOIN users u ON u.id = c.created_by
+       ${where}
+       ORDER BY c.created_at DESC`, params);
+        const headers = ['Data', 'Codice macchina', 'Macchina', 'Linea', 'Problema', 'Causa', 'Descrizione', 'Soluzione', 'Note', 'Tempo impiego (min)', 'Creato da', 'Pezzi ricambio', 'Soluzioni applicate', 'Operatori'];
+        const rows = r.rows.map((row) => [
+            new Date(row.created_at).toLocaleString('it-IT'),
+            row.machine_code ?? '',
+            row.machine_name ?? '',
+            row.line ?? '',
+            row.problem ?? '',
+            row.cause ?? '',
+            row.description ?? '',
+            row.solution ?? '',
+            row.notes ?? '',
+            row.tempo_impiego ?? '',
+            row.created_by ?? '',
+            row.pezzi_ricambio ?? '',
+            row.soluzioni_applicate ?? '',
+            row.operatori ?? '',
+        ]);
+        const csv = [headers, ...rows].map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="casi_${new Date().toISOString().slice(0, 10)}.csv"`);
+        res.send('\uFEFF' + csv);
+    }
+    catch (e) {
+        next(e);
+    }
+});
+// ─── POST create ─────────────────────────────────────────────────────────────
 exports.casesRoutes.post('/', auth_1.authMiddleware, async (req, res, next) => {
     try {
         const body = req.body;
-        const finalMachineId = body.machine_id || body.macchina_id;
-        const finalUtenteId = body.utente_id || req.user.id;
-        const finalNotes = body.notes || body.note_aggiuntive;
-        const missing = [];
+        // Risolvi machine_id
+        let finalMachineId = body.machine_id;
+        if (!finalMachineId && body.machine_code) {
+            const mr = await db_1.pool.query('SELECT id FROM machines WHERE code = $1', [body.machine_code]);
+            if (!mr.rows[0])
+                return res.status(400).json({ error: `Macchina con codice ${body.machine_code} non trovata` });
+            finalMachineId = mr.rows[0].id;
+        }
         if (!finalMachineId)
-            missing.push('macchina');
-        if (!body.problem_id)
-            missing.push('problema');
-        if (!body.cause_id)
-            missing.push('causa');
-        if (!body.soluzioni_applicate || !body.soluzioni_applicate.length)
-            missing.push('soluzione applicata');
-        if (!body.operatore_id)
-            missing.push('operatore');
-        if (body.tempo_impiego === undefined || body.tempo_impiego < 0.5) {
-            return res.status(400).json({ error: 'Tempo impiego deve essere maggiore o uguale a 0.5 ore' });
+            return res.status(400).json({ error: 'machine_id o machine_code obbligatorio' });
+        const finalUtenteId = req.user.id;
+        // Operatori
+        let operatoreIds = [];
+        if (Array.isArray(body.operatori_ids) && body.operatori_ids.length > 0) {
+            operatoreIds = body.operatori_ids.filter(Boolean);
         }
-        if (missing.length) {
-            return res.status(400).json({ error: `Campo obbligatorio mancante: ${missing[0]}` });
+        else if (body.operatore_id) {
+            operatoreIds = [body.operatore_id];
         }
+        // Note max 1000 chars
+        const finalNotes = body.notes ?? null;
         if (finalNotes && finalNotes.length > 1000) {
             return res.status(400).json({ error: 'Le note non possono superare i 1000 caratteri.' });
         }
@@ -338,66 +262,69 @@ exports.casesRoutes.post('/', auth_1.authMiddleware, async (req, res, next) => {
         try {
             await client.query('BEGIN');
             const machineQuery = await client.query('SELECT code, name, line, type FROM machines WHERE id = $1', [finalMachineId]);
-            const machineRecord = machineQuery.rows[0];
-            if (!machineRecord) {
+            if (!machineQuery.rows[0]) {
                 await client.query('ROLLBACK');
                 return res.status(400).json({ error: 'Macchina non trovata' });
             }
-            const operatoreError = await validateOperatoreId(client, body.operatore_id);
-            if (operatoreError) {
-                await client.query('ROLLBACK');
-                return res.status(400).json({ error: operatoreError });
+            // Valida tutti gli operatori
+            for (const opId of operatoreIds) {
+                const err = await validateOperatoreId(client, opId);
+                if (err) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({ error: err });
+                }
             }
             let solutionAppliedDesc = '';
-            if (body.soluzioni_applicate && body.soluzioni_applicate.length > 0) {
+            if (body.soluzioni_applicate?.length) {
                 const saR = await client.query(`SELECT name, description FROM solutions_applied WHERE id = ANY($1::uuid[])`, [body.soluzioni_applicate]);
-                solutionAppliedDesc = saR.rows
-                    .map((row) => row.description ?? row.name)
-                    .filter(Boolean)
-                    .join(', ');
+                solutionAppliedDesc = saR.rows.map((row) => row.description ?? row.name).filter(Boolean).join(', ');
             }
+            // Il primo operatore va anche in operatore_id per compatibilità legacy
+            const primaryOperatoreId = operatoreIds[0] ?? null;
             const r = await client.query(`INSERT INTO cases(machine_id, problem_id, cause_id, description, solution, ai_solution,
                           status, created_by, assigned_to, notes, tempo_impiego, operatore_id)
          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
          RETURNING *`, [
-                finalMachineId,
-                body.problem_id ?? null,
-                body.cause_id ?? null,
-                solutionAppliedDesc || null,
-                solutionAppliedDesc || null,
-                null,
-                'closed',
-                finalUtenteId,
-                null,
-                finalNotes?.trim() || null,
-                body.tempo_impiego,
-                body.operatore_id
+                finalMachineId, body.problem_id ?? null, body.cause_id ?? null,
+                solutionAppliedDesc || null, solutionAppliedDesc || null, null,
+                'closed', finalUtenteId, null,
+                finalNotes?.trim() || null, body.tempo_impiego, primaryOperatoreId
             ]);
             const caseId = r.rows[0].id;
-            // Insert junction tables
-            if (body.soluzioni_provate && body.soluzioni_provate.length > 0) {
+            // Inserisci tutti gli operatori nella tabella ponte
+            await syncCaseOperatori(client, caseId, operatoreIds);
+            if (body.soluzioni_provate?.length) {
                 for (const solId of body.soluzioni_provate) {
-                    if (solId) {
+                    if (solId)
                         await client.query(`INSERT INTO case_solutions_tried(case_id, solution_id) VALUES($1, $2) ON CONFLICT DO NOTHING`, [caseId, solId]);
-                    }
                 }
             }
-            if (body.soluzioni_applicate && body.soluzioni_applicate.length > 0) {
+            if (body.soluzioni_applicate?.length) {
                 for (const solId of body.soluzioni_applicate) {
-                    if (solId) {
+                    if (solId)
                         await client.query(`INSERT INTO case_solutions_applied(case_id, solution_id) VALUES($1, $2) ON CONFLICT DO NOTHING`, [caseId, solId]);
-                    }
                 }
             }
-            if (body.pezzi_ricambio && body.pezzi_ricambio.length > 0) {
+            if (body.pezzi_ricambio?.length) {
                 for (const spId of body.pezzi_ricambio) {
                     if (spId) {
                         await client.query(`INSERT INTO case_spare_parts(case_id, spare_part_id) VALUES($1, $2) ON CONFLICT DO NOTHING`, [caseId, spId]);
+                        // Scarica la giacenza e registra il movimento
+                        const spRow = await client.query(`UPDATE spare_parts
+               SET quantita = quantita - 1,
+                   sotto_scorta = (quantita - 1) <= scorta_minima,
+                   giacenza_negativa = (quantita - 1) < 0
+               WHERE id = $1
+               RETURNING quantita`, [spId]);
+                        const nuovaQty = spRow.rows[0]?.quantita ?? 0;
+                        const caseNum = r.rows[0].case_number ?? r.rows[0].id;
+                        await client.query(`INSERT INTO movimenti_magazzino(spare_part_id, tipo, delta, quantita_dopo,
+                  riferimento_tipo, riferimento_numero, riferimento_id, actor_id)
+               VALUES($1, 'scarico_manutenzione', -1, $2, 'case', $3::text, $4, $5)`, [spId, nuovaQty, caseNum, caseId, finalUtenteId]);
                     }
                 }
             }
-            await client.query(`INSERT INTO case_events(case_id,event_type,message,actor_id)
-         VALUES($1,'system','case created',$2)`, [caseId, finalUtenteId]);
+            await client.query(`INSERT INTO case_events(case_id,event_type,message,actor_id) VALUES($1,'system','case created',$2)`, [caseId, finalUtenteId]);
             await client.query('COMMIT');
             (0, socketService_1.emitEvent)('case_created', { caseId });
             (0, socketService_1.emitEvent)('case-updated', { caseId });
@@ -417,121 +344,123 @@ exports.casesRoutes.post('/', auth_1.authMiddleware, async (req, res, next) => {
 });
 exports.casesRoutes.put('/:id', auth_1.authMiddleware, async (req, res, next) => {
     try {
+        res.status(405).json({ error: 'Usa PATCH per aggiornare un caso' });
+    }
+    catch (e) {
+        next(e);
+    }
+});
+// ─── PATCH update ────────────────────────────────────────────────────────────
+exports.casesRoutes.patch('/:id', auth_1.authMiddleware, async (req, res, next) => {
+    try {
+        const body = req.body;
         const caseRow = await getCaseRow(req.params.id);
         if (!caseRow)
             return res.status(404).json({ error: 'Case not found' });
-        if (!canAccessCase(caseRow, req.user.id, req.user.role)) {
-            return res.status(403).json({ error: 'Forbidden' });
-        }
-        const body = req.body;
-        const finalMachineId = body.machine_id || body.macchina_id;
-        const finalNotes = body.notes || body.note_aggiuntive;
-        // 🟢 Campi obbligatori per l'UPDATE (operatore_id NON è obbligatorio)
-        const missing = [];
-        if (!finalMachineId)
-            missing.push('macchina');
-        if (!body.problem_id)
-            missing.push('problema');
-        if (!body.cause_id)
-            missing.push('causa');
-        if (!body.soluzioni_applicate || !body.soluzioni_applicate.length)
-            missing.push('soluzione applicata');
-        // 🟢 tempo_impiego è opzionale: se viene passato, deve essere >= 0.5, altrimenti lo ignoriamo
-        if (body.tempo_impiego !== undefined && body.tempo_impiego < 0.5) {
-            return res.status(400).json({ error: 'Tempo impiego deve essere maggiore o uguale a 0.5 ore' });
-        }
-        if (missing.length) {
-            return res.status(400).json({ error: `Campo obbligatorio mancante: ${missing[0]}` });
-        }
+        const finalNotes = body.notes ?? null;
         if (finalNotes && finalNotes.length > 1000) {
             return res.status(400).json({ error: 'Le note non possono superare i 1000 caratteri.' });
+        }
+        let operatoreIds = [];
+        if (Array.isArray(body.operatori_ids)) {
+            operatoreIds = body.operatori_ids.filter(Boolean);
+        }
+        else if (body.operatore_id) {
+            operatoreIds = [body.operatore_id];
+        }
+        let solutionAppliedDesc = '';
+        if (body.soluzioni_applicate?.length) {
+            const saR = await db_1.pool.query(`SELECT name, description FROM solutions_applied WHERE id = ANY($1::uuid[])`, [body.soluzioni_applicate]);
+            solutionAppliedDesc = saR.rows.map((row) => row.description ?? row.name).filter(Boolean).join(', ');
         }
         const client = await db_1.pool.connect();
         try {
             await client.query('BEGIN');
-            // 🟢 Valida operatore SOLO SE viene passato
-            if (body.operatore_id) {
-                const operatoreError = await validateOperatoreId(client, body.operatore_id);
-                if (operatoreError) {
+            // Valida operatori
+            for (const opId of operatoreIds) {
+                const err = await validateOperatoreId(client, opId);
+                if (err) {
                     await client.query('ROLLBACK');
-                    return res.status(400).json({ error: operatoreError });
+                    return res.status(400).json({ error: err });
                 }
             }
-            let solutionAppliedDesc = '';
-            if (body.soluzioni_applicate && body.soluzioni_applicate.length > 0) {
-                const saR = await client.query(`SELECT name, description FROM solutions_applied WHERE id = ANY($1::uuid[])`, [body.soluzioni_applicate]);
-                solutionAppliedDesc = saR.rows
-                    .map((row) => row.description ?? row.name)
-                    .filter(Boolean)
-                    .join(', ');
-            }
-            // 🟢 Costruisci la query di UPDATE dinamicamente (operatore_id e tempo_impiego opzionali)
-            const updates = [];
-            const values = [];
-            let paramIndex = 1;
-            // Campi sempre aggiornati
-            updates.push(`machine_id = $${paramIndex++}`);
-            values.push(finalMachineId);
-            updates.push(`problem_id = $${paramIndex++}`);
-            values.push(body.problem_id ?? null);
-            updates.push(`cause_id = $${paramIndex++}`);
-            values.push(body.cause_id ?? null);
-            updates.push(`description = $${paramIndex++}`);
-            values.push(solutionAppliedDesc || null);
-            updates.push(`solution = $${paramIndex++}`);
-            values.push(solutionAppliedDesc || null);
-            if (finalNotes !== undefined) {
-                updates.push(`notes = $${paramIndex++}`);
-                values.push(finalNotes?.trim() || null);
-            }
-            // 🟢 tempo_impiego: opzionale
-            if (body.tempo_impiego !== undefined) {
-                updates.push(`tempo_impiego = $${paramIndex++}`);
-                values.push(body.tempo_impiego);
-            }
-            // 🟢 operatore_id: opzionale (se non passato, non lo aggiorna)
-            if (body.operatore_id !== undefined) {
-                updates.push(`operatore_id = $${paramIndex++}`);
-                values.push(body.operatore_id);
-            }
-            updates.push(`updated_at = now()`);
-            values.push(req.params.id);
-            const query = `
-        UPDATE cases
-        SET ${updates.join(', ')}
-        WHERE id = $${paramIndex}
-        RETURNING *
-      `;
-            const r = await client.query(query, values);
+            const primaryOperatoreId = operatoreIds[0] ?? caseRow.operatore_id ?? null;
+            const r = await client.query(`UPDATE cases SET
+          machine_id = COALESCE($1, machine_id),
+          problem_id = $2,
+          cause_id = $3,
+          description = COALESCE($4, description),
+          solution = COALESCE($5, solution),
+          status = COALESCE($6, status),
+          notes = $7,
+          tempo_impiego = COALESCE($8, tempo_impiego),
+          operatore_id = $9,
+          updated_at = NOW()
+        WHERE id = $10
+        RETURNING *`, [
+                body.machine_id ?? null,
+                body.problem_id ?? null,
+                body.cause_id ?? null,
+                solutionAppliedDesc || body.description || null,
+                solutionAppliedDesc || body.solution || null,
+                body.status ?? null,
+                finalNotes?.trim() ?? null,
+                body.tempo_impiego ?? null,
+                primaryOperatoreId,
+                req.params.id,
+            ]);
+            const caseNumber = r.rows[0].case_number ?? req.params.id;
+            // Sync operatori
+            await syncCaseOperatori(client, req.params.id, operatoreIds);
             // Update solutions tried
             await client.query(`DELETE FROM case_solutions_tried WHERE case_id = $1`, [req.params.id]);
-            if (body.soluzioni_provate && body.soluzioni_provate.length > 0) {
-                for (const solId of body.soluzioni_provate) {
-                    if (solId) {
-                        await client.query(`INSERT INTO case_solutions_tried(case_id, solution_id) VALUES($1, $2) ON CONFLICT DO NOTHING`, [req.params.id, solId]);
-                    }
-                }
+            for (const solId of body.soluzioni_provate ?? []) {
+                if (solId)
+                    await client.query(`INSERT INTO case_solutions_tried(case_id, solution_id) VALUES($1, $2) ON CONFLICT DO NOTHING`, [req.params.id, solId]);
             }
             // Update solutions applied
             await client.query(`DELETE FROM case_solutions_applied WHERE case_id = $1`, [req.params.id]);
-            if (body.soluzioni_applicate && body.soluzioni_applicate.length > 0) {
-                for (const solId of body.soluzioni_applicate) {
-                    if (solId) {
-                        await client.query(`INSERT INTO case_solutions_applied(case_id, solution_id) VALUES($1, $2) ON CONFLICT DO NOTHING`, [req.params.id, solId]);
-                    }
+            for (const solId of body.soluzioni_applicate ?? []) {
+                if (solId)
+                    await client.query(`INSERT INTO case_solutions_applied(case_id, solution_id) VALUES($1, $2) ON CONFLICT DO NOTHING`, [req.params.id, solId]);
+            }
+            // Update spare parts — scarico/ricarica differenziale
+            const prevPartsRes = await client.query(`SELECT spare_part_id::text FROM case_spare_parts WHERE case_id = $1`, [req.params.id]);
+            const prevIds = new Set(prevPartsRes.rows.map((r) => r.spare_part_id));
+            const nextIds = new Set((body.pezzi_ricambio ?? []).filter(Boolean));
+            // Ricambi rimossi → ricarica giacenza
+            for (const spId of prevIds) {
+                if (!nextIds.has(spId)) {
+                    const spRow = await client.query(`UPDATE spare_parts
+             SET quantita = quantita + 1,
+                 sotto_scorta = (quantita + 1) <= scorta_minima,
+                 giacenza_negativa = (quantita + 1) < 0
+             WHERE id = $1
+             RETURNING quantita`, [spId]);
+                    const nuovaQty = spRow.rows[0]?.quantita ?? 0;
+                    await client.query(`INSERT INTO movimenti_magazzino(spare_part_id, tipo, delta, quantita_dopo,
+                riferimento_tipo, riferimento_numero, riferimento_id, actor_id)
+             VALUES($1, 'rettifica_manuale', 1, $2, 'case', $3::text, $4, $5)`, [spId, nuovaQty, caseNumber, req.params.id, req.user.id]);
                 }
             }
-            // Update spare parts
             await client.query(`DELETE FROM case_spare_parts WHERE case_id = $1`, [req.params.id]);
-            if (body.pezzi_ricambio && body.pezzi_ricambio.length > 0) {
-                for (const spId of body.pezzi_ricambio) {
-                    if (spId) {
-                        await client.query(`INSERT INTO case_spare_parts(case_id, spare_part_id) VALUES($1, $2) ON CONFLICT DO NOTHING`, [req.params.id, spId]);
-                    }
+            for (const spId of nextIds) {
+                await client.query(`INSERT INTO case_spare_parts(case_id, spare_part_id) VALUES($1, $2) ON CONFLICT DO NOTHING`, [req.params.id, spId]);
+                // Scarica solo i ricambi nuovi (non presenti prima)
+                if (!prevIds.has(spId)) {
+                    const spRow = await client.query(`UPDATE spare_parts
+             SET quantita = quantita - 1,
+                 sotto_scorta = (quantita - 1) <= scorta_minima,
+                 giacenza_negativa = (quantita - 1) < 0
+             WHERE id = $1
+             RETURNING quantita`, [spId]);
+                    const nuovaQty = spRow.rows[0]?.quantita ?? 0;
+                    await client.query(`INSERT INTO movimenti_magazzino(spare_part_id, tipo, delta, quantita_dopo,
+                riferimento_tipo, riferimento_numero, riferimento_id, actor_id)
+             VALUES($1, 'scarico_manutenzione', -1, $2, 'case', $3::text, $4, $5)`, [spId, nuovaQty, caseNumber, req.params.id, req.user.id]);
                 }
             }
-            await client.query(`INSERT INTO case_events(case_id,event_type,message,actor_id)
-         VALUES($1,'update','case updated',$2)`, [req.params.id, req.user.id]);
+            await client.query(`INSERT INTO case_events(case_id,event_type,message,actor_id) VALUES($1,'update','case updated',$2)`, [req.params.id, req.user.id]);
             await client.query('COMMIT');
             (0, socketService_1.emitEvent)('case-updated', { caseId: req.params.id });
             res.json({ item: r.rows[0] });

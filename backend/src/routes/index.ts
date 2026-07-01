@@ -29,7 +29,7 @@ export function registerRoutes(app: Express) {
   app.use('/api/stats', statsRoutes);
   app.use('/api/stats', problemTimeRoutes);
   // magazzino-ricambi va PRIMA del vecchio sparepartsRoutes per override di /api/spare-parts
-  app.use('/api', sparePartsMagazzinoRoutes);
+  app.use('/api/spare-parts', sparePartsMagazzinoRoutes);
   app.use('/api', sparepartsRoutes);
   app.use('/api/reorders', reordersRoutes);
 

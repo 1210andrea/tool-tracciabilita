@@ -85,9 +85,17 @@ async function callOllama(promptOrMessages, timeoutOrOptions) {
         const messages = typeof promptOrMessages === 'string'
             ? [{ role: 'user', content: promptOrMessages }]
             : promptOrMessages;
-        const reqBody = { model: env_1.env.AI_MODEL, messages, stream: false };
+        // 🔥 MODIFICA: disabilita la cache
+        const reqBody = {
+            model: env_1.env.AI_MODEL,
+            messages,
+            stream: false,
+            options: {
+                cache: false // ← Disabilita la cache
+            }
+        };
         if (timeoutOrOptions && typeof timeoutOrOptions === 'object' && timeoutOrOptions.max_tokens) {
-            reqBody.options = { num_predict: timeoutOrOptions.max_tokens };
+            reqBody.options.num_predict = timeoutOrOptions.max_tokens;
             reqBody.max_tokens = timeoutOrOptions.max_tokens;
         }
         const resp = await fetch(`${env_1.env.AI_API_URL}/api/chat`, {
