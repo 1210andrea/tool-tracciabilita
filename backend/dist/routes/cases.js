@@ -369,7 +369,7 @@ exports.casesRoutes.post('/', auth_1.authMiddleware, async (req, res, next) => {
                 }
             }
             if (pezziRicambio.length) {
-                for (const spId of body.pezzi_ricambio) {
+                for (const spId of pezziRicambio) {
                     if (spId) {
                         await client.query(`INSERT INTO case_spare_parts(case_id, spare_part_id) VALUES($1, $2) ON CONFLICT DO NOTHING`, [caseId, spId]);
                         // Scarica la giacenza e registra il movimento
