@@ -32,10 +32,11 @@ export type CaseDetail = {
   created_at?: string;
   notes?: string | null;
   tempo_impiego?: number;
-  soluzioni_provate?: { id: string; name: string }[];
-  soluzioni_applicate?: { id: string; name: string }[];
-  pezzi_ricambio?: { id: string; name: string }[];
+  soluzioni_provate?: { id: string; name: string }[] | string[];
+  soluzioni_applicate?: { id: string; name: string }[] | string[];
+  pezzi_ricambio?: { id: string; name: string }[] | string[];
   operatori?: { id: string; nome: string }[];
+  operatori_ids?: string[];
   operator_name?: string;
 };
 
@@ -120,6 +121,10 @@ export function CaseDetailModal({
 
   const problems = categories.filter((c) => c.type === 'problem');
 
+  // Helper: normalizza un array che può contenere stringhe UUID o oggetti {id}
+  const toIds = (arr: any[]): string[] =>
+    arr.map((x) => (typeof x === 'string' ? x : x?.id ?? x?.spare_part_id ?? '')).filter(Boolean);
+
 
   useEffect(() => {
     if (!token) return;
@@ -136,10 +141,20 @@ export function CaseDetailModal({
     setMachineId(caseItem.machine_id ?? '');
     setProblemId(caseItem.problem_id ?? '');
     setCauseId(caseItem.cause_id ?? '');
-    setSoluzioniProvate(Array.isArray(caseItem.soluzioni_provate) ? caseItem.soluzioni_provate.map((s) => s.id) : []);
-    setSoluzioniApplicate(Array.isArray(caseItem.soluzioni_applicate) ? caseItem.soluzioni_applicate.map((s) => s.id) : []);
-    setPezziRicambio(Array.isArray(caseItem.pezzi_ricambio) ? caseItem.pezzi_ricambio.map((p) => p.id) : []);
-    setOperatoreIds(Array.isArray(caseItem.operatori) ? caseItem.operatori.map((o) => o.id) : []);
+
+    // Normalizza: il backend può restituire string[] (UUID puri) oppure {id,name}[]
+    setSoluzioniProvate(Array.isArray(caseItem.soluzioni_provate) ? toIds(caseItem.soluzioni_provate as any[]) : []);
+    setSoluzioniApplicate(Array.isArray(caseItem.soluzioni_applicate) ? toIds(caseItem.soluzioni_applicate as any[]) : []);
+    setPezziRicambio(Array.isArray(caseItem.pezzi_ricambio) ? toIds(caseItem.pezzi_ricambio as any[]) : []);
+
+    // Operatori: usa operatori_ids (string[]) come fonte primaria; fallback su operatori[]
+    const opIds = Array.isArray((caseItem as any).operatori_ids) && (caseItem as any).operatori_ids.length > 0
+      ? ((caseItem as any).operatori_ids as string[]).filter(Boolean)
+      : Array.isArray(caseItem.operatori)
+        ? toIds(caseItem.operatori as any[])
+        : [];
+    setOperatoreIds(opIds);
+
     setTempoImpiego(Number(caseItem.tempo_impiego) || 0.5);
     setNotes(caseItem.notes ?? '');
     setError(null);
@@ -206,7 +221,6 @@ export function CaseDetailModal({
     }
     setLoading(true); setError(null);
     try {
-      // FIX: usa PATCH invece di PUT — il backend espone solo PATCH /cases/:id
       await axios.patch(
         `${API_URL}/cases/${caseItem.id}`,
         {
@@ -216,7 +230,7 @@ export function CaseDetailModal({
           soluzioni_provate: soluzioniProvate,
           soluzioni_applicate: soluzioniApplicate,
           pezzi_ricambio: pezziRicambio,
-          operatore_ids: operatoreIds,
+          operatori_ids: operatoreIds,
           tempo_impiego: tempoImpiego,
           notes: notes.trim() || null,
         },
@@ -232,6 +246,20 @@ export function CaseDetailModal({
 
 
   const selectedMachine = machines.find((m) => m.id === machineId);
+
+  // VIEW MODE: helper per mostrare nomi da array misto (string UUID o {id,name})
+  const renderNames = (arr: any[] | undefined, allItems: { id: string; name: string }[]): string => {
+    if (!Array.isArray(arr) || arr.length === 0) return '';
+    return arr
+      .map((x) => {
+        if (typeof x === 'string') {
+          return allItems.find((i) => i.id === x)?.name ?? '';
+        }
+        return x?.name ?? '';
+      })
+      .filter(Boolean)
+      .join(', ');
+  };
 
 
   return (
@@ -363,27 +391,30 @@ export function CaseDetailModal({
               <div className="sm:col-span-2">
                 <span className="text-xs text-slate-500">Operatori</span>
                 <div className="text-sm font-medium text-slate-200 mt-1">
-                  {Array.isArray(caseItem.operatori) && caseItem.operatori.length > 0
-                    ? caseItem.operatori.map((o) => o.nome).join(', ')
-                    : caseItem.operator_name || 'N.D.'}
+                  {(() => {
+                    const ops = (caseItem as any).operatori_list as any[];
+                    if (Array.isArray(ops) && ops.length > 0) return ops.map((o: any) => o.name).join(', ');
+                    if (Array.isArray(caseItem.operatori) && caseItem.operatori.length > 0) return caseItem.operatori.map((o) => o.nome).join(', ');
+                    return caseItem.operator_name || 'N.D.';
+                  })()}
                 </div>
               </div>
               <div className="sm:col-span-2">
                 <span className="text-xs text-slate-500">Pezzi di Ricambio</span>
                 <div className="text-sm font-medium text-slate-200 mt-1">
-                  {(Array.isArray(caseItem.pezzi_ricambio) ? caseItem.pezzi_ricambio : []).map((p) => p.name).join(', ') || caseItem.spare_part_name || 'Nessuno'}
+                  {renderNames(caseItem.pezzi_ricambio as any[], spareParts) || caseItem.spare_part_name || 'Nessuno'}
                 </div>
               </div>
               <div className="sm:col-span-2">
                 <span className="text-xs text-slate-500">Soluzioni Provate</span>
                 <div className="text-sm font-medium text-slate-200 mt-1">
-                  {(Array.isArray(caseItem.soluzioni_provate) ? caseItem.soluzioni_provate : []).map((s) => s.name).join(', ') || 'Nessuna'}
+                  {renderNames(caseItem.soluzioni_provate as any[], filteredSolutions) || 'Nessuna'}
                 </div>
               </div>
               <div className="sm:col-span-2">
                 <span className="text-xs text-slate-500">Soluzioni Applicate</span>
                 <div className="text-sm font-medium text-slate-200 mt-1">
-                  {(Array.isArray(caseItem.soluzioni_applicate) ? caseItem.soluzioni_applicate : []).map((s) => s.name).join(', ') || caseItem.solution_applied_name || 'Nessuna'}
+                  {renderNames(caseItem.soluzioni_applicate as any[], filteredSolutions) || caseItem.solution_applied_name || 'Nessuna'}
                 </div>
               </div>
               <div>

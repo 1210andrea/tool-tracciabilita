@@ -37,18 +37,6 @@ sparePartsMagazzinoRoutes.get('/:id/movimenti', authMiddleware, async (req, res,
            WHEN m.riferimento_tipo = 'case'
              THEN COALESCE(
                m.riferimento_numero,
-               -- Difensivo: se case_number non esiste ancora (migration non eseguita),
-               -- fallback a LEFT(id::text, 8) per non far crashare la route
-               (
-                 SELECT
-                   CASE
-                     WHEN column_name = 'case_number' THEN NULL
-                     ELSE NULL
-                   END
-                 FROM information_schema.columns
-                 WHERE table_name = 'cases' AND column_name = 'case_number'
-                 LIMIT 1
-               ),
                LEFT(m.riferimento_id::text, 8)
              )
            ELSE m.riferimento_numero::text
