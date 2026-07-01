@@ -330,14 +330,17 @@ ${data.spare_parts_used && data.spare_parts_used.length ? data.spare_parts_used.
 
 TEMPO IMPIEGO: ${data.tempo_impiego} ore
 NOTE AGGIUNTIVE: ${data.notes || 'Nessuna'}
-TASK:
-- Analizza perché le soluzioni provate non hanno funzionato
-- Spiega il motivo del successo della/e soluzione/i applicata/e
-- Valuta se i pezzi di ricambio utilizzati erano appropriati
-- Suggerisci miglioramenti per ridurre il tempo di risoluzione in futuro
-- Identifica pattern o correlazioni con casi simili (basato su dati storici)
 
-Rispondi in modo pratico e tecnico, adatto a un tecnico di manutenzione.`;
+TASK:
+- Usa tutti i dati forniti, anche se provengono da più ticket, per dare una soluzione coerente e sensata.
+- Analizza perché le soluzioni provate non hanno funzionato.
+- Spiega il motivo del successo della/e soluzione/i applicata/e.
+- Valuta se i pezzi di ricambio utilizzati erano appropriati.
+- Metti in evidenza i pattern significativi tra i ticket, se presenti.
+- Nella sezione "Nota:", se hai una nota di intervento, esprimila in passato, ad esempio: "Hai aumentato lo spessore di un decimo.".
+- Non inventare dati: usa solo le informazioni fornite.
+
+Rispondi in modo pratico e tecnico, adatto a un tecnico di manutenzione, includendo sempre una sezione separata 'Nota:' se sono presenti note aggiuntive.`;
     if (env_1.env.AI_PROVIDER !== 'ollama')
         return null;
     return callOllama([
