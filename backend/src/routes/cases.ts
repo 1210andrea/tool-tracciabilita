@@ -411,37 +411,40 @@ casesRoutes.post('/', authMiddleware, async (req, res, next) => {
 
       if (pezziRicambio.length) {
         for (const spId of pezziRicambio) {
-          if (spId) {
-            await client.query(
-              `INSERT INTO case_spare_parts(case_id, spare_part_id) VALUES($1, $2) ON CONFLICT DO NOTHING`,
-              [caseId, spId]
-            );
-            // Scarica la giacenza e registra il movimento
-            const spRow = await client.query(
-              `UPDATE spare_parts
-               SET quantita = quantita - 1,
-                   sotto_scorta = (quantita - 1) <= scorta_minima,
-                   giacenza_negativa = (quantita - 1) < 0
-               WHERE id = $1
-               RETURNING quantita`,
-              [spId]
-            );
-            const nuovaQty = spRow.rows[0]?.quantita ?? 0;
-            const caseNum = r.rows[0].case_number ?? r.rows[0].id;
-            const movementsTable = await getMovimentiTableName();
-            const useLegacyMovements = movementsTable === 'movimenti_magazzino';
-            const insertSql = useLegacyMovements
-              ? `INSERT INTO ${movementsTable}(spare_part_id, tipo, delta, quantita_dopo,
-                  riferimento_tipo, riferimento_numero, riferimento_id, actor_id)
-                 VALUES($1, 'scarico_manutenzione', -1, $2, 'case', $3::text, $4, $5)`
-              : `INSERT INTO ${movementsTable}(spare_part_id, tipo, delta, quantita_dopo,
-                  riferimento_tipo, riferimento_id, actor_id)
-                 VALUES($1, 'scarico_manutenzione', -1, $2, 'case', $3, $4, $5)`;
-            const insertParams = useLegacyMovements
-              ? [spId, nuovaQty, caseNum, caseId, finalUtenteId]
-              : [spId, nuovaQty, caseId, finalUtenteId];
-            await client.query(insertSql, insertParams);
+          if (!spId) continue;
+          await client.query(
+            `INSERT INTO case_spare_parts(case_id, spare_part_id) VALUES($1, $2) ON CONFLICT DO NOTHING`,
+            [caseId, spId]
+          );
+          // Scarica la giacenza e registra il movimento
+          const spRow = await client.query(
+            `UPDATE spare_parts
+             SET quantita = quantita - 1,
+                 sotto_scorta = (quantita - 1) <= scorta_minima,
+                 giacenza_negativa = (quantita - 1) < 0
+             WHERE id = $1
+             RETURNING quantita`,
+            [spId]
+          );
+          if (!spRow.rows.length) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: `Ricambio ${spId} non trovato` });
           }
+          const nuovaQty = spRow.rows[0].quantita;
+          const caseNum = r.rows[0].case_number ?? r.rows[0].id;
+          const movementsTable = await getMovimentiTableName();
+          const useLegacyMovements = movementsTable === 'movimenti_magazzino';
+          const insertSql = useLegacyMovements
+            ? `INSERT INTO ${movementsTable}(spare_part_id, tipo, delta, quantita_dopo,
+                riferimento_tipo, riferimento_numero, riferimento_id, actor_id)
+               VALUES($1, 'scarico_manutenzione', -1, $2, 'case', $3::text, $4, $5)`
+            : `INSERT INTO ${movementsTable}(spare_part_id, tipo, delta, quantita_dopo,
+                riferimento_tipo, riferimento_id, actor_id)
+               VALUES($1, 'scarico_manutenzione', -1, $2, 'case', $3, $4, $5)`;
+          const insertParams = useLegacyMovements
+            ? [spId, nuovaQty, caseNum, caseId, finalUtenteId]
+            : [spId, nuovaQty, caseId, finalUtenteId];
+          await client.query(insertSql, insertParams);
         }
       }
 

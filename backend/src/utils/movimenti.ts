@@ -10,6 +10,7 @@ export async function getMovimentiTableName(): Promise<'spare_parts_movimenti' |
   if (row?.legacy) return 'movimenti_magazzino';
 
   // If no legacy movement table exists, create the new spare_parts_movimenti table automatically.
+  await pool.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS spare_parts_movimenti (
       id               UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
