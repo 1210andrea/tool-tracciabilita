@@ -1,9 +1,9 @@
-import express from 'express';
+import { Router } from 'express';
 import { authMiddleware } from '../middleware/auth';
 import { pool } from '../db';
-import { emitEvent } from '../services/eventEmitter';
+import { emitEvent } from '../services/socketService';
 
-export const casesRoutes = express.Router();
+export const casesRoutes = Router();
 
 const CASE_QUERY = `
   SELECT
