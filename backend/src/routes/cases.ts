@@ -368,7 +368,7 @@ casesRoutes.post('/', authMiddleware, async (req, res, next) => {
          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
          RETURNING *`,
         [
-          finalMachineId, body.problem_id ?? null, body.cause_id ?? null,
+          finalMachineId, body.problem_id ?? null, finalCauseId,
           solutionAppliedDesc || null, solutionAppliedDesc || null, null,
           'closed', finalUtenteId, null,
           finalNotes?.trim() || null, body.tempo_impiego, primaryOperatoreId
