@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authMiddleware } from '../middleware/auth';
 import { pool } from '../db';
 import { emitEvent } from '../services/socketService';
+import { getMovimentiTableName } from '../utils/movimenti';
 
 export const casesRoutes = Router();
 
@@ -343,12 +344,19 @@ casesRoutes.post('/', authMiddleware, async (req, res, next) => {
             );
             const nuovaQty = spRow.rows[0]?.quantita ?? 0;
             const caseNum = r.rows[0].case_number ?? r.rows[0].id;
-            await client.query(
-              `INSERT INTO movimenti_magazzino(spare_part_id, tipo, delta, quantita_dopo,
+            const movementsTable = await getMovimentiTableName();
+            const useLegacyMovements = movementsTable === 'movimenti_magazzino';
+            const insertSql = useLegacyMovements
+              ? `INSERT INTO ${movementsTable}(spare_part_id, tipo, delta, quantita_dopo,
                   riferimento_tipo, riferimento_numero, riferimento_id, actor_id)
-               VALUES($1, 'scarico_manutenzione', -1, $2, 'case', $3::text, $4, $5)`,
-              [spId, nuovaQty, caseNum, caseId, finalUtenteId]
-            );
+                 VALUES($1, 'scarico_manutenzione', -1, $2, 'case', $3::text, $4, $5)`
+              : `INSERT INTO ${movementsTable}(spare_part_id, tipo, delta, quantita_dopo,
+                  riferimento_tipo, riferimento_id, actor_id)
+                 VALUES($1, 'scarico_manutenzione', -1, $2, 'case', $3, $4, $5)`;
+            const insertParams = useLegacyMovements
+              ? [spId, nuovaQty, caseNum, caseId, finalUtenteId]
+              : [spId, nuovaQty, caseId, finalUtenteId];
+            await client.query(insertSql, insertParams);
           }
         }
       }
@@ -509,12 +517,19 @@ casesRoutes.patch('/:id', authMiddleware, async (req, res, next) => {
             [spId]
           );
           const nuovaQty = spRow.rows[0]?.quantita ?? 0;
-          await client.query(
-            `INSERT INTO movimenti_magazzino(spare_part_id, tipo, delta, quantita_dopo,
+          const movementsTable = await getMovimentiTableName();
+          const useLegacyMovements = movementsTable === 'movimenti_magazzino';
+          const insertSql = useLegacyMovements
+            ? `INSERT INTO ${movementsTable}(spare_part_id, tipo, delta, quantita_dopo,
                 riferimento_tipo, riferimento_numero, riferimento_id, actor_id)
-             VALUES($1, 'rettifica_manuale', 1, $2, 'case', $3::text, $4, $5)`,
-            [spId, nuovaQty, caseNumber, req.params.id, req.user!.id]
-          );
+               VALUES($1, 'rettifica_manuale', 1, $2, 'case', $3::text, $4, $5)`
+            : `INSERT INTO ${movementsTable}(spare_part_id, tipo, delta, quantita_dopo,
+                riferimento_tipo, riferimento_id, actor_id)
+               VALUES($1, 'rettifica_manuale', 1, $2, 'case', $3, $4, $5)`;
+          const insertParams = useLegacyMovements
+            ? [spId, nuovaQty, caseNumber, req.params.id, req.user!.id]
+            : [spId, nuovaQty, req.params.id, req.user!.id];
+          await client.query(insertSql, insertParams);
         }
       }
 
@@ -537,12 +552,19 @@ casesRoutes.patch('/:id', authMiddleware, async (req, res, next) => {
             [spId]
           );
           const nuovaQty = spRow.rows[0]?.quantita ?? 0;
-          await client.query(
-            `INSERT INTO movimenti_magazzino(spare_part_id, tipo, delta, quantita_dopo,
+          const movementsTable = await getMovimentiTableName();
+          const useLegacyMovements = movementsTable === 'movimenti_magazzino';
+          const insertSql = useLegacyMovements
+            ? `INSERT INTO ${movementsTable}(spare_part_id, tipo, delta, quantita_dopo,
                 riferimento_tipo, riferimento_numero, riferimento_id, actor_id)
-             VALUES($1, 'scarico_manutenzione', -1, $2, 'case', $3::text, $4, $5)`,
-            [spId, nuovaQty, caseNumber, req.params.id, req.user!.id]
-          );
+               VALUES($1, 'scarico_manutenzione', -1, $2, 'case', $3::text, $4, $5)`
+            : `INSERT INTO ${movementsTable}(spare_part_id, tipo, delta, quantita_dopo,
+                riferimento_tipo, riferimento_id, actor_id)
+               VALUES($1, 'scarico_manutenzione', -1, $2, 'case', $3, $4, $5)`;
+          const insertParams = useLegacyMovements
+            ? [spId, nuovaQty, caseNumber, req.params.id, req.user!.id]
+            : [spId, nuovaQty, req.params.id, req.user!.id];
+          await client.query(insertSql, insertParams);
         }
       }
 

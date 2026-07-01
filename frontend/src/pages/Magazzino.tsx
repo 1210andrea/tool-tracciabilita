@@ -31,6 +31,7 @@ type Movimento = {
   riferimento_tipo?: string;
   riferimento_numero?: string;
   riferimento_id?: string;
+  riferimento_label?: string;
   note?: string;
   actor_username?: string;
   created_at: string;
@@ -636,16 +637,19 @@ export default function Magazzino() {
                     <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-500">
                       <span>Giacenza dopo: <span className="text-slate-300 font-medium">{m.quantita_dopo}</span></span>
                       {m.actor_username && <span>Operatore: <span className="text-slate-300">{m.actor_username}</span></span>}
-                      {m.riferimento_tipo && m.riferimento_tipo !== 'manuale' && m.riferimento_numero && (
+                      {m.riferimento_tipo && m.riferimento_tipo !== 'manuale' && (
                         <span>
                           {m.riferimento_tipo === 'reorder'
-                            ? `Ordine #${m.riferimento_numero}`
+                            ? `Ordine #${m.riferimento_label ?? m.riferimento_numero ?? m.riferimento_id?.slice(0, 8)}`
                             : (
                               <span
                                 className="text-sky-400 cursor-pointer hover:underline"
-                                onClick={() => window.location.href = `/#caso-${m.riferimento_numero}`}
+                                onClick={() => {
+                                  const target = m.riferimento_numero ?? m.riferimento_id?.slice(0, 8);
+                                  if (target) window.location.href = `/#caso-${target}`;
+                                }}
                               >
-                                Caso #{m.riferimento_numero}
+                                Caso #{m.riferimento_label ?? m.riferimento_numero ?? m.riferimento_id?.slice(0, 8)}
                               </span>
                             )
                           }

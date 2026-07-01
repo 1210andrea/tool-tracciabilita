@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware, requireRole } from '../middleware/auth';
 import { pool } from '../db';
+import { getMovimentiTableName } from '../utils/movimenti';
 
 export const sparepartsRoutes = Router();
 
@@ -150,6 +151,56 @@ sparepartsRoutes.put(
       );
       if (!result.rows.length) return res.status(404).json({ error: 'Ricambio non trovato' });
       res.json({ item: result.rows[0] });
+    } catch (e) { next(e); }
+  }
+);
+
+// ── PATCH /api/spare-parts/:id/rettifica ─────────────────────────────────────
+sparepartsRoutes.patch(
+  '/spare-parts/:id/rettifica',
+  authMiddleware,
+  requireRole('admin', 'magazziniere'),
+  async (req, res, next) => {
+    try {
+      const { delta, note } = req.body as { delta?: number; note?: string };
+      if (!delta || delta === 0) return res.status(400).json({ error: 'delta deve essere diverso da zero' });
+      if (!note?.trim()) return res.status(400).json({ error: 'note è obbligatoria' });
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const updPart = await client.query(
+          `UPDATE spare_parts
+           SET quantita = quantita + $1,
+               sotto_scorta = (quantita + $1) <= scorta_minima,
+               giacenza_negativa = (quantita + $1) < 0,
+               updated_at = now()
+           WHERE id = $2
+           RETURNING id, quantita, scorta_minima, quantita_riordino, sotto_scorta, giacenza_negativa`,
+          [delta, req.params.id]
+        );
+        if (!updPart.rows.length) {
+          await client.query('ROLLBACK');
+          return res.status(404).json({ error: 'Ricambio non trovato' });
+        }
+
+        const part = updPart.rows[0];
+        const movementsTable = await getMovimentiTableName();
+        const useLegacyMovements = movementsTable === 'movimenti_magazzino';
+        const insertSql = useLegacyMovements
+          ? `INSERT INTO ${movementsTable}(spare_part_id, tipo, delta, quantita_dopo, note, riferimento_tipo, riferimento_id, actor_id)
+             VALUES ($1, 'rettifica_manuale', $2, $3, $4, 'manuale', NULL, $5)`
+          : `INSERT INTO ${movementsTable}(spare_part_id, tipo, delta, quantita_dopo, note, riferimento_tipo, actor_id)
+             VALUES ($1, 'rettifica_manuale', $2, $3, $4, 'manuale', $5)`;
+        const insertParams = useLegacyMovements
+          ? [req.params.id, delta, part.quantita, note.trim(), req.user!.id]
+          : [req.params.id, delta, part.quantita, note.trim(), req.user!.id];
+        await client.query(insertSql, insertParams);
+
+        await client.query('COMMIT');
+        res.json({ item: part });
+      } catch (e) { await client.query('ROLLBACK'); throw e; }
+      finally { client.release(); }
     } catch (e) { next(e); }
   }
 );

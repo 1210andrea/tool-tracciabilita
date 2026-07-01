@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authMiddleware, requireRole } from '../middleware/auth';
 import { pool } from '../db';
 import PDFDocument from 'pdfkit';
+import { getMovimentiTableName } from '../utils/movimenti';
 
 export const reordersRoutes = Router();
 
@@ -354,8 +355,9 @@ reordersRoutes.patch('/:id/versamento', authMiddleware, requireRole(...WAREHOUSE
         [quantita_versata, updOrdRow.spare_part_id]
       );
 
+      const movementsTable = await getMovimentiTableName();
       await client.query(
-        `INSERT INTO spare_parts_movimenti
+        `INSERT INTO ${movementsTable}
            (spare_part_id, tipo, delta, quantita_dopo, riferimento_id, riferimento_tipo, actor_id)
          VALUES ($1,'versamento_riordine',$2,$3,$4,'reorder',$5)`,
         [

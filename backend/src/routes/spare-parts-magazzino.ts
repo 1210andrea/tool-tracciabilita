@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware } from '../middleware/auth';
 import { pool } from '../db';
+import { getMovimentiTableName } from '../utils/movimenti';
 
 export const sparePartsMagazzinoRoutes = Router();
 
@@ -21,11 +22,16 @@ sparePartsMagazzinoRoutes.get('/:id/movimenti', authMiddleware, async (req, res,
     const where = `WHERE ${conditions.join(' AND ')}`;
     const offset = (Number(page) - 1) * Number(limit);
 
+    const movementsTable = await getMovimentiTableName();
     const countRes = await pool.query(
-      `SELECT COUNT(*) FROM movimenti_magazzino m ${where}`,
+      `SELECT COUNT(*) FROM ${movementsTable} m ${where}`,
       params
     );
     const total = Number(countRes.rows[0].count);
+
+    const reorderLabel = `COALESCE(m.riferimento_numero::text, LEFT(m.riferimento_id::text, 8))`;
+    const caseLabel = `COALESCE(m.riferimento_numero, LEFT(m.riferimento_id::text, 8))`;
+    const defaultLabel = `COALESCE(m.riferimento_numero::text, m.riferimento_id::text)`;
 
     const r = await pool.query(
       `SELECT
@@ -33,15 +39,12 @@ sparePartsMagazzinoRoutes.get('/:id/movimenti', authMiddleware, async (req, res,
          u.username AS actor_username,
          CASE
            WHEN m.riferimento_tipo = 'reorder'
-             THEN m.riferimento_numero::text
+             THEN ${reorderLabel}
            WHEN m.riferimento_tipo = 'case'
-             THEN COALESCE(
-               m.riferimento_numero,
-               LEFT(m.riferimento_id::text, 8)
-             )
-           ELSE m.riferimento_numero::text
+             THEN ${caseLabel}
+           ELSE ${defaultLabel}
          END AS riferimento_label
-       FROM movimenti_magazzino m
+       FROM ${movementsTable} m
        LEFT JOIN users u ON u.id = m.actor_id
        ${where}
        ORDER BY m.created_at DESC
