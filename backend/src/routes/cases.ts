@@ -7,7 +7,7 @@ export const casesRoutes = Router();
 
 const CASE_QUERY = `
   SELECT
-    c.*,
+    c.*, c.case_number,
     m.code AS machine_code,
     m.name AS machine_name,
     m.line AS machine_line,
@@ -342,7 +342,7 @@ casesRoutes.post('/', authMiddleware, async (req, res, next) => {
               [spId]
             );
             const nuovaQty = spRow.rows[0]?.quantita ?? 0;
-            const caseNum = r.rows[0].numero ?? r.rows[0].id;
+            const caseNum = r.rows[0].case_number ?? r.rows[0].id;
             await client.query(
               `INSERT INTO movimenti_magazzino(spare_part_id, tipo, delta, quantita_dopo,
                   riferimento_tipo, riferimento_numero, riferimento_id, actor_id)
@@ -465,6 +465,8 @@ casesRoutes.patch('/:id', authMiddleware, async (req, res, next) => {
         ]
       );
 
+      const caseNumber = r.rows[0].case_number ?? req.params.id;
+
       // Sync operatori
       await syncCaseOperatori(client, req.params.id, operatoreIds);
 
@@ -511,7 +513,7 @@ casesRoutes.patch('/:id', authMiddleware, async (req, res, next) => {
             `INSERT INTO movimenti_magazzino(spare_part_id, tipo, delta, quantita_dopo,
                 riferimento_tipo, riferimento_numero, riferimento_id, actor_id)
              VALUES($1, 'rettifica_manuale', 1, $2, 'case', $3::text, $4, $5)`,
-            [spId, nuovaQty, req.params.id, req.params.id, req.user!.id]
+            [spId, nuovaQty, caseNumber, req.params.id, req.user!.id]
           );
         }
       }
@@ -539,7 +541,7 @@ casesRoutes.patch('/:id', authMiddleware, async (req, res, next) => {
             `INSERT INTO movimenti_magazzino(spare_part_id, tipo, delta, quantita_dopo,
                 riferimento_tipo, riferimento_numero, riferimento_id, actor_id)
              VALUES($1, 'scarico_manutenzione', -1, $2, 'case', $3::text, $4, $5)`,
-            [spId, nuovaQty, req.params.id, req.params.id, req.user!.id]
+            [spId, nuovaQty, caseNumber, req.params.id, req.user!.id]
           );
         }
       }
