@@ -121,7 +121,6 @@ export function CaseDetailModal({
   const problems = categories.filter((c) => c.type === 'problem');
 
 
-  // Carica tutti gli operatori attivi una sola volta
   useEffect(() => {
     if (!token) return;
     axios
@@ -131,8 +130,6 @@ export function CaseDetailModal({
   }, [token]);
 
 
-  // Task 7a: tutti i campi array con fallback sicuri tramite Array.isArray
-  // per evitare crash silenzioso che produce schermo nero
   useEffect(() => {
     if (!caseItem) return;
     setIsEditing(false);
@@ -154,17 +151,14 @@ export function CaseDetailModal({
     setFilteredSolutions([]);
     if (!problemId || !token) return;
 
-
     setLoadingCauses(true);
     setLoadingSolutions(true);
-
 
     axios
       .get(`${API_URL}/categories/causes-by-problem/${problemId}`, { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => setFilteredCauses(r.data.items || []))
       .catch(() => setFilteredCauses([]))
       .finally(() => setLoadingCauses(false));
-
 
     axios
       .get(`${API_URL}/categories/solutions-by-problem/${problemId}`, { headers: { Authorization: `Bearer ${token}` } })
@@ -201,7 +195,6 @@ export function CaseDetailModal({
   if (!open || !caseItem) return null;
 
 
-  // Adatta operatori per MultiSelect (usa 'nome' invece di 'name')
   const operatoriOptions = allOperatori.map((o) => ({ id: o.id, name: o.nome }));
 
 
@@ -213,7 +206,8 @@ export function CaseDetailModal({
     }
     setLoading(true); setError(null);
     try {
-      await axios.put(
+      // FIX: usa PATCH invece di PUT — il backend espone solo PATCH /cases/:id
+      await axios.patch(
         `${API_URL}/cases/${caseItem.id}`,
         {
           machine_id: machineId,
@@ -366,7 +360,6 @@ export function CaseDetailModal({
                 <span className="text-xs text-slate-500">Causa</span>
                 <div className="text-sm font-medium text-slate-200 mt-1">{caseItem.cause_name || 'N.D.'}</div>
               </div>
-              {/* Task 7b: Array.isArray check su operatori prima del .map() */}
               <div className="sm:col-span-2">
                 <span className="text-xs text-slate-500">Operatori</span>
                 <div className="text-sm font-medium text-slate-200 mt-1">
@@ -375,21 +368,18 @@ export function CaseDetailModal({
                     : caseItem.operator_name || 'N.D.'}
                 </div>
               </div>
-              {/* Task 7b: Array.isArray check su pezzi_ricambio prima del .map() */}
               <div className="sm:col-span-2">
                 <span className="text-xs text-slate-500">Pezzi di Ricambio</span>
                 <div className="text-sm font-medium text-slate-200 mt-1">
                   {(Array.isArray(caseItem.pezzi_ricambio) ? caseItem.pezzi_ricambio : []).map((p) => p.name).join(', ') || caseItem.spare_part_name || 'Nessuno'}
                 </div>
               </div>
-              {/* Task 7b: Array.isArray check su soluzioni_provate prima del .map() */}
               <div className="sm:col-span-2">
                 <span className="text-xs text-slate-500">Soluzioni Provate</span>
                 <div className="text-sm font-medium text-slate-200 mt-1">
                   {(Array.isArray(caseItem.soluzioni_provate) ? caseItem.soluzioni_provate : []).map((s) => s.name).join(', ') || 'Nessuna'}
                 </div>
               </div>
-              {/* Task 7b: Array.isArray check su soluzioni_applicate prima del .map() */}
               <div className="sm:col-span-2">
                 <span className="text-xs text-slate-500">Soluzioni Applicate</span>
                 <div className="text-sm font-medium text-slate-200 mt-1">
