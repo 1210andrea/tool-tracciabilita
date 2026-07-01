@@ -34,6 +34,12 @@ sparepartsRoutes.get(
                 sp.scorta_minima,
                 COALESCE(sp.quantita_riordino, 10) AS quantita_riordino,
                 sp.created_at,
+                (sp.quantita < 0) AS giacenza_negativa,
+                (sp.quantita >= 0 AND sp.quantita <= sp.scorta_minima) AS sotto_scorta,
+                EXISTS (
+                  SELECT 1 FROM reorders ord
+                  WHERE ord.spare_part_id = sp.id AND ord.status IN ('in_lavorazione','partial')
+                ) AS ordine_aperto,
                 (SELECT COUNT(*)::int FROM case_spare_parts csp WHERE csp.spare_part_id = sp.id) AS usage_count
          FROM spare_parts sp
          ORDER BY sp.name ASC`
